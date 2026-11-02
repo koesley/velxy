@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: velxtria-private-preview
+    runtime: python
+    plan: free
+    buildCommand: "python -m compileall -q ."
+    startCommand: "python portal.py"
+    healthCheckPath: /healthz
+    envVars:
+      - key: VELXTRIA_DEPLOYMENT_MODE
+        value: render-preview
+      - key: VELXTRIA_PREVIEW_PASSWORD
+        sync: false
