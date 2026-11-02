@@ -1,4 +1,4 @@
-"""VELXTRIA V3 portal. Render preview requires VELXTRIA_PREVIEW_PASSWORD."""
+"""VELXTRIA V4 portal. Render preview requires VELXTRIA_PREVIEW_PASSWORD."""
 import base64, csv, hashlib, hmac, html, io, json, os, secrets, shutil, smtplib, sqlite3, subprocess, sys, tempfile, time, urllib.parse, zipfile
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock, Thread, Event
 import payhip_integration
+import persistent
 
 ROOT=Path(__file__).resolve().parent
 DELIVERY_ENABLED=os.getenv("VELXTRIA_SMTP_HOST","") != ""
@@ -20,14 +21,22 @@ REQUIRED=['Order ID','Order Date','Customer','Product','Quantity','Unit Price','
 
 def now(): return int(time.time())
 def db():
- c=sqlite3.connect(DB,timeout=15)
- c.execute('PRAGMA foreign_keys=ON')
- c.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT "customer", access TEXT NOT NULL DEFAULT "demo", created INTEGER NOT NULL)')
+ c=persistent.connect(DB)
+ if persistent.REMOTE:
+  c.execute("""CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', access TEXT NOT NULL DEFAULT 'demo', created INTEGER NOT NULL)""")
+ else:
+  c.execute("""CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', access TEXT NOT NULL DEFAULT 'demo', created INTEGER NOT NULL)""")
  c.execute('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL, csrf TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
- c.execute('CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, filename TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL, digest TEXT NOT NULL, email_status TEXT NOT NULL DEFAULT "not_sent", FOREIGN KEY(user_id) REFERENCES users(id))')
- c.execute('CREATE TABLE IF NOT EXISTS deliveries (report_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT "queued", attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT "", next_attempt INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(report_id) REFERENCES reports(id))')
+ c.execute("CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, filename TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL, digest TEXT NOT NULL, email_status TEXT NOT NULL DEFAULT 'not_sent', FOREIGN KEY(user_id) REFERENCES users(id))")
+ c.execute("CREATE TABLE IF NOT EXISTS deliveries (report_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', next_attempt INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(report_id) REFERENCES reports(id))")
  payhip_integration.setup(c)
  c.commit();return c
+
+def persistent_integrity_error():
+ if persistent.REMOTE:
+  from psycopg import IntegrityError
+  return IntegrityError
+ return sqlite3.IntegrityError
 
 def pw_hash(password,salt): return hashlib.pbkdf2_hmac('sha256',password.encode(),bytes.fromhex(salt),250000).hex()
 def escape(v): return html.escape(str(v),quote=True)
@@ -35,7 +44,7 @@ def valid_email(v):return '@' in v and '.' in v.split('@')[-1] and len(v)<255 an
 
 def shell(title,body,user=None,csrf=''):
  nav=('<a href="/">Dashboard</a> <a href="/account">Account</a> <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="link">Sign out</button></form>') if user else '<a href="/login">Sign in</a> <a href="/register">Create demo account</a>'
- return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="brand">✦ VELXTRIA <span>REPORT AUTOMATION</span></div><nav>{nav}</nav></header><main>{body}</main><footer>Local V3 prototype · Payhip webhook staging only · Never upload sensitive data</footer></body></html>"""
+ return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="brand">✦ VELXTRIA <span>REPORT AUTOMATION</span></div><nav>{nav}</nav></header><main>{body}</main><footer>V4 private test · Payhip webhook staging only · Never upload sensitive data</footer></body></html>"""
 
 class Handler(BaseHTTPRequestHandler):
  def preview_guard(self):
@@ -108,7 +117,7 @@ class Handler(BaseHTTPRequestHandler):
    body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>Reports this month</small></div><div><b>{MAX_MONTHLY-count}</b><small>Remaining demo allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · 50 reports/month · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section><section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
    if user['role']=='admin':
     with db() as c:
-     users=c.execute('SELECT email,role,access FROM users ORDER BY created DESC').fetchall();errors=c.execute('SELECT count(*) FROM reports WHERE status != "ready"').fetchone()[0]
+     users=c.execute('SELECT email,role,access FROM users ORDER BY created DESC').fetchall();errors=c.execute("SELECT count(*) FROM reports WHERE status != 'ready'").fetchone()[0]
     body+='<section class="panel"><h2>Founder overview</h2><p>Accounts: '+str(len(users))+' · Failed reports: '+str(errors)+'</p><p>Payhip verification: <strong>STAGING ONLY — manual review; no automatic access</strong>. SMTP: <strong>'+('configured' if DELIVERY_ENABLED else 'not configured')+'</strong>. Do not use this prototype to enforce paid access.</p></section>'
    return self.respond(200,shell('Dashboard',body,user,csrf))
   if p=='/account':
@@ -116,11 +125,11 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,shell('Account',body,user,csrf))
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
-   with db() as c:row=c.execute('SELECT id FROM reports WHERE id=? AND user_id=? AND status="ready"',(ident,user['id'])).fetchone()
+   with db() as c:row=c.execute("SELECT id FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
    if not row:return self.fail(404,'Report not found.',user,csrf)
-   path=REPORTS/str(user['id'])/(ident+'.zip')
-   if not path.is_file():return self.fail(404,'Report file unavailable.',user,csrf)
-   return self.respond(200,path.read_bytes(),'application/zip',[('Content-Disposition','attachment; filename="VELXTRIA_Report.zip"')])
+   try: report_bytes=persistent.retrieve(user['id'],ident,REPORTS)
+   except (OSError,RuntimeError):return self.fail(503,'Report file temporarily unavailable.',user,csrf)
+   return self.respond(200,report_bytes,'application/zip',[('Content-Disposition','attachment; filename="VELXTRIA_Report.zip"')])
   return self.fail(404,'Page not found.',user,csrf)
  def redirect(self,path,headers=()):return self.respond(303,b'','text/plain',[('Location',path),*headers])
  def post_data(self):
@@ -167,7 +176,7 @@ class Handler(BaseHTTPRequestHandler):
    salt=secrets.token_hex(16)
    try:
     with db() as c:c.execute('INSERT INTO users(email,salt,pw_hash,role,access,created) VALUES (?,?,?,?,?,?)',(email,salt,pw_hash(password,salt),'customer','demo',now()))
-   except sqlite3.IntegrityError:return self.fail(409,'Account already exists.')
+   except (sqlite3.IntegrityError, persistent_integrity_error()):return self.fail(409,'Account already exists.')
    return self.redirect('/login')
   if p=='/login':
    email=fields.get('email','').strip().lower();password=fields.get('password','')
@@ -210,15 +219,18 @@ class Handler(BaseHTTPRequestHandler):
      def rowcount(path):
       with path.open(encoding='utf-8-sig',newline='') as f:return max(0,sum(1 for _ in csv.reader(f))-1)
      accepted=rowcount(out/'cleaned_sales.csv');rejected=rowcount(out/'rejected_rows.csv')
-     target=REPORTS/str(user['id']);target.mkdir(parents=True,exist_ok=True)
-     with zipfile.ZipFile(target/(ident+'.zip'),'w',zipfile.ZIP_DEFLATED) as z:
+     archive=io.BytesIO()
+     with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as z:
       for f in files:z.write(out/f,arcname=f)
+     persistent.store(user['id'],ident,archive.getvalue(),REPORTS)
     with db() as c:
      c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',accepted,rejected,digest))
      if fields.get('email_report')=='yes':
       c.execute('INSERT INTO deliveries(report_id,user_id,recipient,status,next_attempt) VALUES (?,?,?,?,?)',(ident,user['id'],user['email'],'queued' if DELIVERY_ENABLED else 'not_configured',now()))
       c.execute('UPDATE reports SET email_status=? WHERE id=?',('queued' if DELIVERY_ENABLED else 'not_configured',ident))
-   except Exception as e:return self.fail(422,'Could not process this file: '+str(e)[:240],user,csrf)
+   except Exception as e:
+    if 'ident' in locals(): persistent.remove(user['id'],ident)
+    return self.fail(422,'Could not process this file: '+str(e)[:240],user,csrf)
   return self.redirect('/?done=1')
 
 def delivery_worker():
@@ -227,23 +239,22 @@ def delivery_worker():
   if not DELIVERY_ENABLED:continue
   try:
    with db() as c:
-    row=c.execute('SELECT report_id,user_id,recipient,attempts FROM deliveries WHERE status IN ("queued","retry") AND next_attempt<=? AND attempts<3 ORDER BY next_attempt LIMIT 1',(now(),)).fetchone()
+    row=c.execute("SELECT report_id,user_id,recipient,attempts FROM deliveries WHERE status IN ('queued','retry') AND next_attempt<=? AND attempts<3 ORDER BY next_attempt LIMIT 1",(now(),)).fetchone()
     if not row:continue
     report_id,user_id,recipient,attempts=row
-    c.execute('UPDATE deliveries SET status="sending", attempts=attempts+1 WHERE report_id=?',(report_id,))
-   path=REPORTS/str(user_id)/(report_id+'.zip')
-   if not path.is_file():raise RuntimeError('Report archive missing')
+    c.execute("UPDATE deliveries SET status='sending', attempts=attempts+1 WHERE report_id=?",(report_id,))
+   report_bytes=persistent.retrieve(user_id,report_id,REPORTS)
    msg=EmailMessage();msg['Subject']='Your VELXTRIA report is ready';msg['From']=os.environ['VELXTRIA_SMTP_FROM'];msg['To']=recipient
    msg.set_content('Your requested VELXTRIA report is attached. This is a local demonstration. Do not send sensitive business information.')
-   msg.add_attachment(path.read_bytes(),maintype='application',subtype='zip',filename='VELXTRIA_Report.zip')
+   msg.add_attachment(report_bytes,maintype='application',subtype='zip',filename='VELXTRIA_Report.zip')
    host=os.environ['VELXTRIA_SMTP_HOST'];port=int(os.getenv('VELXTRIA_SMTP_PORT','587'))
    with smtplib.SMTP(host,port,timeout=20) as smtp:
     smtp.starttls()
     smtp.login(os.environ['VELXTRIA_SMTP_USER'],os.environ['VELXTRIA_SMTP_PASSWORD'])
     smtp.send_message(msg)
    with db() as c:
-    c.execute('UPDATE deliveries SET status="sent",last_error="" WHERE report_id=?',(report_id,))
-    c.execute('UPDATE reports SET email_status="sent" WHERE id=?',(report_id,))
+    c.execute("UPDATE deliveries SET status='sent',last_error='' WHERE report_id=?",(report_id,))
+    c.execute("UPDATE reports SET email_status='sent' WHERE id=?",(report_id,))
   except Exception as exc:
    if 'report_id' in locals():
     retry=(attempts+1)<3
@@ -263,7 +274,7 @@ if __name__=='__main__':
   raise SystemExit('Set VELXTRIA_PREVIEW_PASSWORD before starting Render preview')
  host='0.0.0.0' if mode == 'render-preview' else '127.0.0.1'
  port=int(os.getenv('PORT','8878'))
- print(f'VELXTRIA V3 {mode} portal on {host}:{port}')
+ print(f'VELXTRIA V4 {mode} portal on {host}:{port}; database={"postgresql" if persistent.REMOTE else "sqlite-local"}; storage={"private-supabase" if persistent.REMOTE else "local"}')
  if DELIVERY_ENABLED:
   Thread(target=delivery_worker,daemon=True).start()
   print('SMTP delivery queue enabled')

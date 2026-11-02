@@ -9,6 +9,7 @@ import hmac
 import json
 import os
 import sqlite3
+import persistent
 import time
 
 EVENTS = {'paid', 'refunded', 'subscription.created', 'subscription.deleted'}
@@ -16,8 +17,8 @@ PRODUCT_KEY = 'ajTs4'
 
 
 def setup(conn):
-    conn.execute('''CREATE TABLE IF NOT EXISTS payhip_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+    schema = """CREATE TABLE IF NOT EXISTS payhip_events (
+      id %s,
       fingerprint TEXT NOT NULL UNIQUE,
       event_type TEXT NOT NULL,
       reference_id TEXT NOT NULL,
@@ -26,9 +27,16 @@ def setup(conn):
       received_at INTEGER NOT NULL,
       review_status TEXT NOT NULL DEFAULT 'pending_review',
       event_json TEXT NOT NULL
-    )''')
+    )""" % ('BIGSERIAL PRIMARY KEY' if persistent.REMOTE else 'INTEGER PRIMARY KEY AUTOINCREMENT')
+    conn.execute(schema)
     conn.execute('CREATE INDEX IF NOT EXISTS payhip_events_customer ON payhip_events(customer_email)')
 
+
+def persistent_integrity_error():
+    if persistent.REMOTE:
+        from psycopg import IntegrityError
+        return IntegrityError
+    return sqlite3.IntegrityError
 
 def accept_event(conn, raw):
     key = os.environ.get('VELXTRIA_PAYHIP_API_KEY', '')
@@ -83,6 +91,6 @@ def accept_event(conn, raw):
         VALUES (?,?,?,?,?,?,?)''',
         (fingerprint,kind,reference,email.lower().strip(),PRODUCT_KEY,int(time.time()),json.dumps(safe)))
         conn.commit()
-    except sqlite3.IntegrityError:
+    except (sqlite3.IntegrityError, persistent_integrity_error()):
         return 200, 'Duplicate acknowledged'
     return 200, 'Received for review (no access granted)'

@@ -3,7 +3,7 @@ services:
     name: velxtria-private-preview
     runtime: python
     plan: free
-    buildCommand: "python -m compileall -q ."
+    buildCommand: "pip install -r requirements.txt && python -m compileall -q ."
     startCommand: "python portal.py"
     healthCheckPath: /healthz
     envVars:
@@ -11,3 +11,13 @@ services:
         value: render-preview
       - key: VELXTRIA_PREVIEW_PASSWORD
         sync: false
+      - key: VELXTRIA_DATABASE_URL
+        sync: false
+      - key: VELXTRIA_SUPABASE_URL
+        sync: false
+      - key: VELXTRIA_SUPABASE_SERVICE_KEY
+        sync: false
+      - key: VELXTRIA_REQUIRE_PERSISTENCE
+        value: '1'
+      - key: VELXTRIA_SUPABASE_BUCKET
+        value: velxy-reports
