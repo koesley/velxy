@@ -13,7 +13,7 @@ import persistent
 import time
 
 EVENTS = {'paid', 'refunded', 'subscription.created', 'subscription.deleted'}
-PRODUCT_KEY = os.getenv('VELXTRIA_PAYHIP_PRODUCT_KEY', 'Yuhlx').strip()
+PRODUCT_KEY = os.getenv('VELXTRIA_PAYHIP_PRODUCT_KEY', 'Yuhlx')
 
 
 def setup(conn):
