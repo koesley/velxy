@@ -1,4 +1,4 @@
-"""Server-side Payhip license verification. Never expose secrets or license keys."""
+"""Server-side Payhip license verification with sanitized diagnostics."""
 import json
 import os
 import urllib.error
@@ -12,6 +12,25 @@ class LicenseError(Exception):
 
 class LicenseUnavailable(Exception):
     pass
+
+
+def _safe_error(exc):
+    """Return only allowlisted, non-sensitive API error information."""
+    try:
+        raw = exc.read(4096)
+        payload = json.loads(raw)
+    except (ValueError, UnicodeError, OSError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    # Do not forward arbitrary server messages: they may echo keys or secrets.
+    for field in ('code', 'error_code', 'status'):
+        value = payload.get(field)
+        if isinstance(value, (str, int)):
+            s = str(value)
+            if 0 < len(s) <= 48 and all(c.isalnum() or c in '_-' for c in s):
+                return '%s=%s' % (field, s)
+    return None
 
 
 def verify(key, email):
@@ -34,12 +53,13 @@ def verify(key, email):
                 raise LicenseUnavailable('Payhip returned an unexpected response.')
             data = json.loads(response.read(32768))
     except urllib.error.HTTPError as exc:
-        # Report only HTTP status, never response bodies (which may contain sensitive data).
+        detail = _safe_error(exc)
+        suffix = ('; ' + detail) if detail else ''
         if exc.code in (400, 404, 422):
-            raise LicenseError('Payhip rejected this license request (HTTP %d).' % exc.code) from exc
+            raise LicenseError('Payhip rejected this license request (HTTP %d%s).' % (exc.code, suffix)) from exc
         if exc.code in (401, 403):
-            raise LicenseUnavailable('Payhip authentication failed (HTTP %d). Check the product secret.' % exc.code) from exc
-        raise LicenseUnavailable('Payhip verification returned HTTP %d.' % exc.code) from exc
+            raise LicenseUnavailable('Payhip authentication failed (HTTP %d%s). Check the product secret.' % (exc.code, suffix)) from exc
+        raise LicenseUnavailable('Payhip verification returned HTTP %d%s.' % (exc.code, suffix)) from exc
     except (urllib.error.URLError, TimeoutError) as exc:
         raise LicenseUnavailable('Payhip connection failed. Check network access and try again.') from exc
     except (ValueError, UnicodeError) as exc:
