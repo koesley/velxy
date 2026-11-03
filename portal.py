@@ -45,22 +45,8 @@ def escape(v): return html.escape(str(v),quote=True)
 def valid_email(v):return '@' in v and '.' in v.split('@')[-1] and len(v)<255 and '\n' not in v
 
 def shell(title,body,user=None,csrf=''):
- nav=('<a href="/">Dashboard</a> <a href="/buy">Buy Report</a> <a href="/account">Account</a> <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="link">Sign out</button></form>') if user else '<a href="/buy">Buy $149 Report</a> <a href="/login">Sign in</a> <a href="/register">Create demo account</a>'
+ nav=('<a href="/">Dashboard</a> <a href="/account">Account</a> <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="link">Sign out</button></form>') if user else '<a href="/login">Sign in</a> <a href="/register">Create demo account</a>'
  return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="brand">✦ VELXTRIA <span>REPORT AUTOMATION</span></div><nav>{nav}</nav></header><main>{body}</main><footer>V4 private test · Payhip webhook staging only · Never upload sensitive data</footer></body></html>"""
-
-def payhip_checkout_url():
- """Use only an explicitly configured Payhip-hosted product checkout URL."""
- value=os.getenv('VELXTRIA_PAYHIP_CHECKOUT_URL','').strip()
- parsed=urllib.parse.urlsplit(value)
- if parsed.scheme!='https' or parsed.hostname not in ('payhip.com','www.payhip.com') or parsed.username or parsed.password:
-  return ''
- return value
-
-def sales_page():
- url=payhip_checkout_url()
- checkout=('<a class="buy-link" href="'+escape(url)+'" rel="noopener noreferrer">Purchase on Payhip — $149</a>'
-           if url else '<p><strong>Checkout not configured yet.</strong> Set VELXTRIA_PAYHIP_CHECKOUT_URL to the verified Payhip product checkout URL.</p>')
- return '<section class="hero"><p class="eyebrow">VELXTRIA REPORT AUTOMATION</p><h1>Sales CSV Cleanup &amp; Reporting</h1><p>One-time $149 reporting package for compatible sales CSV files. We validate rows, flag issues, and generate downloadable results.</p><p><strong>Required CSV columns:</strong> '+escape(', '.join(REQUIRED))+'</p><p>Up to 5 MB and 20,000 lines per upload. Confirm compatibility before buying; this is not a custom data integration.</p>'+checkout+'<p>Payhip handles checkout. Payment confirmation and customer fulfillment currently require manual review; buying does not automatically activate an account.</p></section>'
 
 def render_agents(csrf):
  with db() as c:
@@ -77,9 +63,12 @@ class Handler(BaseHTTPRequestHandler):
  def preview_guard(self):
   if os.getenv('VELXTRIA_DEPLOYMENT_MODE','local') != 'render-preview':
    return False
-  if urllib.parse.urlsplit(self.path).path == '/healthz' and self.command == 'GET':
+  path = urllib.parse.urlsplit(self.path).path
+  if path == '/healthz' and self.command == 'GET':
    return False
-  if urllib.parse.urlsplit(self.path).path == '/webhooks/payhip' and self.command == 'POST':
+  # Payhip cannot supply the browser's preview Basic Auth.
+  # The webhook independently checks its Payhip signature and never grants access.
+  if path == '/webhooks/payhip' and self.command == 'POST':
    return False
   expected=os.getenv('VELXTRIA_PREVIEW_PASSWORD','')
   if not expected:
@@ -134,7 +123,6 @@ class Handler(BaseHTTPRequestHandler):
   p=urllib.parse.urlsplit(self.path).path
   if p=='/style.css':return self.respond(200,(ROOT/'style.css').read_bytes(),'text/css; charset=utf-8')
   user,csrf,_=self.identity()
-  if p=='/buy':return self.respond(200,shell('Buy Sales Report',sales_page(),user,csrf))
   if p=='/login':return self.respond(200,shell('Sign in','<section class="panel narrow"><h1>Welcome back</h1><form method="post" action="/login"><label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" required></label><button>Sign in</button></form></section>'))
   if p=='/register':return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form></section>'))
   if not user:return self.redirect('/login')
@@ -316,14 +304,7 @@ def month_start():
  return int(datetime(d.year,d.month,1,tzinfo=timezone.utc).timestamp())
 
 if __name__=='__main__':
- print('STARTUP: initializing database', flush=True)
- try:
-  db().close()
- except Exception:
-  import traceback
-  traceback.print_exc()
-  raise
- print('STARTUP: database initialized', flush=True)
+ db().close()
  mode=os.getenv('VELXTRIA_DEPLOYMENT_MODE','local')
  if mode == 'render-preview' and not os.getenv('VELXTRIA_PREVIEW_PASSWORD'):
   raise SystemExit('Set VELXTRIA_PREVIEW_PASSWORD before starting Render preview')

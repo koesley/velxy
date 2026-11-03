@@ -13,7 +13,7 @@ import persistent
 import time
 
 EVENTS = {'paid', 'refunded', 'subscription.created', 'subscription.deleted'}
-PRODUCT_KEY = os.getenv('VELXTRIA_PAYHIP_PRODUCT_KEY', 'Yuhlx')
+PRODUCT_KEY = os.getenv('VELXTRIA_PAYHIP_PRODUCT_KEY', '').strip()
 
 
 def setup(conn):
@@ -40,7 +40,7 @@ def persistent_integrity_error():
 
 def accept_event(conn, raw):
     key = os.environ.get('VELXTRIA_PAYHIP_API_KEY', '')
-    if not key:
+    if not key or not PRODUCT_KEY:
         return 503, 'Payhip webhook not configured'
     if len(raw) > 65536:
         return 413, 'Payload too large'
@@ -76,7 +76,9 @@ def accept_event(conn, raw):
     if product_key != PRODUCT_KEY:
         # Acknowledge unrelated Payhip products without adding them to VELXTRIA records.
         return 200, 'Ignored unrelated product'
-    fingerprint = hashlib.sha256(raw).hexdigest()
+    # Same transaction and event type are idempotent even if Payhip retries with
+    # different JSON formatting. Refund and paid events remain separate.
+    fingerprint = hashlib.sha256((kind + ':' + reference + ':' + PRODUCT_KEY).encode()).hexdigest()
     # Avoid storing signature, IP address, or unrelated buyer details.
     safe = {'type': kind, 'reference_id': reference, 'email': email.lower().strip(), 'product_key': PRODUCT_KEY}
     if kind == 'paid':
