@@ -10,6 +10,7 @@ from threading import Lock, Thread, Event
 import payhip_integration
 import persistent
 import agent_core
+import license_verification
 
 ROOT=Path(__file__).resolve().parent
 DELIVERY_ENABLED=os.getenv("VELXTRIA_SMTP_HOST","") != ""
@@ -30,6 +31,7 @@ def db():
  c.execute('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL, csrf TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
  c.execute("CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, filename TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL, digest TEXT NOT NULL, email_status TEXT NOT NULL DEFAULT 'not_sent', FOREIGN KEY(user_id) REFERENCES users(id))")
  c.execute("CREATE TABLE IF NOT EXISTS deliveries (report_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', next_attempt INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(report_id) REFERENCES reports(id))")
+ c.execute('CREATE TABLE IF NOT EXISTS paid_licenses (license_hash TEXT PRIMARY KEY, license_key TEXT NOT NULL, user_id INTEGER NOT NULL UNIQUE, redeemed_at INTEGER NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
  payhip_integration.setup(c)
  agent_core.setup(c)
  c.commit();return c
@@ -143,7 +145,15 @@ class Handler(BaseHTTPRequestHandler):
    if user['role']!='admin':return self.fail(403,'Founder access required.',user,csrf)
    return self.respond(200,shell('Founder Agent Control',render_agents(csrf),user,csrf))
   if p=='/account':
-   body='<section class="panel"><h1>Account</h1><p>'+escape(user['email'])+'</p><p>Access: '+escape(user['access'])+'</p><p>Payhip subscriptions are not linked in this local prototype. Reports are available in demo mode.</p></section>'
+   with db() as c: licensed=c.execute('SELECT license_key FROM paid_licenses WHERE user_id=?',(user['id'],)).fetchone()
+   state='No redeemed license'
+   if licensed:
+    try:
+     license_verification.verify(licensed[0],user['email'])
+     state='Payhip license verified and active'
+    except license_verification.LicenseError: state='License invalid, disabled or refunded — paid access inactive'
+    except license_verification.LicenseUnavailable: state='License verification unavailable — paid access temporarily inactive'
+   body='<section class="panel"><h1>Account</h1><p>'+escape(user['email'])+'</p><p>Payhip status: '+escape(state)+'</p><p>Existing demo reporting remains available. License redemption does not change your demo quota.</p><form method="post" action="/redeem-license"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><label>Payhip license key<input name="license_key" maxlength="120" autocomplete="off" required></label><button>Verify and redeem license</button></form></section>' 
    return self.respond(200,shell('Account',body,user,csrf))
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
@@ -216,6 +226,21 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c:c.execute('DELETE FROM sessions WHERE token_hash=?',(hashlib.sha256(token.encode()).hexdigest(),))
    secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
    return self.redirect('/login',[('Set-Cookie','velxtria_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'+secure)])
+  if p=='/redeem-license':
+   key=fields.get('license_key','').strip()
+   try: license_verification.verify(key,user['email'])
+   except license_verification.LicenseError as exc: return self.fail(400,str(exc),user,csrf)
+   except license_verification.LicenseUnavailable as exc: return self.fail(503,str(exc),user,csrf)
+   fingerprint=hashlib.sha256(key.encode()).hexdigest()
+   try:
+    with db() as c:
+     existing=c.execute('SELECT license_hash FROM paid_licenses WHERE user_id=?',(user['id'],)).fetchone()
+     if existing:
+      if hmac.compare_digest(existing[0],fingerprint):return self.redirect('/account')
+      return self.fail(409,'This account already has a license. Contact support to change it.',user,csrf)
+     c.execute('INSERT INTO paid_licenses (license_hash,license_key,user_id,redeemed_at) VALUES (?,?,?,?)',(fingerprint,key,user['id'],now()))
+   except persistent_integrity_error():return self.fail(409,'This license is already assigned to an account.',user,csrf)
+   return self.redirect('/account')
   if p=='/agents':
    if user['role']!='admin':return self.fail(403,'Founder access required.',user,csrf)
    action=fields.get('action','')
