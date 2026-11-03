@@ -11,6 +11,7 @@ import payhip_integration
 import persistent
 import agent_core
 import license_verification
+import subscriptions
 
 ROOT=Path(__file__).resolve().parent
 DELIVERY_ENABLED=os.getenv("VELXTRIA_SMTP_HOST","") != ""
@@ -33,6 +34,7 @@ def db():
  c.execute("CREATE TABLE IF NOT EXISTS deliveries (report_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', next_attempt INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(report_id) REFERENCES reports(id))")
  c.execute('CREATE TABLE IF NOT EXISTS paid_licenses (license_hash TEXT PRIMARY KEY, license_key TEXT NOT NULL, user_id INTEGER NOT NULL UNIQUE, redeemed_at INTEGER NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
  payhip_integration.setup(c)
+ subscriptions.setup(c)
  agent_core.setup(c)
  c.commit();return c
 
@@ -245,10 +247,10 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/':
    with db() as c:
     reports=c.execute('SELECT id,filename,created,status,accepted,rejected,email_status FROM reports WHERE user_id=? ORDER BY created DESC LIMIT 30',(user['id'],)).fetchall()
-    count=c.execute('SELECT count(*) FROM reports WHERE user_id=? AND created>=?',(user['id'],month_start())).fetchone()[0]
+    ent,count,remaining=subscriptions.usage(c,user['id'])
    rows=''.join('<tr><td>'+escape(r[1])+'</td><td>'+escape(datetime.fromtimestamp(r[2],timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))+'</td><td>'+escape(r[3])+'</td><td>'+str(r[4])+' / '+str(r[5])+'</td><td><a href="/download?id='+escape(r[0])+'">Download ZIP</a></td><td>'+escape(r[6])+'</td></tr>' for r in reports)
-   access='Local demo access' if user['access']=='demo' else 'Founder-granted access (not Payhip-verified)'
-   body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>Reports this month</small></div><div><b>{MAX_MONTHLY-count}</b><small>Remaining demo allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · 50 reports/month · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section><section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
+   access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Demo · subscription '+ent['status'].replace('_',' ')
+   body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>Reports this month</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · 50 reports/month · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section><section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
    if user['role']=='admin':
     body+='<section class="panel"><a href="/agents">Open Founder Agent Control</a></section>'
     with db() as c:
@@ -267,7 +269,7 @@ class Handler(BaseHTTPRequestHandler):
      state='Payhip license verified and active'
     except license_verification.LicenseError: state='License invalid, disabled or refunded — paid access inactive'
     except license_verification.LicenseUnavailable: state='License verification unavailable — paid access temporarily inactive'
-   body='<section class="panel"><h1>Account</h1><p>'+escape(user['email'])+'</p><p>Payhip status: '+escape(state)+'</p><p>Existing demo reporting remains available. License redemption does not change your demo quota.</p><form method="post" action="/redeem-license"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><label>Payhip license key<input name="license_key" maxlength="120" autocomplete="off" required></label><button>Verify and redeem license</button></form></section>' 
+   body='<section class="panel"><h1>Account</h1><p>'+escape(user['email'])+'</p><p>Payhip license status: '+escape(state)+'</p><p>Existing demo reporting remains available. License redemption does not change your demo quota.</p><form method="post" action="/redeem-license"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><label>Payhip license key<input name="license_key" maxlength="120" autocomplete="off" required></label><button>Verify and redeem license</button></form></section>' 
    return self.respond(200,shell('Account',body,user,csrf))
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
@@ -311,7 +313,14 @@ class Handler(BaseHTTPRequestHandler):
     n=int(self.headers.get('Content-Length','0'))
     if n<=0 or n>65536:return self.respond(413,'Invalid webhook size','text/plain')
     raw=self.rfile.read(n)
-    with db() as c:status,message=payhip_integration.accept_event(c,raw)
+    with db() as c:
+     status,message=payhip_integration.accept_event(c,raw)
+     if status==200 and message=='Received for review (no access granted)':
+      record=json.loads(raw)
+      kind=record.get('type','')
+      email=record.get('customer_email','') if kind.startswith('subscription.') else record.get('email','')
+      ref=record.get('subscription_id','') if kind.startswith('subscription.') else record.get('id','')
+      subscriptions.observe_webhook(c,email,kind,ref)
     return self.respond(status,message,'text/plain')
    except (ValueError,UnicodeError):return self.respond(400,'Invalid webhook','text/plain')
   try:fields,uploaded=self.post_data()
@@ -381,8 +390,8 @@ class Handler(BaseHTTPRequestHandler):
   except (UnicodeError,csv.Error,ValueError) as e:return self.fail(400,str(e),user,csrf)
   with LOCK:
    with db() as c:
-    count=c.execute('SELECT count(*) FROM reports WHERE user_id=? AND created>=?',(user['id'],month_start())).fetchone()[0]
-    if count>=MAX_MONTHLY:return self.fail(429,'Monthly demo allowance reached.',user,csrf)
+    ent,count,remaining=subscriptions.usage(c,user['id'])
+    if remaining<=0:return self.fail(429,'Report allowance reached for this period.',user,csrf)
    ident=secrets.token_hex(16);digest=hashlib.sha256(data).hexdigest()
    try:
     with tempfile.TemporaryDirectory() as t:
