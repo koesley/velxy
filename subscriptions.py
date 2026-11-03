@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 PRODUCT_KEY = 'iFbye'
 PRICING_PLAN = 'MrW6D9VRBN'
 PRO_LIMIT = 50
+DEMO_LIMIT = 3
 
 def setup(conn):
     conn.execute('''CREATE TABLE IF NOT EXISTS subscriptions (
@@ -59,6 +60,7 @@ def usage(conn, user_id, current=None):
         used=conn.execute('SELECT count(*) FROM reports WHERE user_id=? AND created>=? AND created<?',
                           (user_id,ent['start'],ent['end'])).fetchone()[0]
     else:
-        used=conn.execute('SELECT count(*) FROM reports WHERE user_id=? AND created>=?',
-                          (user_id,ent['start'])).fetchone()[0]
-    return ent,used,max(0,PRO_LIMIT-used)
+        used=conn.execute('SELECT count(*) FROM reports WHERE user_id=?',
+                          (user_id,)).fetchone()[0]
+    limit=PRO_LIMIT if ent['plan']=='pro' else DEMO_LIMIT
+    return ent,used,max(0,limit-used)
