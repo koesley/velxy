@@ -1,4 +1,4 @@
-"""VELXTRIA V3 portal. Render preview requires VELXTRIA_PREVIEW_PASSWORD."""
+"""VELXTRIA V4 portal. Render preview requires VELXTRIA_PREVIEW_PASSWORD."""
 import base64, csv, hashlib, hmac, html, io, json, os, secrets, shutil, smtplib, sqlite3, subprocess, sys, tempfile, time, urllib.parse, zipfile
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock, Thread, Event
 import payhip_integration
+import persistent
 
 ROOT=Path(__file__).resolve().parent
 DELIVERY_ENABLED=os.getenv("VELXTRIA_SMTP_HOST","") != ""
@@ -20,14 +21,22 @@ REQUIRED=['Order ID','Order Date','Customer','Product','Quantity','Unit Price','
 
 def now(): return int(time.time())
 def db():
- c=sqlite3.connect(DB,timeout=15)
- c.execute('PRAGMA foreign_keys=ON')
- c.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT "customer", access TEXT NOT NULL DEFAULT "demo", created INTEGER NOT NULL)')
+ c=persistent.connect(DB)
+ if persistent.REMOTE:
+  c.execute("""CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', access TEXT NOT NULL DEFAULT 'demo', created INTEGER NOT NULL)""")
+ else:
+  c.execute("""CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', access TEXT NOT NULL DEFAULT 'demo', created INTEGER NOT NULL)""")
  c.execute('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL, csrf TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
- c.execute('CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, filename TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL, digest TEXT NOT NULL, email_status TEXT NOT NULL DEFAULT "not_sent", FOREIGN KEY(user_id) REFERENCES users(id))')
- c.execute('CREATE TABLE IF NOT EXISTS deliveries (report_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT "queued", attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT "", next_attempt INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(report_id) REFERENCES reports(id))')
+ c.execute("CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, filename TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL, digest TEXT NOT NULL, email_status TEXT NOT NULL DEFAULT 'not_sent', FOREIGN KEY(user_id) REFERENCES users(id))")
+ c.execute("CREATE TABLE IF NOT EXISTS deliveries (report_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', next_attempt INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(report_id) REFERENCES reports(id))")
  payhip_integration.setup(c)
  c.commit();return c
+
+def persistent_integrity_error():
+ if persistent.REMOTE:
+  from psycopg import IntegrityError
+  return IntegrityError
+ return sqlite3.IntegrityError
 
 def pw_hash(password,salt): return hashlib.pbkdf2_hmac('sha256',password.encode(),bytes.fromhex(salt),250000).hex()
 def escape(v): return html.escape(str(v),quote=True)
@@ -35,7 +44,7 @@ def valid_email(v):return '@' in v and '.' in v.split('@')[-1] and len(v)<255 an
 
 def shell(title,body,user=None,csrf=''):
  nav=('<a href="/">Dashboard</a> <a href="/account">Account</a> <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="link">Sign out</button></form>') if user else '<a href="/login">Sign in</a> <a href="/register">Create demo account</a>'
- return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="brand">✦ VELXTRIA <span>REPORT AUTOMATION</span></div><nav>{nav}</nav></header><main>{body}</main><footer>Local V3 prototype · Payhip webhook staging only · Never upload sensitive data</footer></body></html>"""
+ return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="brand">✦ VELXTRIA <span>REPORT AUTOMATION</span></div><nav>{nav}</nav></header><main>{body}</main><footer>V4 private test · Payhip webhook staging only · Never upload sensitive data</footer></body></html>"""
 
 class Handler(BaseHTTPRequestHandler):
  def preview_guard(self):
@@ -43,8 +52,7 @@ class Handler(BaseHTTPRequestHandler):
    return False
   if urllib.parse.urlsplit(self.path).path == '/healthz' and self.command == 'GET':
    return False
-  # Allow Payhip POST notifications through private preview authentication.
-  # The webhook handler separately checks the configured API-key signature.
+  # Payhip notifications authenticate using their webhook signature, not preview Basic Auth.
   if urllib.parse.urlsplit(self.path).path == '/webhooks/payhip' and self.command == 'POST':
    return False
   expected=os.getenv('VELXTRIA_PREVIEW_PASSWORD','')
@@ -86,11 +94,3 @@ class Handler(BaseHTTPRequestHandler):
   except Exception:return None,None,None
   token=cookie.get('velxtria_session')
   if not token:return None,None,None
-  with db() as c:
-   row=c.execute('SELECT u.id,u.email,u.role,u.access,s.csrf FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires>?',(hashlib.sha256(token.value.encode()).hexdigest(),now())).fetchone()
-  if not row:return None,None,None
-  return dict(zip(['id','email','role','access'],row[:4])),row[4],token.value
- def require(self):
-  user,csrf,token=self.identity()
-  if not user:self.fail(401,'Please sign in first.');return None
-  return user,csrf,token
