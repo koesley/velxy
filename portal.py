@@ -1,4 +1,4 @@
-"""VELXTRIA V4 portal. Render preview requires VELXTRIA_PREVIEW_PASSWORD."""
+"""VELXTRIA customer portal with public landing page and private preview guard."""
 import base64, csv, hashlib, hmac, html, io, json, os, secrets, shutil, smtplib, sqlite3, subprocess, sys, tempfile, time, urllib.parse, zipfile
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -93,4 +93,4 @@ class Handler(BaseHTTPRequestHandler):
    scheme, encoded=supplied.split(' ',1)
    decoded=base64.b64decode(encoded,validate=True).decode('utf-8')
    username, password=decoded.split(':',1)
-  except (ValueError,UnicodeError,Exception):
+  except (ValueError, UnicodeError):
