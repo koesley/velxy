@@ -14,6 +14,7 @@ import license_verification
 import subscriptions
 import btcpay_integration
 import business_v3
+import business_v4
 
 ROOT=Path(__file__).resolve().parent
 DELIVERY_ENABLED=os.getenv("VELXTRIA_SMTP_HOST","") != ""
@@ -54,7 +55,7 @@ def valid_email(v):return '@' in v and '.' in v.split('@')[-1] and len(v)<255 an
 
 def shell(title,body,user=None,csrf=''):
  nav=('<a href="/">Dashboard</a> <a href="/workspace">Business Workspace</a> <a href="/account">Account</a> <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="link">Sign out</button></form>') if user else '<a href="/login">Sign in</a> <a href="/register">Create demo account</a>'
- return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="brand">✦ VELXTRIA <span>BUSINESS PLATFORM</span></div><nav>{nav}</nav></header><main>{body}</main><footer>VELXTRIA private test · BTCPay testnet checkout only · Never upload sensitive data</footer></body></html>"""
+ return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body class="{'workspace-page' if title == 'Business Workspace' else ''}"><header><div class="brand">✦ VELXTRIA <span>BUSINESS PLATFORM</span></div><nav>{nav}</nav></header><main>{body}</main><footer>VELXTRIA private test · BTCPay testnet checkout only · Never upload sensitive data</footer></body></html>"""
 
 
 def landing_page():
@@ -168,6 +169,39 @@ body:has(.v8) header{position:relative;z-index:10;background:#0a0a15;border-bott
 @media(prefers-reduced-motion:reduce){.v8 *,.v8:before{animation:none!important;transition:none!important;translate:none!important}}
 """
 
+# V4 workspace visual refinement: native controls retain their existing form behavior.
+WORKSPACE_CSS = r"""
+.workspace-page select {
+  appearance:none;-webkit-appearance:none;display:block;width:100%;max-width:100%;
+  min-height:48px;padding:12px 48px 12px 16px;border-radius:12px;
+  border:1px solid #544b77;color:#f1eaff;background-color:#111324;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23c4a6ff' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position:right 15px center;background-repeat:no-repeat;
+  font:inherit;font-weight:600;cursor:pointer;transition:border-color .18s,box-shadow .18s,background-color .18s;
+}
+.workspace-page select:hover{border-color:#a98aff;background-color:#1d1a32}
+.workspace-page select:focus-visible{outline:2px solid #b49aff;outline-offset:2px;box-shadow:0 0 0 4px #a98aff24}
+.workspace-page select option{color:#f1eaff;background:#17182a}
+.workspace-page input:not([type=hidden]):not([type=checkbox]),.workspace-page textarea{
+  border-radius:12px;border:1px solid #514a70;background:#101222;color:#f1eaff;
+  min-height:48px;padding:12px 15px;font:inherit;box-sizing:border-box;
+}
+.workspace-page input:not([type=hidden]):not([type=checkbox]):focus-visible,.workspace-page textarea:focus-visible{outline:2px solid #ad90ff;outline-offset:2px}
+.workspace-page button:not(.link){border-radius:12px;min-height:45px;padding:11px 20px;font-weight:750;
+  background:linear-gradient(125deg,#b39aff,#9579f0);color:#100d1d;border:1px solid #c8b5ff;
+  cursor:pointer;transition:filter .18s,transform .18s,box-shadow .18s}
+.workspace-page button:not(.link):hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 8px 24px #8b63e43b}
+.workspace-page button:not(.link):focus-visible{outline:2px solid #e0d4ff;outline-offset:3px}
+.workspace-page label{display:block;margin-bottom:14px}
+.workspace-page label select{margin-top:8px}
+.workspace-page td select{min-width:145px;min-height:40px;padding:8px 38px 8px 12px;font-size:.9rem}
+.workspace-page td button{min-height:40px!important;padding:8px 13px!important}
+.workspace-page td form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+@media(max-width:650px){.workspace-page td form{min-width:210px}.workspace-page select{font-size:16px}}
+@media(prefers-reduced-motion:reduce){.workspace-page select,.workspace-page button{transition:none!important}}
+"""
+
+
 def render_agents(csrf):
  with db() as c:
   is_paused=agent_core.paused(c); tasks=agent_core.tasks(c)
@@ -242,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
   if urllib.parse.urlsplit(self.path).path == '/healthz': return self.respond(200,'ok','text/plain')
   if self.preview_guard(): return
   p=urllib.parse.urlsplit(self.path).path
-  if p=='/style.css':return self.respond(200,(ROOT/'style.css').read_bytes()+LANDING_CSS.encode('utf-8'),'text/css; charset=utf-8')
+  if p=='/style.css':return self.respond(200,(ROOT/'style.css').read_bytes()+(LANDING_CSS+WORKSPACE_CSS).encode('utf-8'),'text/css; charset=utf-8')
   user,csrf,_=self.identity()
   if p=='/login':return self.respond(200,shell('Sign in','<section class="panel narrow"><h1>Welcome back</h1><form method="post" action="/login"><label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" required></label><button>Sign in</button></form></section>'))
   if p=='/register':return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form></section>'))
@@ -281,7 +315,7 @@ class Handler(BaseHTTPRequestHandler):
     body+='<section class="panel"><h2>Founder overview</h2><p>Accounts: '+str(len(users))+' · Failed reports: '+str(errors)+'</p><p>Payhip verification: <strong>STAGING ONLY — manual review; no automatic access</strong>. SMTP: <strong>'+('configured' if DELIVERY_ENABLED else 'not configured')+'</strong>. Do not use this prototype to enforce paid access.</p></section>'
    return self.respond(200,shell('Dashboard',body,user,csrf))
   if p=='/workspace':
-   with db() as c: body=business_v3.render(c,user['id'],csrf)
+   with db() as c: body=business_v4.render(c,user['id'],csrf)+business_v3.render(c,user['id'],csrf)
    return self.respond(200,shell('Business Workspace',body,user,csrf))
   if p=='/agents':
    if user['role']!='admin':return self.fail(403,'Founder access required.',user,csrf)
@@ -385,7 +419,9 @@ class Handler(BaseHTTPRequestHandler):
    return self.redirect('/login',[('Set-Cookie','velxtria_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'+secure)])
   if p=='/workspace':
    try:
-    with db() as c: business_v3.process(c,user['id'],fields)
+    with db() as c:
+      if fields.get('action','').startswith('invoice_'): business_v4.process(c,user['id'],fields)
+      else: business_v3.process(c,user['id'],fields)
    except ValueError as exc:return self.fail(400,str(exc),user,csrf)
    return self.redirect('/workspace')
   if p=='/btcpay/checkout':
