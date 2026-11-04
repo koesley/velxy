@@ -27,6 +27,12 @@ def request(method, path, payload=None):
         raise RuntimeError('BTCPay request failed; check testnet configuration and API permissions') from exc
 
 def setup(conn):
+    # Serialize PostgreSQL schema initialization across concurrent requests.
+    # CREATE TABLE IF NOT EXISTS alone is not safe against simultaneous first creates.
+    # Transaction-scoped lock releases automatically on commit or rollback.
+    import persistent
+    if persistent.REMOTE:
+        conn.execute('SELECT pg_advisory_xact_lock(731245, 921034)')
     conn.execute('''CREATE TABLE IF NOT EXISTS btcpay_orders (
       order_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL,
       invoice_id TEXT UNIQUE, checkout_url TEXT NOT NULL DEFAULT '',
