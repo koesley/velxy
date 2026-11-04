@@ -1,5 +1,6 @@
 """VELXTRIA BTCPay testnet checkout. Never use this module for mainnet checkout."""
 import json, os, secrets, time, urllib.error, urllib.parse, urllib.request
+from decimal import Decimal, InvalidOperation
 
 HOST = 'https://testnet.demo.btcpayserver.org'
 PRICE = '49.00'
@@ -68,14 +69,23 @@ def reconcile(conn, user_id):
 
     A transaction/unique invoice record ensures repeated checks never extend access.
     """
-    orders = conn.execute("SELECT order_id,invoice_id FROM btcpay_orders WHERE user_id=? AND status='pending' AND invoice_id IS NOT NULL ORDER BY created_at DESC LIMIT 5", (user_id,)).fetchall()
+    orders = conn.execute("SELECT order_id,invoice_id FROM btcpay_orders WHERE user_id=? AND status='pending' AND invoice_id IS NOT NULL ORDER BY created_at DESC LIMIT 30", (user_id,)).fetchall()
     activated = False
     for order_id, invoice_id in orders:
         invoice = request('GET', '/invoices/' + urllib.parse.quote(invoice_id, safe=''))
         meta = invoice.get('metadata') or {}
-        if (invoice.get('id') != invoice_id or invoice.get('status') != 'Settled'
-                or str(invoice.get('amount')) not in ('49', '49.0', '49.00')
-                or invoice.get('currency') != 'USD' or meta.get('orderId') != order_id):
+        # Never trust a browser redirect as proof of payment.
+        if invoice.get('id') != invoice_id or meta.get('orderId') != order_id:
+            continue
+        status = invoice.get('status')
+        if status in ('Expired', 'Invalid'):
+            conn.execute("UPDATE btcpay_orders SET status=? WHERE order_id=? AND user_id=? AND invoice_id=? AND status='pending'", (status.lower(), order_id, user_id, invoice_id))
+            continue
+        try:
+            correct_amount = Decimal(str(invoice.get('amount'))) == Decimal(PRICE)
+        except (InvalidOperation, TypeError):
+            correct_amount = False
+        if status != 'Settled' or not correct_amount or invoice.get('currency') != 'USD':
             continue
         # SQLite/PostgreSQL both support this conditional claim; only one checker wins.
         result = conn.execute("UPDATE btcpay_orders SET status='settled',settled_at=? WHERE order_id=? AND user_id=? AND invoice_id=? AND status='pending'",

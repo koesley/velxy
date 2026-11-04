@@ -255,7 +255,7 @@ class Handler(BaseHTTPRequestHandler):
     reports=c.execute('SELECT id,filename,created,status,accepted,rejected,email_status FROM reports WHERE user_id=? ORDER BY created DESC LIMIT 30',(user['id'],)).fetchall()
     ent,count,remaining=subscriptions.usage(c,user['id'])
    rows=''.join('<tr><td>'+escape(r[1])+'</td><td>'+escape(datetime.fromtimestamp(r[2],timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))+'</td><td>'+escape(r[3])+'</td><td>'+str(r[4])+' / '+str(r[5])+'</td><td><a href="/download?id='+escape(r[0])+'">Download ZIP</a></td><td>'+escape(r[6])+'</td></tr>' for r in reports)
-   access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 3 reports total · subscription '+ent['status'].replace('_',' ')
+   access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 3 reports total · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
    limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '3 free reports total'
    checkout_enabled=(os.getenv('VELXTRIA_ENABLE_BTCPAY_TEST_CHECKOUT','0')=='1' and btcpay_integration.configured())
@@ -290,7 +290,15 @@ class Handler(BaseHTTPRequestHandler):
     except license_verification.LicenseError: state='License invalid, disabled or refunded — paid access inactive'
     except license_verification.LicenseUnavailable: state='License verification unavailable — paid access temporarily inactive'
    body='<section class="panel"><h1>Account</h1><p>'+escape(user['email'])+'</p><p>Payhip license status: '+escape(state)+'</p><p>Existing demo reporting remains available. License redemption does not change your demo quota.</p><form method="post" action="/redeem-license"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><label>Payhip license key<input name="license_key" maxlength="120" autocomplete="off" required></label><button>Verify and redeem license</button></form></section>' 
-   return self.respond(200,shell('Account',body,user,csrf))
+   with db() as c:
+    ent=subscriptions.entitlement(c,user['id'])
+    orders=c.execute('SELECT order_id,status,created_at,settled_at FROM btcpay_orders WHERE user_id=? ORDER BY created_at DESC LIMIT 30',(user['id'],)).fetchall()
+   datefmt=lambda ts: datetime.fromtimestamp(ts,timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if ts else '—'
+   billing='<section class="panel"><h2>Bitcoin testnet billing</h2><p>PRO: '+('Active through '+escape(datefmt(ent['end'])) if ent['plan']=='pro' else 'Not currently active')+'. Payments are manual; no automatic charges.</p><div class="scroll"><table><thead><tr><th>Order</th><th>Created (UTC)</th><th>Status</th><th>Settled (UTC)</th></tr></thead><tbody>'
+   for oid,status,created,settled in orders:
+    billing+='<tr><td>'+escape(oid)+'</td><td>'+escape(datefmt(created))+'</td><td>'+escape(status)+'</td><td>'+escape(datefmt(settled))+'</td></tr>'
+   billing+='</tbody></table></div></section>'
+   return self.respond(200,shell('Account',body+billing,user,csrf))
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
    with db() as c:row=c.execute("SELECT id FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
