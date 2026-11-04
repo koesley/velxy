@@ -55,7 +55,7 @@ def valid_email(v):return '@' in v and '.' in v.split('@')[-1] and len(v)<255 an
 
 def shell(title,body,user=None,csrf=''):
  nav=('<a href="/">Dashboard</a> <a href="/workspace">Business Workspace</a> <a href="/account">Account</a> <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="link">Sign out</button></form>') if user else '<a href="/login">Sign in</a> <a href="/register">Create demo account</a>'
- return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body class="{'workspace-page' if title == 'Business Workspace' else ''}"><header><div class="brand">✦ VELXTRIA <span>BUSINESS PLATFORM</span></div><nav>{nav}</nav></header><main>{body}</main><footer>VELXTRIA private test · BTCPay testnet checkout only · Never upload sensitive data</footer></body></html>"""
+ return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body class="{'workspace-page' if title == 'Business Workspace' else ''}"><header><div class="brand">✦ VELXTRIA <span>BUSINESS PLATFORM</span></div><nav>{nav}</nav></header><main>{body}</main><footer>VELXTRIA private preview · Bitcoin payments require manual confirmation · Never upload sensitive data</footer></body></html>"""
 
 
 def landing_page():
@@ -294,16 +294,9 @@ class Handler(BaseHTTPRequestHandler):
    access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 3 reports total · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
    limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '3 free reports total'
-   checkout_enabled=(os.getenv('VELXTRIA_ENABLE_BTCPAY_TEST_CHECKOUT','0')=='1' and btcpay_integration.configured())
-   with db() as c:
-    recent=c.execute('SELECT status,checkout_url FROM btcpay_orders WHERE user_id=? ORDER BY created_at DESC LIMIT 1',(user['id'],)).fetchone()
    if ent['plan']!='pro':
-    if recent and recent[0]=='pending':
-     upgrade_html='<section class="panel"><h2>Bitcoin test payment pending</h2><p>Use testnet coins only. Return to this dashboard after settlement to verify access.</p><a href="'+escape(recent[1])+'" rel="noopener noreferrer">Open BTCPay test invoice</a> · <a href="/">Check payment status</a></section>'
-    elif checkout_enabled:
-     upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days (TESTNET)</h2><p>50 reports per verified 30-day period. Test coins only; not a recurring subscription.</p><form method="post" action="/btcpay/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Generate Bitcoin TEST invoice</button></form></section>'
-    else:
-     upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Bitcoin test checkout is disabled until configured and approved.</p><button disabled>Upgrade to PRO · Coming soon</button></section>'
+    btc_address=os.getenv('VELXTRIA_BITCOIN_ADDRESS','bc1qycyus9jzmwvunn32qemdvc5w5qt0erqgeegmmz').strip()
+    upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Direct Bitcoin payment is available by manual arrangement only. Contact the VELXTRIA operator to confirm the exact BTC amount and payment reference <strong>before sending</strong>. No automatic invoice, exchange-rate quote, payment verification, or access activation is enabled.</p><p>Bitcoin network (BTC) receiving address:</p><p><code style="overflow-wrap:anywhere;word-break:break-all">'+escape(btc_address)+'</code></p><p><strong>Do not send BTC until you receive a confirmed amount and instructions.</strong> Payments to the wrong network or address may be irreversible.</p></section>'
    else: upgrade_html=''
    body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section><section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
    body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
@@ -334,7 +327,7 @@ class Handler(BaseHTTPRequestHandler):
     ent=subscriptions.entitlement(c,user['id'])
     orders=c.execute('SELECT order_id,status,created_at,settled_at FROM btcpay_orders WHERE user_id=? ORDER BY created_at DESC LIMIT 30',(user['id'],)).fetchall()
    datefmt=lambda ts: datetime.fromtimestamp(ts,timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if ts else '—'
-   billing='<section class="panel"><h2>Bitcoin testnet billing</h2><p>PRO: '+('Active through '+escape(datefmt(ent['end'])) if ent['plan']=='pro' else 'Not currently active')+'. Payments are manual; no automatic charges.</p><div class="scroll"><table><thead><tr><th>Order</th><th>Created (UTC)</th><th>Status</th><th>Settled (UTC)</th></tr></thead><tbody>'
+   billing='<section class="panel"><h2>Legacy testnet billing history</h2><p>PRO: '+('Active through '+escape(datefmt(ent['end'])) if ent['plan']=='pro' else 'Not currently active')+'. Payments are manual; no automatic charges.</p><div class="scroll"><table><thead><tr><th>Order</th><th>Created (UTC)</th><th>Status</th><th>Settled (UTC)</th></tr></thead><tbody>'
    for oid,status,created,settled in orders:
     billing+='<tr><td>'+escape(oid)+'</td><td>'+escape(datefmt(created))+'</td><td>'+escape(status)+'</td><td>'+escape(datefmt(settled))+'</td></tr>'
    billing+='</tbody></table></div></section>'
