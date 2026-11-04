@@ -12,6 +12,7 @@ import persistent
 import agent_core
 import license_verification
 import subscriptions
+import btcpay_integration
 
 ROOT=Path(__file__).resolve().parent
 DELIVERY_ENABLED=os.getenv("VELXTRIA_SMTP_HOST","") != ""
@@ -35,6 +36,7 @@ def db():
  c.execute('CREATE TABLE IF NOT EXISTS paid_licenses (license_hash TEXT PRIMARY KEY, license_key TEXT NOT NULL, user_id INTEGER NOT NULL UNIQUE, redeemed_at INTEGER NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
  payhip_integration.setup(c)
  subscriptions.setup(c)
+ btcpay_integration.setup(c)
  agent_core.setup(c)
  c.commit();return c
 
@@ -50,7 +52,7 @@ def valid_email(v):return '@' in v and '.' in v.split('@')[-1] and len(v)<255 an
 
 def shell(title,body,user=None,csrf=''):
  nav=('<a href="/">Dashboard</a> <a href="/account">Account</a> <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="link">Sign out</button></form>') if user else '<a href="/login">Sign in</a> <a href="/register">Create demo account</a>'
- return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="brand">✦ VELXTRIA <span>REPORT AUTOMATION</span></div><nav>{nav}</nav></header><main>{body}</main><footer>V4 private test · Payhip webhook staging only · Never upload sensitive data</footer></body></html>"""
+ return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="brand">✦ VELXTRIA <span>REPORT AUTOMATION</span></div><nav>{nav}</nav></header><main>{body}</main><footer>VELXTRIA private test · BTCPay testnet checkout only · Never upload sensitive data</footer></body></html>"""
 
 
 def landing_page():
@@ -245,6 +247,10 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/' and not user:return self.respond(200,shell('Sales reporting made simple',landing_page()))
   if not user:return self.redirect('/login')
   if p=='/':
+   if btcpay_integration.configured():
+    try:
+     with db() as c:btcpay_integration.reconcile(c,user['id'])
+    except RuntimeError:pass
    with db() as c:
     reports=c.execute('SELECT id,filename,created,status,accepted,rejected,email_status FROM reports WHERE user_id=? ORDER BY created DESC LIMIT 30',(user['id'],)).fetchall()
     ent,count,remaining=subscriptions.usage(c,user['id'])
@@ -252,8 +258,17 @@ class Handler(BaseHTTPRequestHandler):
    access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 3 reports total · subscription '+ent['status'].replace('_',' ')
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
    limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '3 free reports total'
-   checkout_enabled=os.getenv('VELXTRIA_ENABLE_PRO_CHECKOUT','0')=='1'
-   upgrade_html=('<section class="panel"><h2>VELXTRIA PRO · $49/month</h2><p>50 reports per verified billing cycle. Cancel through Payhip.</p><a class="v8-primary" href="https://payhip.com/order?link=iFbye&amp;pricing_plan=MrW6D9VRBN" rel="noopener noreferrer">Upgrade to PRO ↗</a></section>' if checkout_enabled else '<section class="panel"><h2>VELXTRIA PRO · $49/month</h2><p>50 reports per verified billing cycle. Checkout is temporarily unavailable while subscription payment verification is being tested.</p><button type="button" disabled>Upgrade to PRO · Coming soon</button></section>') if ent['plan']!='pro' else ''
+   checkout_enabled=(os.getenv('VELXTRIA_ENABLE_BTCPAY_TEST_CHECKOUT','0')=='1' and btcpay_integration.configured())
+   with db() as c:
+    recent=c.execute('SELECT status,checkout_url FROM btcpay_orders WHERE user_id=? ORDER BY created_at DESC LIMIT 1',(user['id'],)).fetchone()
+   if ent['plan']!='pro':
+    if recent and recent[0]=='pending':
+     upgrade_html='<section class="panel"><h2>Bitcoin test payment pending</h2><p>Use testnet coins only. Return to this dashboard after settlement to verify access.</p><a href="'+escape(recent[1])+'" rel="noopener noreferrer">Open BTCPay test invoice</a> · <a href="/">Check payment status</a></section>'
+    elif checkout_enabled:
+     upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days (TESTNET)</h2><p>50 reports per verified 30-day period. Test coins only; not a recurring subscription.</p><form method="post" action="/btcpay/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Generate Bitcoin TEST invoice</button></form></section>'
+    else:
+     upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Bitcoin test checkout is disabled until configured and approved.</p><button disabled>Upgrade to PRO · Coming soon</button></section>'
+   else: upgrade_html=''
    body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section><section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
    body+=upgrade_html
    if user['role']=='admin':
@@ -354,6 +369,23 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c:c.execute('DELETE FROM sessions WHERE token_hash=?',(hashlib.sha256(token.encode()).hexdigest(),))
    secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
    return self.redirect('/login',[('Set-Cookie','velxtria_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'+secure)])
+  if p=='/btcpay/checkout':
+   if os.getenv('VELXTRIA_ENABLE_BTCPAY_TEST_CHECKOUT','0')!='1' or not btcpay_integration.configured():
+    return self.fail(503,'Bitcoin test checkout is disabled.',user,csrf)
+   with db() as c:
+    ent,_,_=subscriptions.usage(c,user['id'])
+    if ent['plan']=='pro':return self.redirect('/')
+    recent=c.execute('SELECT checkout_url FROM btcpay_orders WHERE user_id=? AND status=? ORDER BY created_at DESC LIMIT 1',(user['id'],'pending')).fetchone()
+    if recent:return self.redirect('/')
+    order_id=btcpay_integration.create_order(c,user['id'])
+   try:
+    invoice_id,checkout_url=btcpay_integration.issue_invoice(order_id)
+   except RuntimeError:
+    with db() as c:c.execute("UPDATE btcpay_orders SET status='failed' WHERE order_id=?",(order_id,))
+    return self.fail(503,'Unable to create test invoice. Check BTCPay API permissions.',user,csrf)
+   with db() as c:
+    c.execute("UPDATE btcpay_orders SET invoice_id=?,checkout_url=?,status='pending' WHERE order_id=? AND status='creating'",(invoice_id,checkout_url,order_id))
+   return self.redirect('/')
   if p=='/redeem-license':
    key=fields.get('license_key','').strip()
    try: license_verification.verify(key,user['email'])
