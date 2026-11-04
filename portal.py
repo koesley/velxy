@@ -13,6 +13,7 @@ import agent_core
 import license_verification
 import subscriptions
 import btcpay_integration
+import business_v3
 
 ROOT=Path(__file__).resolve().parent
 DELIVERY_ENABLED=os.getenv("VELXTRIA_SMTP_HOST","") != ""
@@ -36,6 +37,7 @@ def db():
  c.execute('CREATE TABLE IF NOT EXISTS paid_licenses (license_hash TEXT PRIMARY KEY, license_key TEXT NOT NULL, user_id INTEGER NOT NULL UNIQUE, redeemed_at INTEGER NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
  payhip_integration.setup(c)
  subscriptions.setup(c)
+ business_v3.setup(c)
  btcpay_integration.setup(c)
  agent_core.setup(c)
  c.commit();return c
@@ -51,8 +53,8 @@ def escape(v): return html.escape(str(v),quote=True)
 def valid_email(v):return '@' in v and '.' in v.split('@')[-1] and len(v)<255 and '\n' not in v
 
 def shell(title,body,user=None,csrf=''):
- nav=('<a href="/">Dashboard</a> <a href="/account">Account</a> <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="link">Sign out</button></form>') if user else '<a href="/login">Sign in</a> <a href="/register">Create demo account</a>'
- return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="brand">✦ VELXTRIA <span>REPORT AUTOMATION</span></div><nav>{nav}</nav></header><main>{body}</main><footer>VELXTRIA private test · BTCPay testnet checkout only · Never upload sensitive data</footer></body></html>"""
+ nav=('<a href="/">Dashboard</a> <a href="/workspace">Business Workspace</a> <a href="/account">Account</a> <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="link">Sign out</button></form>') if user else '<a href="/login">Sign in</a> <a href="/register">Create demo account</a>'
+ return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"></head><body><header><div class="brand">✦ VELXTRIA <span>BUSINESS PLATFORM</span></div><nav>{nav}</nav></header><main>{body}</main><footer>VELXTRIA private test · BTCPay testnet checkout only · Never upload sensitive data</footer></body></html>"""
 
 
 def landing_page():
@@ -270,6 +272,7 @@ class Handler(BaseHTTPRequestHandler):
      upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Bitcoin test checkout is disabled until configured and approved.</p><button disabled>Upgrade to PRO · Coming soon</button></section>'
    else: upgrade_html=''
    body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section><section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
+   body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
    body+=upgrade_html
    if user['role']=='admin':
     body+='<section class="panel"><a href="/agents">Open Founder Agent Control</a></section>'
@@ -277,6 +280,9 @@ class Handler(BaseHTTPRequestHandler):
      users=c.execute('SELECT email,role,access FROM users ORDER BY created DESC').fetchall();errors=c.execute("SELECT count(*) FROM reports WHERE status != 'ready'").fetchone()[0]
     body+='<section class="panel"><h2>Founder overview</h2><p>Accounts: '+str(len(users))+' · Failed reports: '+str(errors)+'</p><p>Payhip verification: <strong>STAGING ONLY — manual review; no automatic access</strong>. SMTP: <strong>'+('configured' if DELIVERY_ENABLED else 'not configured')+'</strong>. Do not use this prototype to enforce paid access.</p></section>'
    return self.respond(200,shell('Dashboard',body,user,csrf))
+  if p=='/workspace':
+   with db() as c: body=business_v3.render(c,user['id'],csrf)
+   return self.respond(200,shell('Business Workspace',body,user,csrf))
   if p=='/agents':
    if user['role']!='admin':return self.fail(403,'Founder access required.',user,csrf)
    return self.respond(200,shell('Founder Agent Control',render_agents(csrf),user,csrf))
@@ -377,6 +383,11 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c:c.execute('DELETE FROM sessions WHERE token_hash=?',(hashlib.sha256(token.encode()).hexdigest(),))
    secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
    return self.redirect('/login',[('Set-Cookie','velxtria_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'+secure)])
+  if p=='/workspace':
+   try:
+    with db() as c: business_v3.process(c,user['id'],fields)
+   except ValueError as exc:return self.fail(400,str(exc),user,csrf)
+   return self.redirect('/workspace')
   if p=='/btcpay/checkout':
    if os.getenv('VELXTRIA_ENABLE_BTCPAY_TEST_CHECKOUT','0')!='1' or not btcpay_integration.configured():
     return self.fail(503,'Bitcoin test checkout is disabled.',user,csrf)
