@@ -1,0 +1,16 @@
+VELXTRIA DESKTOP — HOW TO GET THE ACTUAL WINDOWS APP
+
+This archive contains source and an automated Windows build workflow, NOT a prebuilt .exe.
+
+NO CURSOR OR PYTHON NEEDED ON YOUR WINDOWS PC (GitHub build route):
+1. Create a private GitHub repository and upload the contents of this folder to its root.
+2. Open repository > Actions > Build downloadable VELXTRIA Windows installer.
+3. Click Run workflow; wait for the build to succeed.
+4. Download the VELXTRIA-Windows-Installer artifact, extract it and run VELXTRIA-Desktop-Setup.exe.
+5. Install and launch from the Windows Start Menu.
+
+The unsigned installer may trigger Windows SmartScreen. Verify its source.
+The application binds only to 127.0.0.1. No production deployment has been tested.
+If GitHub build fails, inspect the workflow logs. No successful Windows build has been verified here.
+
+Alternative: run BUILD_WINDOWS.bat on a Windows PC with Python 3 installed.
