@@ -1,0 +1,100 @@
+
+name: Build downloadable VELXTRIA Windows installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install packager
+        run: python -m pip install "pyinstaller>=6,<7" "pywebview>=5,<7"
+
+      - name: Run desktop tests
+        run: python -m unittest test_desktop_maintenance test_desktop_entry -v
+
+      - name: Build bundled Windows app
+        run: python build_windows.py
+
+      - name: Smoke test bundled executable
+        shell: pwsh
+        run: |
+          & 'dist/VELXTRIA-Desktop/VELXTRIA-Desktop.exe' --smoke-test
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled desktop smoke test failed' }
+
+      - name: Verify desktop EXE exists
+        shell: pwsh
+        run: |
+          if (!(Test-Path 'dist/VELXTRIA-Desktop/VELXTRIA-Desktop.exe')) {
+            throw 'Desktop executable missing'
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (!(Test-Path $iscc)) { throw 'Inno Setup compiler missing' }
+          & $iscc 'installer/VELXTRIA.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          if (!(Test-Path 'dist/installer/VELXTRIA-Desktop-Setup.exe')) {
+            throw 'Installer missing'
+          }
+
+      - name: Silent-install and smoke-test installed executable
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path 'dist/installer/VELXTRIA-Desktop-Setup.exe').Path
+          $target = Join-Path $env:RUNNER_TEMP 'velxtria-install-check'
+          $proc = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR=' + $target)) -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Installer exited $($proc.ExitCode)" }
+          $exe = Join-Path $target 'VELXTRIA-Desktop.exe'
+          if (!(Test-Path $exe)) { throw 'Installed executable missing' }
+          & $exe --smoke-test
+          if ($LASTEXITCODE -ne 0) { throw 'Installed executable smoke test failed' }
+
+      - name: Generate release SHA-256 manifest
+        shell: pwsh
+        run: |
+          $files = @('dist/installer/VELXTRIA-Desktop-Setup.exe', 'dist/VELXTRIA-Desktop/VELXTRIA-Desktop.exe')
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $file"
+          }
+          $lines | Set-Content -Encoding ascii 'dist/SHA256SUMS.txt'
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: VELXTRIA-Windows-SHA256
+          path: dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Upload installer for download
+        uses: actions/upload-artifact@v4
+        with:
+          name: VELXTRIA-Windows-Installer
+          path: dist/installer/VELXTRIA-Desktop-Setup.exe
+          if-no-files-found: error
+
+      - name: Upload portable desktop app
+        uses: actions/upload-artifact@v4
+        with:
+          name: VELXTRIA-Windows-Portable
+          path: dist/VELXTRIA-Desktop/
+          if-no-files-found: error
