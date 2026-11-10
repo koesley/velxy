@@ -71,6 +71,18 @@ class PgConnection:
             self.conn.close()
 
 
+class ManagedSQLiteConnection(sqlite3.Connection):
+    """Commit/rollback and close when used in a with block.
+
+    sqlite3.Connection's default context manager does not close the connection.
+    """
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return super().__exit__(exc_type, exc, tb)
+        finally:
+            self.close()
+
+
 def connect(local_db):
     if REMOTE:
         return PgConnection()
@@ -78,8 +90,9 @@ def connect(local_db):
     if REQUIRE:
         raise RuntimeError('Persistent storage is required')
 
-    c = sqlite3.connect(local_db, timeout=15)
+    c = sqlite3.connect(local_db, timeout=15, factory=ManagedSQLiteConnection)
     c.execute('PRAGMA foreign_keys=ON')
+    c.execute('PRAGMA busy_timeout=15000')
     return c
 
 
