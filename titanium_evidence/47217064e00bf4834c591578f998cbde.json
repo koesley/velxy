@@ -1,0 +1,41 @@
+{
+  "id": "47217064e00bf4834c591578f998cbde",
+  "kind": "authenticated_journey",
+  "result": {
+    "checks": {
+      "anonymous_workspace_blocked": true,
+      "authenticated_ascension": true,
+      "authenticated_empire": true,
+      "authenticated_first-contact": true,
+      "authenticated_horizon": true,
+      "authenticated_integration": true,
+      "authenticated_launchpad": true,
+      "authenticated_nexus-intelligence": true,
+      "authenticated_oracle": true,
+      "authenticated_sentinel": true,
+      "authenticated_sovereign-core": true,
+      "authenticated_sovereign-gate": true,
+      "authenticated_titanium": true,
+      "create_application": true,
+      "create_workspace": true,
+      "cross_workspace_app_denied": true,
+      "cross_workspace_write_denied": true,
+      "csrf_rejected": true,
+      "genesis_page": true,
+      "login": true,
+      "no_cross_workspace_record": true,
+      "persisted_business_record": true,
+      "publish_application": true,
+      "register": true,
+      "save_business_record": true,
+      "second_workspace": true
+    },
+    "count": 26,
+    "failed": [],
+    "passed": true,
+    "scope": "Authenticated HTTP journey on disposable localhost server and database. Not browser automation; not a production security audit."
+  },
+  "schema": 1,
+  "sha256": "cfdaa72b85aa1a35aa5f6839031ed1664e2147dd8cf598dffa543de59c19fa6b",
+  "timestamp": 1794266718
+}
