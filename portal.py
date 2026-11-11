@@ -52,6 +52,8 @@ import sovereign_future_v56
 import sovereign_connectors_v56
 import sovereign_genesis_v56
 import sovereign_opportunities_v57
+import business_os_v59
+import business_agents_v59
 import sovereign_business_graph_v57
 import sovereign_lab_v57
 import sovereign_council_v57
@@ -132,7 +134,7 @@ def db():
  if not persistent.REMOTE: omnipotence_v12.setup(c)
  if not persistent.REMOTE: singularity_x_v13.setup(c)
  if not persistent.REMOTE: prometheus_v14.setup(c)
- if not persistent.REMOTE: empire_v19.setup(c)
+ empire_v19.setup(c)
  if not persistent.REMOTE: genesis_prime_v20.setup(c)
  if not persistent.REMOTE: architect_v21.setup(c)
  if not persistent.REMOTE: autonomy_v22.setup(c)
@@ -151,7 +153,7 @@ def db():
  btcpay_integration.setup(c)
  agent_core.setup(c)
  if os.getenv("VELXTRIA_LOCAL_STUDIO","0")=="1" and not persistent.REMOTE: site_studio.setup(c)
- if not persistent.REMOTE: sovereign_v56.setup(c)
+ sovereign_v56.setup(c)
  if not persistent.REMOTE: sovereign_intelligence_v56.setup(c)
  if not persistent.REMOTE: sovereign_twin_v56.setup(c); sovereign_sync_v56.setup(c); sovereign_opportunities_v56.setup(c); sovereign_strategy_v56.setup(c); sovereign_execution_v56.setup(c); sovereign_memory_v56.setup(c); sovereign_future_v56.setup(c); sovereign_executive_v56.setup(c); sovereign_connectors_v56.setup(c); sovereign_guardian_v56.setup(c); sovereign_genesis_v56.setup(c)
  if not persistent.REMOTE: genesis_reborn_v40.install_indexes(c)
@@ -169,7 +171,7 @@ def valid_email(v):return '@' in v and '.' in v.split('@')[-1] and len(v)<255 an
 
 def shell(title,body,user=None,csrf=''):
  nav=('<a href="/sovereign-unified-v56">✦ Unified Command</a> <a href="/sovereign-genesis-v56">✦ Project Genesis</a> <a href="/sovereign-command-v56">✦ Ask VELXTRIA</a> <a href="/sovereign-guardian-v56">✦ Guardian</a> <a href="/sovereign-connectors-v56">✦ Connectors</a> <a href="/sovereign-executive-v56">✦ Executive Council 2.0</a> <a href="/sovereign-future-v56">✦ Future Simulator</a> <a href="/sovereign-memory-v56">✦ Memory</a> <a href="/sovereign-execution-v56">✦ Execution</a> <a href="/sovereign-strategies-v56">✦ Strategies</a> <a href="/sovereign-opportunities-v56">✦ Opportunities</a> <a href="/sovereign-sync-v56">✦ Twin Sync</a> <a href="/sovereign-twin-v56">✦ Digital Twin</a> <a href="/sovereign-council-v56">✦ Sovereign Council</a> <a href="/sovereign-v56">✦ Sovereign V56</a> <a href="/omega-v55">✦ Omega V55</a> <a href="/aegis-v54">✦ Aegis V54</a> <a href="/sentinel-v53">✦ Sentinel V53</a> <a href="/titan-intelligence">✦ Titan V52</a> <a href="/ascendancy-v51">✦ Ascendancy V51</a> <a href="/singularity-v50">✦ Singularity V50</a> <a href="/nexus-reforged">Command Center</a> <a href="/infinity-engine">Intelligence</a> <a href="/autonomous-core">Experiments</a> <a href="/synapse">Synapse</a> <a href="/omniscience">Omniscience V49</a> <a href="/quantum-command">Quantum V48</a> <a href="/hyperion">Hyperion V47</a> <a href="/neural-network">Neural V45</a> <a href="/evolution-engine">Evolution V46</a> <a href="/">Reports</a> <a href="/workspace">Business</a> <a href="/genesis-prime">Apps</a> <a href="/oracle">Oracle</a> <a href="/atlas">Onboarding</a> <a href="/catalyst">Release checks</a> <a href="/account">Account</a> <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="link">Sign out</button></form>') if user else '<a href="/login">Sign in</a> <a href="/register">Create demo account</a>'
- return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/site-studio.css"></head><body class="{'workspace-page' if title == 'Business Workspace' else ''}"><header><div class="brand">✦ VELXTRIA <span>BUSINESS PLATFORM</span></div><nav class="velx-nav"><a class="velx-primary" href="/sovereign-omniverse-v57">Omniverse</a><a class="velx-primary" href="/sovereign-business-graph-v57">Business Graph</a><a class="velx-primary" href="/sovereign-opportunities-v57">Opportunity Radar</a><a class="velx-primary" href="/sovereign-council-v57">Council</a><a class="velx-primary" href="/sovereign-lab-v57">Decision Lab</a><a class="velx-primary" href="/sovereign-unified-v56">Command</a><a class="velx-primary" href="/sovereign-workflows-v56">Workflow Studio</a><a class="velx-primary" href="/sovereign-nexus-v56">Nexus</a><a class="velx-primary" href="/sovereign-workflow-runs-v56">Operations</a><a class="velx-primary" href="/">Reports</a><a class="velx-primary" href="/sovereign-genesis-v56">Genesis</a><a class="velx-primary" href="/sovereign-command-v56">Ask VELXTRIA</a><a class="velx-primary" href="/sovereign-guardian-v56">Guardian</a><a class="velx-primary" href="/sovereign-executive-v56">Intelligence</a><a class="velx-primary" href="/sovereign-strategies-v56">Strategies</a><a class="velx-primary" href="/sovereign-execution-v56">Execution</a><details class="velx-more"><summary>Explore platform ▾</summary><div class="velx-more-panel">{nav}</div></details></nav></header><main>{body}</main><footer>VELXTRIA private preview · Bitcoin payments require manual confirmation · Never upload sensitive data</footer></body></html>"""
+ return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/site-studio.css"></head><body class="{'workspace-page' if title == 'Business Workspace' else ''}"><header><div class="brand">✦ VELXTRIA <span>BUSINESS PLATFORM</span></div><nav class="velx-nav"><a class="velx-primary" href="/business-os-v59">Business OS</a><a class="velx-primary" href="/business-agents-v59">Agents</a><a class="velx-primary" href="/sovereign-omniverse-v57">Omniverse</a><a class="velx-primary" href="/sovereign-business-graph-v57">Business Graph</a><a class="velx-primary" href="/sovereign-opportunities-v57">Opportunity Radar</a><a class="velx-primary" href="/sovereign-council-v57">Council</a><a class="velx-primary" href="/sovereign-lab-v57">Decision Lab</a><a class="velx-primary" href="/sovereign-unified-v56">Command</a><a class="velx-primary" href="/sovereign-workflows-v56">Workflow Studio</a><a class="velx-primary" href="/sovereign-nexus-v56">Nexus</a><a class="velx-primary" href="/sovereign-workflow-runs-v56">Operations</a><a class="velx-primary" href="/">Reports</a><a class="velx-primary" href="/sovereign-genesis-v56">Genesis</a><a class="velx-primary" href="/sovereign-command-v56">Ask VELXTRIA</a><a class="velx-primary" href="/sovereign-guardian-v56">Guardian</a><a class="velx-primary" href="/sovereign-executive-v56">Intelligence</a><a class="velx-primary" href="/sovereign-strategies-v56">Strategies</a><a class="velx-primary" href="/sovereign-execution-v56">Execution</a><details class="velx-more"><summary>Explore platform ▾</summary><div class="velx-more-panel">{nav}</div></details></nav></header><main>{body}</main><footer>VELXTRIA private preview · Bitcoin payments require manual confirmation · Never upload sensitive data</footer></body></html>"""
 
 
 def landing_page():
@@ -474,6 +476,20 @@ class Handler(BaseHTTPRequestHandler):
     with db() as c:body=sovereign_gate_v35.render(c,user['id'],csrf,q.get('w',[''])[0],DATA_ROOT)
    except ValueError as exc:return self.fail(404,str(exc),user,csrf)
    return self.respond(200,shell('Sovereign Gate V35',body,user,csrf))
+  if p in ('/business-os-v59','/business-os-v59.csv','/business-agents-v59'):
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS V59 is not enabled.',user,csrf)
+   q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
+   try:
+    with db() as c:
+     if not wid:
+      row=c.execute('SELECT workspace_id FROM empire_members WHERE user_id=? LIMIT 1',(user['id'],)).fetchone();wid=row[0] if row else ''
+     if not wid:raise ValueError('Create a workspace first')
+     if p.endswith('.csv'):body=business_os_v59.export_csv(c,user['id'],wid)
+     elif p=='/business-os-v59':body=business_os_v59.render(c,user['id'],wid,csrf)
+     else:body=business_agents_v59.render(c,user['id'],wid,csrf)
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+   if p.endswith('.csv'):return self.respond(200,body.encode('utf-8'),'text/csv; charset=utf-8',headers=[('Content-Disposition','attachment; filename="velxtria-leads.csv"')])
+   return self.respond(200,shell('Business OS V59',body,user,csrf))
   if p in ('/sovereign-lab-v57','/sovereign-lab-v57.json'):
    if os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE:return self.fail(403,'Decision Lab requires local SQLite studio mode.',user,csrf)
    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
@@ -1091,6 +1107,27 @@ class Handler(BaseHTTPRequestHandler):
      else:raise ValueError('Unknown Decision Lab action')
     return self.redirect('/sovereign-lab-v57?w='+urllib.parse.quote(wid,safe=''))
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+  if p in ('/business-os-v59','/business-agents-v59'):
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS V59 is not enabled.',user,csrf)
+   wid=fields.get('workspace','');action=fields.get('action','')
+   try:
+    with db() as c:
+     if p=='/business-os-v59':
+      if action=='add':business_os_v59.add_lead(c,user['id'],wid,fields.get('name',''),fields.get('contact',''),fields.get('source',''),fields.get('value',''))
+      elif action=='status':business_os_v59.update_lead(c,user['id'],wid,fields.get('lead',''),fields.get('status',''))
+      elif action=='propose':business_os_v59.propose(c,user['id'],wid,fields.get('lead',''),fields.get('message',''))
+      elif action=='review':business_os_v59.review(c,user['id'],wid,fields.get('draft',''),fields.get('decision',''),fields.get('reason',''))
+      else:raise ValueError('Unknown action')
+     else:
+      if action=='create':business_agents_v59.create_job(c,user['id'],wid,fields.get('agent',''),fields.get('goal',''))
+      elif action=='propose':business_agents_v59.propose_job(c,user['id'],wid,fields.get('job',''),fields.get('proposal',''))
+      elif action=='review':business_agents_v59.review_job(c,user['id'],wid,fields.get('job',''),fields.get('decision',''),fields.get('reason',''))
+      elif action=='complete':business_agents_v59.complete_job(c,user['id'],wid,fields.get('job',''))
+      elif action=='knowledge':business_agents_v59.add_knowledge(c,user['id'],wid,fields.get('kind',''),fields.get('question',''),fields.get('answer',''))
+      elif action=='delete_knowledge':business_agents_v59.remove_knowledge(c,user['id'],wid,fields.get('knowledge',''))
+      else:raise ValueError('Unknown action')
+    return self.redirect(p+'?w='+urllib.parse.quote(wid,safe=''))
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
   if p=='/sovereign-council-v57':
    if os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE:return self.fail(403,'Council requires local SQLite studio mode.',user,csrf)
    wid=fields.get('workspace','');action=fields.get('action','');iid=fields.get('case','')
@@ -1399,7 +1436,7 @@ class Handler(BaseHTTPRequestHandler):
    except ValueError as exc:return self.fail(400,str(exc),user,csrf)
    return self.respond(200,payload,'application/zip',[('Content-Disposition','attachment; filename="omega-local-app.zip"'),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff')])
   if p=='/empire':
-   if os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE:return self.fail(403,'Empire pilot requires local SQLite studio mode.',user,csrf)
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1' and (os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE):return self.fail(403,'Business workspace is not enabled.',user,csrf)
    wid=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('w',[''])[0]
    try:
     with db() as c:body=empire_v19.render(c,user['id'],csrf,wid)
@@ -1743,7 +1780,7 @@ class Handler(BaseHTTPRequestHandler):
     return self.respond(200,shell('Genesis Prime V20',body,user,csrf))
    except ValueError as exc:return self.fail(400,str(exc),user,csrf)
   if p=='/empire':
-   if os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE:return self.fail(403,'Empire pilot requires local SQLite studio mode.',user,csrf)
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1' and (os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE):return self.fail(403,'Business workspace is not enabled.',user,csrf)
    try:
     with db() as c:
      action=fields.get('action','');wid=fields.get('workspace','');code=''
