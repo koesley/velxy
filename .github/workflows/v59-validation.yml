@@ -15,4 +15,4 @@ jobs:
       - name: Compile Python
         run: python -m compileall -q .
       - name: Business OS unit tests
-        run: python -m unittest test_business_os_v59 test_business_agents_v59 test_business_intelligence_v60 -v
+        run: python -m unittest test_business_os_v59 test_business_agents_v59 test_business_intelligence_v60 test_agent_engine_v61 -v
