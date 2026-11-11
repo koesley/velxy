@@ -32,7 +32,7 @@ def create_job(c,uid,wid,agent,goal):
     core.access(c,uid,wid,write=True);init(c)
     if agent not in AGENTS:raise ValueError("Unknown agent")
     goal=clean(goal,1000);jid=secrets.token_hex(12);now=int(time.time())
-    with c:
+    if True:
         c.execute("INSERT INTO bos59_agent_jobs VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                   (jid,wid,agent,goal,"","queued",uid,None,"",now,now))
         core.audit(c,uid,wid,"bos_agent_job_created",jid)
@@ -40,7 +40,7 @@ def create_job(c,uid,wid,agent,goal):
 
 def propose_job(c,uid,wid,jid,proposal):
     core.access(c,uid,wid,write=True);init(c);proposal=clean(proposal,4000)
-    with c:
+    if True:
         row=c.execute("SELECT status FROM bos59_agent_jobs WHERE id=? AND workspace_id=?",(jid,wid)).fetchone()
         if not row or row[0]!="queued":raise ValueError("Job not queued")
         c.execute("UPDATE bos59_agent_jobs SET proposal=?,status='in_review',updated=? WHERE id=? AND workspace_id=?",
@@ -51,7 +51,7 @@ def review_job(c,uid,wid,jid,decision,reason):
     core.access(c,uid,wid,write=True,owner=True);init(c)
     if decision not in ("approved","rejected"):raise ValueError("Invalid decision")
     reason=clean(reason,500)
-    with c:
+    if True:
         row=c.execute("SELECT status FROM bos59_agent_jobs WHERE id=? AND workspace_id=?",(jid,wid)).fetchone()
         if not row or row[0]!="in_review":raise ValueError("Job not awaiting review")
         c.execute("UPDATE bos59_agent_jobs SET status=?,reason=?,reviewed_by=?,updated=? WHERE id=? AND workspace_id=?",
@@ -60,7 +60,7 @@ def review_job(c,uid,wid,jid,decision,reason):
 
 def complete_job(c,uid,wid,jid):
     core.access(c,uid,wid,write=True);init(c)
-    with c:
+    if True:
         row=c.execute("SELECT status FROM bos59_agent_jobs WHERE id=? AND workspace_id=?",(jid,wid)).fetchone()
         if not row or row[0]!="approved":raise ValueError("Only approved jobs can be recorded complete")
         c.execute("UPDATE bos59_agent_jobs SET status='completed',updated=? WHERE id=? AND workspace_id=?",(int(time.time()),jid,wid))
@@ -71,7 +71,7 @@ def add_knowledge(c,uid,wid,kind,question,answer):
     if kind not in ("faq","memory"):raise ValueError("Invalid knowledge type")
     question=clean(question,200);answer=clean(answer,3000)
     kid=secrets.token_hex(12)
-    with c:
+    if True:
         c.execute("INSERT INTO bos59_knowledge VALUES(?,?,?,?,?,?,?)",
                   (kid,wid,kind,question,answer,uid,int(time.time())))
         core.audit(c,uid,wid,"bos_knowledge_created",kid)
@@ -79,7 +79,7 @@ def add_knowledge(c,uid,wid,kind,question,answer):
 
 def remove_knowledge(c,uid,wid,kid):
     core.access(c,uid,wid,write=True);init(c)
-    with c:
+    if True:
         row=c.execute("SELECT 1 FROM bos59_knowledge WHERE id=? AND workspace_id=?",(kid,wid)).fetchone()
         if not row:raise ValueError("Knowledge not found")
         c.execute("DELETE FROM bos59_knowledge WHERE id=? AND workspace_id=?",(kid,wid))
