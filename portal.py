@@ -153,7 +153,7 @@ def db():
  btcpay_integration.setup(c)
  agent_core.setup(c)
  if os.getenv("VELXTRIA_LOCAL_STUDIO","0")=="1" and not persistent.REMOTE: site_studio.setup(c)
- if not persistent.REMOTE: sovereign_v56.setup(c)
+ sovereign_v56.setup(c)
  if not persistent.REMOTE: sovereign_intelligence_v56.setup(c)
  if not persistent.REMOTE: sovereign_twin_v56.setup(c); sovereign_sync_v56.setup(c); sovereign_opportunities_v56.setup(c); sovereign_strategy_v56.setup(c); sovereign_execution_v56.setup(c); sovereign_memory_v56.setup(c); sovereign_future_v56.setup(c); sovereign_executive_v56.setup(c); sovereign_connectors_v56.setup(c); sovereign_guardian_v56.setup(c); sovereign_genesis_v56.setup(c)
  if not persistent.REMOTE: genesis_reborn_v40.install_indexes(c)
