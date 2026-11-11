@@ -7,6 +7,8 @@ services:
     startCommand: "python portal.py"
     healthCheckPath: /healthz
     envVars:
+      - key: VELXTRIA_ENABLE_BUSINESS_OS_V59
+        value: '1'
       - key: VELXTRIA_DEPLOYMENT_MODE
         value: render-preview
       - key: VELXTRIA_PREVIEW_PASSWORD
