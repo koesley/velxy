@@ -1641,7 +1641,7 @@ class Handler(BaseHTTPRequestHandler):
    if not (os.getenv('VELXTRIA_V62_ENABLED','0')=='1' and persistent.REMOTE):return self.fail(403,'V62 is not enabled.',user,csrf)
    wid=fields.get('workspace','')
    try:
-    with db() as c:omega_execution_v62.run(c,user['id'],wid,fields.get('task',''))
+    with db() as c:omega_execution_v62.run(c,user['id'],wid,fields.get('task',''),ai=fields.get('ai','')=='1')
    except ValueError as exc:return self.fail(400,str(exc),user,csrf)
    return self.redirect('/omega-execution-v62?w='+urllib.parse.quote(wid,safe=''))
   if p=='/logout':
