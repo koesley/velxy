@@ -33,7 +33,7 @@ def create_job(c,uid,wid,agent,goal):
     if agent not in AGENTS:raise ValueError("Unknown agent")
     goal=clean(goal,1000);jid=secrets.token_hex(12);now=int(time.time())
     with c:
-        c.execute("INSERT INTO bos59_agent_jobs VALUES(?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO bos59_agent_jobs VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                   (jid,wid,agent,goal,"","queued",uid,None,"",now,now))
         core.audit(c,uid,wid,"bos_agent_job_created",jid)
     return jid
