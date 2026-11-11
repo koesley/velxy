@@ -1,0 +1,18 @@
+name: VELXTRIA V59 validation
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile Python
+        run: python -m compileall -q .
+      - name: Business OS unit tests
+        run: python -m unittest test_business_os_v59 test_business_agents_v59 -v
