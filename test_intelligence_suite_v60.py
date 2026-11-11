@@ -29,6 +29,18 @@ class V60Tests(unittest.TestCase):
         page=v60.render(self.c,"alice","a","token")
         for label in v60.LABELS.values():self.assertIn(label,page)
         self.assertIn("Projected value: $110.00",page)
+    def test_knowledge_search_and_private_preview(self):
+        v60.act(self.c,"alice","a",{"kind":"knowledge","title":"Retention","body":"Follow up with inactive customers"})
+        self.assertIn("Retention",v60.command(self.c,"a","search knowledge inactive"))
+        self.assertEqual(v60.search_knowledge(self.c,"b","inactive"),[])
+        v60.act(self.c,"alice","a",{"kind":"portal","title":"Client Center","body":"Welcome customers"})
+        record=self.c.execute("SELECT id FROM v60_records WHERE kind='portal'").fetchone()[0]
+        self.assertIn("Client Center",v60.portal_preview(self.c,"alice","a",record))
+        with self.assertRaises(ValueError):v60.portal_preview(self.c,"bob","a",record)
+    def test_sales_funnel(self):
+        self.c.execute("INSERT INTO v59_deals VALUES ('1','a','x','Project',2500,'lead',1)")
+        self.assertIn("lead: 1 deals",v60.command(self.c,"a","sales funnel"))
+        self.assertEqual(v60.sales_funnel(self.c,"b"),{})
     def test_tenant_isolation(self):
         with self.assertRaises(ValueError):v60.act(self.c,"bob","a",{"kind":"opportunity"})
         with self.assertRaises(ValueError):v60.render(self.c,"bob","a","token")
@@ -36,5 +48,5 @@ class V60Tests(unittest.TestCase):
         for f in ({"kind":"scenario","base":"nan","change":"10"},{"kind":"decision","option_a":"A","option_b":"B","score_a":"11","score_b":"1"}):
             with self.assertRaises(ValueError):v60.act(self.c,"alice","a",f)
     def test_safe_command(self):
-        self.assertEqual(v60.command(self.c,"a","delete all contacts"),"Unsupported request. Try: contacts, pipeline, revenue, opportunities.")
+        self.assertEqual(v60.command(self.c,"a","delete all contacts"),"Unsupported request. Try: contacts, pipeline, revenue, opportunities, sales funnel, search knowledge TERM.")
 if __name__=="__main__":unittest.main()
