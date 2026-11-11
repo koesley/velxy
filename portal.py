@@ -134,7 +134,7 @@ def db():
  if not persistent.REMOTE: omnipotence_v12.setup(c)
  if not persistent.REMOTE: singularity_x_v13.setup(c)
  if not persistent.REMOTE: prometheus_v14.setup(c)
- if not persistent.REMOTE: empire_v19.setup(c)
+ empire_v19.setup(c)
  if not persistent.REMOTE: genesis_prime_v20.setup(c)
  if not persistent.REMOTE: architect_v21.setup(c)
  if not persistent.REMOTE: autonomy_v22.setup(c)
@@ -477,7 +477,7 @@ class Handler(BaseHTTPRequestHandler):
    except ValueError as exc:return self.fail(404,str(exc),user,csrf)
    return self.respond(200,shell('Sovereign Gate V35',body,user,csrf))
   if p in ('/business-os-v59','/business-os-v59.csv','/business-agents-v59'):
-   if os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE:return self.fail(403,'V59 requires local SQLite studio mode.',user,csrf)
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS V59 is not enabled.',user,csrf)
    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
    try:
     with db() as c:
@@ -1108,7 +1108,7 @@ class Handler(BaseHTTPRequestHandler):
     return self.redirect('/sovereign-lab-v57?w='+urllib.parse.quote(wid,safe=''))
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
   if p in ('/business-os-v59','/business-agents-v59'):
-   if os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE:return self.fail(403,'V59 requires local SQLite studio mode.',user,csrf)
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS V59 is not enabled.',user,csrf)
    wid=fields.get('workspace','');action=fields.get('action','')
    try:
     with db() as c:
@@ -1436,7 +1436,7 @@ class Handler(BaseHTTPRequestHandler):
    except ValueError as exc:return self.fail(400,str(exc),user,csrf)
    return self.respond(200,payload,'application/zip',[('Content-Disposition','attachment; filename="omega-local-app.zip"'),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff')])
   if p=='/empire':
-   if os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE:return self.fail(403,'Empire pilot requires local SQLite studio mode.',user,csrf)
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1' and (os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE):return self.fail(403,'Business workspace is not enabled.',user,csrf)
    wid=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('w',[''])[0]
    try:
     with db() as c:body=empire_v19.render(c,user['id'],csrf,wid)
@@ -1780,7 +1780,7 @@ class Handler(BaseHTTPRequestHandler):
     return self.respond(200,shell('Genesis Prime V20',body,user,csrf))
    except ValueError as exc:return self.fail(400,str(exc),user,csrf)
   if p=='/empire':
-   if os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE:return self.fail(403,'Empire pilot requires local SQLite studio mode.',user,csrf)
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1' and (os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE):return self.fail(403,'Business workspace is not enabled.',user,csrf)
    try:
     with db() as c:
      action=fields.get('action','');wid=fields.get('workspace','');code=''
