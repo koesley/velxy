@@ -17,10 +17,11 @@ jobs:
       - name: Compile all Python files
         run: python -m compileall -q .
       - name: V59 isolated tests
-        run: python -m unittest test_ascension_suite_v59 test_intelligence_suite_v60 -v
+        run: python -m unittest test_ascension_suite_v59 test_intelligence_suite_v60 test_omega_mission_v61 -v
       - name: Validate Render YAML and migration files exist
         run: |
           test -f render.yaml
           test -f migrations/v59_001_postgres.sql
           test -f migrations/v60_001_postgres.sql
+          test -f migrations/v61_001_postgres.sql
           test -f scripts/check_v59_render.py
