@@ -39,6 +39,28 @@ def insights(c,w):
         except (ValueError,TypeError):issues=[]
         if issues:findings.append(("Improve supplied website HTML","; ".join(str(x) for x in issues[:3]),"Review audit findings and update page markup."))
     return {"contacts":contacts,"open_deals":open_deals[0],"pipeline_cents":open_deals[1],"won_cents":won,"opportunities":findings}
+def search_knowledge(c,w,query):
+    """Search only this workspace's explicitly entered knowledge notes."""
+    terms=[term.lower() for term in query.split() if len(term)>1][:8]
+    if not terms:return []
+    matches=[]
+    for _,title,payload,_ in get(c,w,"knowledge",200):
+        try:note=json.loads(payload).get("note","")
+        except (ValueError,TypeError):continue
+        haystack=(title+" "+note).lower()
+        score=sum(term in haystack for term in terms)
+        if score:matches.append((score,title,note))
+    return sorted(matches,key=lambda row:-row[0])[:5]
+def sales_funnel(c,w):
+    rows=c.execute("SELECT stage,COUNT(*),COALESCE(SUM(cents),0) FROM v59_deals WHERE workspace=? GROUP BY stage",(w,)).fetchall()
+    return {stage:{"count":count,"cents":cents} for stage,count,cents in rows}
+def portal_preview(c,u,w,record_id):
+    """Authenticated internal-only draft preview; no public URL."""
+    check(c,u,w)
+    row=c.execute("SELECT title,payload FROM v60_records WHERE id=? AND workspace=? AND kind='portal'",(record_id,w)).fetchone()
+    if not row:raise ValueError("Draft not found")
+    intro=json.loads(row[1]).get("intro","")
+    return '<section class="panel"><h1>'+e(row[0])+'</h1><p>'+e(intro)+'</p><small>Private preview — not published</small></section>'
 def command(c,w,question):
     q=" ".join(question.lower().split())
     stats=insights(c,w)
@@ -48,9 +70,15 @@ def command(c,w,question):
         return f"{stats['open_deals']} open deals, total ${stats['pipeline_cents']/100:,.2f}."
     if q in ("revenue","won revenue","won deals"):
         return f"Recorded won deal value: ${stats['won_cents']/100:,.2f}. Not verified revenue."
+    if q.startswith("search knowledge "):
+        matches=search_knowledge(c,w,q[len("search knowledge "):])
+        return "; ".join(title+": "+note[:160] for _,title,note in matches) or "No matching business notes."
+    if q in ("sales funnel","deal stages"):
+        stages=sales_funnel(c,w)
+        return "; ".join(stage+": "+str(v["count"])+" deals" for stage,v in sorted(stages.items())) or "No deals recorded."
     if q in ("opportunities","show opportunities"):
         return "; ".join(x[0] for x in stats["opportunities"]) or "No rule-based opportunities found."
-    return "Unsupported request. Try: contacts, pipeline, revenue, opportunities."
+    return "Unsupported request. Try: contacts, pipeline, revenue, opportunities, sales funnel, search knowledge TERM."
 def act(c,u,w,f):
     check(c,u,w)
     kind=f.get("kind","")
