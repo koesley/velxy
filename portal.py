@@ -56,6 +56,7 @@ import sovereign_business_graph_v57
 import sovereign_lab_v57
 import sovereign_council_v57
 import sovereign_omniverse_v57
+import ascension_suite_v59
 import sovereign_nexus_v56
 import sovereign_workflow_runtime_v56
 import sovereign_workflows_v56
@@ -459,6 +460,7 @@ class Handler(BaseHTTPRequestHandler):
    else: upgrade_html=''
    body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section><section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
    if os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE: body+='<section class="panel"><h2>Site Studio</h2><a href="/site-studio">Create a company website draft</a></section>'
+   if os.getenv('VELXTRIA_V59_ENABLED','0')=='1' and persistent.REMOTE: body+='<section class="panel"><h2>Ascension V59</h2><a href="/ascension-v59">Open Business Intelligence Suite</a></section>'
    body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
    body+=upgrade_html
    if user['role']=='admin':
@@ -1341,6 +1343,17 @@ class Handler(BaseHTTPRequestHandler):
    company_id=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
    with db() as c: body=site_studio.preview(c,user['id'],company_id)
    return self.respond(200,body) if body else self.fail(404,'Draft not found',user,csrf)
+  if p=='/ascension-v59':
+   if not (os.getenv('VELXTRIA_V59_ENABLED','0')=='1' and persistent.REMOTE):return self.fail(403,'V59 is not enabled.',user,csrf)
+   q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
+   try:
+    with db() as c:
+     if not wid:
+      row=c.execute('SELECT workspace_id FROM empire_members WHERE user_id=? LIMIT 1',(user['id'],)).fetchone()
+      wid=row[0] if row else ''
+     body=ascension_suite_v59.render(c,user['id'],wid,csrf)
+   except ValueError as exc:return self.fail(400,str(exc),user,csrf)
+   return self.respond(200,shell('VELXTRIA Ascension V59',body,user,csrf))
   if p=='/workspace':
    with db() as c: body=intelligence_v45.render(c,user['id'])+business_v4.render(c,user['id'],csrf)+business_v3.render(c,user['id'],csrf)
    return self.respond(200,shell('Business Workspace',body,user,csrf))
@@ -1564,6 +1577,13 @@ class Handler(BaseHTTPRequestHandler):
   if not ident:return
   user,csrf,token=ident
   if not hmac.compare_digest(fields.get('csrf',''),csrf):return self.fail(403,'Session verification failed.',user,csrf)
+  if p=='/ascension-v59':
+   if not (os.getenv('VELXTRIA_V59_ENABLED','0')=='1' and persistent.REMOTE):return self.fail(403,'V59 is not enabled.',user,csrf)
+   wid=fields.get('workspace','')
+   try:
+    with db() as c:ascension_suite_v59.act(c,user['id'],wid,fields)
+   except ValueError as exc:return self.fail(400,str(exc),user,csrf)
+   return self.redirect('/ascension-v59?w='+urllib.parse.quote(wid,safe=''))
   if p=='/logout':
    with db() as c:c.execute('DELETE FROM sessions WHERE token_hash=?',(hashlib.sha256(token.encode()).hexdigest(),))
    secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
