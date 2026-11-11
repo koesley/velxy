@@ -54,6 +54,7 @@ import sovereign_genesis_v56
 import sovereign_opportunities_v57
 import business_os_v59
 import business_agents_v59
+import business_intelligence_v60
 import sovereign_business_graph_v57
 import sovereign_lab_v57
 import sovereign_council_v57
@@ -476,6 +477,17 @@ class Handler(BaseHTTPRequestHandler):
     with db() as c:body=sovereign_gate_v35.render(c,user['id'],csrf,q.get('w',[''])[0],DATA_ROOT)
    except ValueError as exc:return self.fail(404,str(exc),user,csrf)
    return self.respond(200,shell('Sovereign Gate V35',body,user,csrf))
+  if p=='/business-intelligence-v60':
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
+   q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
+   try:
+    with db() as c:
+     if not wid:
+      row=c.execute('SELECT workspace_id FROM empire_members WHERE user_id=? LIMIT 1',(user['id'],)).fetchone();wid=row[0] if row else ''
+     if not wid:raise ValueError('Create a workspace first')
+     body=business_intelligence_v60.render(c,user['id'],wid,csrf)
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+   return self.respond(200,shell('Business Intelligence V60',body,user,csrf))
   if p in ('/business-os-v59','/business-os-v59.csv','/business-agents-v59'):
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS V59 is not enabled.',user,csrf)
    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
@@ -1106,6 +1118,13 @@ class Handler(BaseHTTPRequestHandler):
      elif action=='measure':sovereign_lab_v57.measure(c,user['id'],wid,pid,fields.get('observed',''),fields.get('evidence',''))
      else:raise ValueError('Unknown Decision Lab action')
     return self.redirect('/sovereign-lab-v57?w='+urllib.parse.quote(wid,safe=''))
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+  if p=='/business-intelligence-v60':
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
+   wid=fields.get('workspace','')
+   try:
+    with db() as c:business_intelligence_v60.enqueue(c,user['id'],wid,fields.get('code',''))
+    return self.redirect('/business-intelligence-v60?w='+urllib.parse.quote(wid,safe=''))
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
   if p in ('/business-os-v59','/business-agents-v59'):
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS V59 is not enabled.',user,csrf)
