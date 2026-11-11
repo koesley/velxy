@@ -56,6 +56,7 @@ import business_os_v59
 import business_agents_v59
 import business_intelligence_v60
 import agent_engine_v61
+import business_collaboration_v62
 import sovereign_business_graph_v57
 import sovereign_lab_v57
 import sovereign_council_v57
@@ -440,6 +441,13 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/style.css':return self.respond(200,(ROOT/'style.css').read_bytes()+(LANDING_CSS+WORKSPACE_CSS+V51_CSS+sovereign_v56.CSS+omega_intelligence_v55.CSS+aegis_v54.CSS+sentinel_v53.CSS+titan_intelligence_v52.CSS+ascendancy_v51.CSS+singularity_v6.CSS+omni_v7.CSS+sovereign_v8.CSS+constellation_v9.CSS+trinity_v10.CSS+omnipotence_v12.CSS+singularity_x_v13.CSS+prometheus_v14.CSS+omega_v15.CSS+evolution_v16.CSS+phoenix_v17.CSS+infinity_v18.CSS+ascension_v28.CSS+integration_v29.CSS+atlas_v38.CSS+nexus_reforged_v41.CSS).encode('utf-8'),'text/css; charset=utf-8')
   if p in ('/site-studio.css','/site-preview.css') and os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE:
    return self.respond(200,(ROOT/p.lstrip('/')).read_bytes(),'text/css; charset=utf-8')
+  if p.startswith('/faq-v62/'):
+   token=p[len('/faq-v62/'):]
+   if '/' in token:return self.respond(404,'Not found','text/plain')
+   question=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('q',[''])[0][:200]
+   with db() as c:body=business_collaboration_v62.widget_html(c,token,question)
+   if body is None:return self.respond(404,'FAQ not available','text/plain')
+   return self.respond(200,body,'text/html; charset=utf-8',headers=[('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors *"),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff')])
   user,csrf,_=self.identity()
   if p=='/login':return self.respond(200,shell('Sign in','<section class="panel narrow"><h1>Welcome back</h1><form method="post" action="/login"><label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" required></label><button>Sign in</button></form></section>'))
   if p=='/register':return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form></section>'))
@@ -478,6 +486,17 @@ class Handler(BaseHTTPRequestHandler):
     with db() as c:body=sovereign_gate_v35.render(c,user['id'],csrf,q.get('w',[''])[0],DATA_ROOT)
    except ValueError as exc:return self.fail(404,str(exc),user,csrf)
    return self.respond(200,shell('Sovereign Gate V35',body,user,csrf))
+  if p=='/business-collaboration-v62':
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
+   q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
+   try:
+    with db() as c:
+     if not wid:
+      row=c.execute('SELECT workspace_id FROM empire_members WHERE user_id=? LIMIT 1',(user['id'],)).fetchone();wid=row[0] if row else ''
+     if not wid:raise ValueError('Create a workspace first')
+     body=business_collaboration_v62.render(c,user['id'],wid,csrf)
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+   return self.respond(200,shell('Website FAQ & Collaboration V62',body,user,csrf))
   if p=='/agent-engine-v61':
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
@@ -1147,6 +1166,19 @@ class Handler(BaseHTTPRequestHandler):
      elif fields.get('action')=='task':agent_engine_v61.approve_as_task(c,user['id'],wid,fields.get('run',''),fields.get('role',''))
      else:raise ValueError('Unknown action')
     return self.redirect('/agent-engine-v61?w='+urllib.parse.quote(wid,safe=''))
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+  if p=='/business-collaboration-v62':
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
+   wid=fields.get('workspace','')
+   try:
+    with db() as c:
+     action=fields.get('action','')
+     if action=='collaborate':business_collaboration_v62.collaborate(c,user['id'],wid,fields.get('objective',''))
+     elif action=='enable':business_collaboration_v62.publish(c,user['id'],wid,True)
+     elif action=='disable':business_collaboration_v62.publish(c,user['id'],wid,False)
+     elif action=='rotate':business_collaboration_v62.rotate(c,user['id'],wid)
+     else:raise ValueError('Unknown action')
+    return self.redirect('/business-collaboration-v62?w='+urllib.parse.quote(wid,safe=''))
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
   if p in ('/business-os-v59','/business-agents-v59'):
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS V59 is not enabled.',user,csrf)
