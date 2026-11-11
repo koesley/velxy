@@ -7,6 +7,7 @@ import html
 import json
 import secrets
 import time
+import omega_reasoning_v63
 from omega_mission_v61 import check, record
 
 TOOLS={
@@ -34,7 +35,7 @@ def produce(role,objective,title,description):
     if role=="Guardian":
         return prefix+"Risk and permissions review\n- Verify data ownership and consent.\n- Require approval before publication, spending, or outreach.\n- Limit access by workspace.\n- Log changes and provide a rollback procedure."
     raise ValueError("Unsupported agent role")
-def run(c,user,w,task_id):
+def run(c,user,w,task_id,ai=False):
     check(c,user,w)
     row=c.execute(
       "SELECT t.id,t.mission,t.role,t.title,t.description,t.status,m.objective,m.status "
@@ -49,8 +50,10 @@ def run(c,user,w,task_id):
     # Exactly one output per approved task. The transaction must commit atomically.
     if c.execute("SELECT 1 FROM v62_runs WHERE workspace=? AND task=? AND status='completed'",(w,tid)).fetchone():
         raise ValueError("Task already has a completed execution")
-    output=produce(role,objective,title,description)
+    if ai and not omega_reasoning_v63.enabled():raise ValueError('AI reasoning is not configured')
+    output=(omega_reasoning_v63.generate(role,objective,title,description) if ai else produce(role,objective,title,description))
     if len(output)>12000:raise ValueError("Output limit exceeded")
+    if ai:tool="ai_"+tool
     rid=secrets.token_hex(16)
     c.execute("INSERT INTO v62_runs(id,workspace,mission,task,tool,status,output,actor,created) VALUES (?,?,?,?,?,?,?,?,?)",
       (rid,w,mid,tid,tool,"completed",output,user,int(time.time())))
@@ -59,7 +62,7 @@ def run(c,user,w,task_id):
 def render(c,user,w,csrf):
     check(c,user,w)
     hidden=f'<input type="hidden" name="csrf" value="{e(csrf)}"><input type="hidden" name="workspace" value="{e(w)}">'
-    out=['<section class="hero"><h1>OMEGA V62 · Execution Engine</h1><p>Approved tasks generate internal drafts and reports. No autonomous external actions or paid AI calls.</p></section>']
+    out=['<section class="hero"><h1>OMEGA V62 · Execution Engine</h1><p>Approved tasks generate internal drafts and reports. No external actions. Optional AI drafts may incur provider costs.</p></section>']
     rows=c.execute(
       "SELECT t.id,t.title,t.role,t.status,m.objective,m.status "
       "FROM v61_tasks t JOIN v61_missions m ON m.id=t.mission AND m.workspace=t.workspace "
@@ -69,6 +72,8 @@ def render(c,user,w,csrf):
         results=c.execute("SELECT tool,output FROM v62_runs WHERE workspace=? AND task=? ORDER BY created DESC LIMIT 3",(w,tid)).fetchall()
         if status=="approved" and mission_status=="active" and not results:
             out.append('<form method="post" action="/omega-execution-v62">'+hidden+f'<input type="hidden" name="task" value="{e(tid)}"><button>Run approved internal tool</button></form>')
+        if status=="approved" and mission_status=="active" and not results and omega_reasoning_v63.enabled():
+            out.append('<form method="post" action="/omega-execution-v62">'+hidden+f'<input type="hidden" name="task" value="{e(tid)}"><input type="hidden" name="ai" value="1"><button>Generate AI draft (API cost)</button></form>')
         for tool,output in results:out.append(f'<h4>{e(tool)}</h4><pre style="white-space:pre-wrap">{e(output)}</pre>')
         out.append('</section>')
     return "".join(out)
