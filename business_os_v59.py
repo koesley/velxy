@@ -43,7 +43,7 @@ def add_lead(c, uid, wid, name, contact, source, value):
     if not math.isfinite(amount) or amount < 0 or amount > 1000000000:
         raise ValueError("Invalid value")
     lid=secrets.token_hex(12)
-    with c:
+    if True:
         c.execute("INSERT INTO bos59_leads VALUES(?,?,?,?,?,?,?,?,?)",
                   (lid,wid,name,contact,source,amount,"new",int(time.time()),int(time.time())))
         core.audit(c,uid,wid,"bos_lead_created",lid)
@@ -54,7 +54,7 @@ def update_lead(c,uid,wid,lid,status):
     init(c)
     if status not in STATES:
         raise ValueError("Invalid lead status")
-    with c:
+    if True:
         row=c.execute("SELECT status FROM bos59_leads WHERE id=? AND workspace_id=?",(lid,wid)).fetchone()
         if not row:
             raise ValueError("Lead not found")
@@ -69,7 +69,7 @@ def propose(c,uid,wid,lid,message):
     if not c.execute("SELECT 1 FROM bos59_leads WHERE id=? AND workspace_id=?",(lid,wid)).fetchone():
         raise ValueError("Lead not found")
     aid=secrets.token_hex(12)
-    with c:
+    if True:
         c.execute("INSERT INTO bos59_actions VALUES(?,?,?,?,?,?,?,?,?,?)",
                   (aid,wid,lid,message,"pending","",uid,None,int(time.time()),None))
         core.audit(c,uid,wid,"bos_message_proposed",aid)
@@ -81,7 +81,7 @@ def review(c,uid,wid,aid,decision,reason):
     if decision not in ("approved","rejected"):
         raise ValueError("Invalid decision")
     reason=_text(reason,500)
-    with c:
+    if True:
         row=c.execute("SELECT decision FROM bos59_actions WHERE id=? AND workspace_id=?",(aid,wid)).fetchone()
         if not row or row[0] != "pending":
             raise ValueError("Action not pending")
