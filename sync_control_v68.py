@@ -65,7 +65,7 @@ def render(c,uid,wid,csrf):
     role,policy,runs=overview(c,uid,wid)
     h=lambda v:html.escape(str(v),quote=True)
     hidden='<input type="hidden" name="csrf" value="'+h(csrf)+'"><input type="hidden" name="workspace" value="'+h(wid)+'">'
-    out=['<section class="panel"><h1>VELXTRIA V68 · Sync Control Center</h1><p>Manage HubSpot synchronization policy and inspect import history. Scheduled execution requires a separately configured trusted worker; setting a cadence alone does not start automatic imports.</p><p>Current policy: '+h(policy[0] if policy else "off")+'</p></section>']
+    out=['<section class="panel"><h1>VELXTRIA V68 · Sync Control Center</h1><p>Manage HubSpot synchronization policy and inspect import history. V69 can execute due policies hourly through GitHub Actions once repository secrets are configured. A cadence alone does not activate automation.</p><p>Current policy: '+h(policy[0] if policy else "off")+'</p></section>']
     if role=="owner":
         out.append('<section class="panel"><h2>Schedule preference</h2><form method="post" action="/sync-control-v68">'+hidden+'<select name="cadence">'+''.join('<option value="'+h(k)+'"'+(' selected' if policy and policy[0]==k else '')+'>'+h(k.title())+'</option>' for k in CADENCES)+'</select><button name="action" value="policy">Save policy</button></form><h2>Import now</h2><form method="post" action="/sync-control-v68">'+hidden+'<button name="action" value="run">Sync HubSpot now</button></form></section>')
     out.append('<section class="panel"><h2>Recent sync history</h2>')

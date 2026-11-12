@@ -1,0 +1,28 @@
+name: V69 Scheduled HubSpot Sync
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VELXTRIA_DATABASE_URL: ${{ secrets.VELXTRIA_DATABASE_URL }}
+      VELXTRIA_SUPABASE_URL: ${{ secrets.VELXTRIA_SUPABASE_URL }}
+      VELXTRIA_SUPABASE_SERVICE_KEY: ${{ secrets.VELXTRIA_SUPABASE_SERVICE_KEY }}
+      VELXTRIA_V67_HUBSPOT_TOKEN: ${{ secrets.VELXTRIA_V67_HUBSPOT_TOKEN }}
+      VELXTRIA_V69_WORKSPACE_ID: ${{ secrets.VELXTRIA_V69_WORKSPACE_ID }}
+      VELXTRIA_REQUIRE_PERSISTENCE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PostgreSQL driver
+        run: python -m pip install 'psycopg[binary]>=3,<4'
+      - name: Run due sync policies
+        if: ${{ env.VELXTRIA_DATABASE_URL != '' && env.VELXTRIA_SUPABASE_URL != '' && env.VELXTRIA_SUPABASE_SERVICE_KEY != '' && env.VELXTRIA_V67_HUBSPOT_TOKEN != '' && env.VELXTRIA_V69_WORKSPACE_ID != '' }}
+        run: python scheduled_sync_v69.py
