@@ -64,6 +64,7 @@ import native_integrations_v66
 import hubspot_v67
 import sync_control_v68
 import hubspot_oauth_v70
+import integration_health_v72
 import sovereign_business_graph_v57
 import sovereign_lab_v57
 import sovereign_council_v57
@@ -500,6 +501,17 @@ class Handler(BaseHTTPRequestHandler):
     with db() as c:body=sovereign_gate_v35.render(c,user['id'],csrf,q.get('w',[''])[0],DATA_ROOT)
    except ValueError as exc:return self.fail(404,str(exc),user,csrf)
    return self.respond(200,shell('Sovereign Gate V35',body,user,csrf))
+  if p=='/integration-health-v72':
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
+   q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
+   try:
+    with db() as c:
+     if not wid:
+      row=c.execute('SELECT workspace_id FROM empire_members WHERE user_id=? LIMIT 1',(user['id'],)).fetchone();wid=row[0] if row else ''
+     if not wid:raise ValueError('Create a workspace first')
+     body=integration_health_v72.render(c,user['id'],wid)
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+   return self.respond(200,shell('Integration Health V72',body,user,csrf))
   if p=='/hubspot-oauth-v70/callback':
    if not user:return self.redirect('/login')
    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -1325,7 +1337,7 @@ class Handler(BaseHTTPRequestHandler):
      action=fields.get('action','')
      if action=='connect':url=hubspot_oauth_v70.begin(c,user['id'],wid)
      elif action=='disconnect':hubspot_oauth_v70.disconnect(c,user['id'],wid)
-     elif action=='import':hubspot_oauth_v70.import_contacts(c,user['id'],wid)
+     elif action=='import':integration_health_v72.import_all(c,user['id'],wid)
      else:raise ValueError('Unknown action')
     if action=='connect':return self.redirect(url)
     return self.redirect('/hubspot-oauth-v70?w='+urllib.parse.quote(wid,safe=''))
