@@ -1,4 +1,5 @@
 import os
+import time
 import sqlite3
 import unittest
 from unittest.mock import patch
@@ -18,7 +19,7 @@ class IntegrationHealthTests(unittest.TestCase):
         from urllib.parse import urlsplit,parse_qs
         url=oauth.begin(self.c,1,"a",now=100)
         state=parse_qs(urlsplit(url).query)["state"][0]
-        oauth.finish(self.c,1,state,"code",requester=lambda *args:{"access_token":"private-a","refresh_token":"refresh-a","expires_in":999999999},now=110)
+        oauth.finish(self.c,1,state,"code",requester=lambda *args:{"access_token":"private-a","refresh_token":"refresh-a","expires_in":999999999},now=int(time.time()))
     def tearDown(self):
         self.access.stop();self.audit.stop();self.env.stop();self.c.close()
     def test_multi_page_import_dedupe(self):
