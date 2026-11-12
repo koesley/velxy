@@ -9,6 +9,7 @@ import sync_control_v68 as sync
 import hubspot_oauth_v70 as oauth
 import integration_health_v72 as health
 import sync_retries_v73 as retries
+import sync_recovery_v74 as recovery
 import business_os_v59 as crm
 
 def due(c,now,limit):
@@ -66,6 +67,8 @@ def main():
     # OAuth credentials are decrypted per workspace with the stable Fernet key.
     oauth.settings()
     from portal import db
+    with db() as c:recovered=recovery.recover(c)
+    print('V74 recovered interrupted retries:',recovered)
     results=tick(db)
     retry_results=retries.tick(db)
     print("V73 retries: processed",len(retry_results))
