@@ -59,6 +59,7 @@ import agent_engine_v61
 import business_collaboration_v62
 import workflow_v63
 import customer_assistant_v64
+import integrations_v65
 import sovereign_business_graph_v57
 import sovereign_lab_v57
 import sovereign_council_v57
@@ -495,6 +496,17 @@ class Handler(BaseHTTPRequestHandler):
     with db() as c:body=sovereign_gate_v35.render(c,user['id'],csrf,q.get('w',[''])[0],DATA_ROOT)
    except ValueError as exc:return self.fail(404,str(exc),user,csrf)
    return self.respond(200,shell('Sovereign Gate V35',body,user,csrf))
+  if p=='/integrations-v65':
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
+   q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
+   try:
+    with db() as c:
+     if not wid:
+      row=c.execute('SELECT workspace_id FROM empire_members WHERE user_id=? LIMIT 1',(user['id'],)).fetchone();wid=row[0] if row else ''
+     if not wid:raise ValueError('Create a workspace first')
+     body=integrations_v65.render(c,user['id'],wid,csrf)
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+   return self.respond(200,shell('Integrations V65',body,user,csrf))
   if p=='/workflow-v63':
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
@@ -1210,6 +1222,15 @@ class Handler(BaseHTTPRequestHandler):
      elif action=='outcome':workflow_v63.record_outcome(c,user['id'],wid,fields.get('job',''),fields.get('kind',''),fields.get('amount',''),fields.get('notes',''))
      else:raise ValueError('Unknown action')
     return self.redirect('/workflow-v63?w='+urllib.parse.quote(wid,safe=''))
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+  if p=='/integrations-v65':
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
+   wid=fields.get('workspace','')
+   try:
+    with db() as c:
+     if fields.get('action')!='dispatch':raise ValueError('Unknown action')
+     integrations_v65.dispatch(c,user['id'],wid,fields.get('job',''))
+    return self.redirect('/integrations-v65?w='+urllib.parse.quote(wid,safe=''))
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
   if p in ('/business-os-v59','/business-agents-v59'):
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS V59 is not enabled.',user,csrf)
