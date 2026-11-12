@@ -21,9 +21,9 @@ def claim(c,wid,uid,cadence,due,now):
     # Compare-and-swap ensures only one worker wins each due slot.
     interval=sync.CADENCES[cadence]
     result=c.execute("""UPDATE v68_sync_policies SET next_due=?
-        WHERE workspace_id=? AND updated_by=? AND cadence=? AND next_due=?""",
+        WHERE workspace_id=? AND updated_by=? AND cadence=? AND next_due=? RETURNING workspace_id""",
         (now+interval,wid,uid,cadence,due))
-    return result.rowcount==1
+    return result.fetchone() is not None
 
 def tick(connect,fetcher=None,now=None,limit=25):
     now=int(time.time() if now is None else now)
