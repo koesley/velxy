@@ -7,6 +7,7 @@ import secrets
 import time
 import hubspot_oauth_v70 as oauth
 import integration_health_v72 as health
+import contact_checkpoints_v75 as checkpoints
 import sync_control_v68 as sync
 import business_os_v59 as crm
 
@@ -66,7 +67,7 @@ def tick(connect,fetcher=None,requester=None,now=None,limit=25):
             sync.setup(c)
             c.execute("INSERT INTO v68_sync_runs VALUES(?,?,?,?,?,?,?)",(runid,wid,uid,"started",0,now,0))
         try:
-            with connect() as c:added=health.import_all(c,uid,wid,fetcher=fetcher,requester=requester)
+            added=checkpoints.import_batch(connect,uid,wid,fetcher=fetcher,requester=requester)
             ok=True
         except Exception:
             added=0;ok=False
