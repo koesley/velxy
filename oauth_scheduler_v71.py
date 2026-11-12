@@ -10,6 +10,7 @@ import hubspot_oauth_v70 as oauth
 import integration_health_v72 as health
 import sync_retries_v73 as retries
 import sync_recovery_v74 as recovery
+import contact_checkpoints_v75 as checkpoints
 import business_os_v59 as crm
 
 def due(c,now,limit):
@@ -45,8 +46,7 @@ def tick(connect,fetcher=None,requester=None,now=None,limit=25):
             c.execute("INSERT INTO v68_sync_runs VALUES(?,?,?,?,?,?,?)",
                       (rid,wid,uid,"started",0,now,0))
         try:
-            with connect() as c:
-                added=health.import_all(c,uid,wid,fetcher=fetcher,requester=requester)
+            added=checkpoints.import_batch(connect,uid,wid,fetcher=fetcher,requester=requester)
             with connect() as c:
                 c.execute("UPDATE v68_sync_runs SET state='success',added=?,finished=? WHERE id=? AND workspace_id=?",
                           (added,int(time.time()),rid,wid))
