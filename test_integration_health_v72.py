@@ -17,7 +17,7 @@ class IntegrationHealthTests(unittest.TestCase):
         self.audit=patch.object(crm.core,"audit")
         self.access.start();self.audit.start()
         from urllib.parse import urlsplit,parse_qs
-        url=oauth.begin(self.c,1,"a",now=100)
+        url=oauth.begin(self.c,1,"a",now=int(time.time()))
         state=parse_qs(urlsplit(url).query)["state"][0]
         oauth.finish(self.c,1,state,"code",requester=lambda *args:{"access_token":"private-a","refresh_token":"refresh-a","expires_in":999999999},now=int(time.time()))
     def tearDown(self):
