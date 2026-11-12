@@ -58,6 +58,7 @@ import business_intelligence_v60
 import agent_engine_v61
 import business_collaboration_v62
 import workflow_v63
+import customer_assistant_v64
 import sovereign_business_graph_v57
 import sovereign_lab_v57
 import sovereign_council_v57
@@ -442,6 +443,13 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/style.css':return self.respond(200,(ROOT/'style.css').read_bytes()+(LANDING_CSS+WORKSPACE_CSS+V51_CSS+sovereign_v56.CSS+omega_intelligence_v55.CSS+aegis_v54.CSS+sentinel_v53.CSS+titan_intelligence_v52.CSS+ascendancy_v51.CSS+singularity_v6.CSS+omni_v7.CSS+sovereign_v8.CSS+constellation_v9.CSS+trinity_v10.CSS+omnipotence_v12.CSS+singularity_x_v13.CSS+prometheus_v14.CSS+omega_v15.CSS+evolution_v16.CSS+phoenix_v17.CSS+infinity_v18.CSS+ascension_v28.CSS+integration_v29.CSS+atlas_v38.CSS+nexus_reforged_v41.CSS).encode('utf-8'),'text/css; charset=utf-8')
   if p in ('/site-studio.css','/site-preview.css') and os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE:
    return self.respond(200,(ROOT/p.lstrip('/')).read_bytes(),'text/css; charset=utf-8')
+  if p.startswith('/assistant-v64/'):
+   token=p[len('/assistant-v64/'):]
+   if '/' in token:return self.respond(404,'Not found','text/plain')
+   question=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('q',[''])[0][:400]
+   with db() as c:body=customer_assistant_v64.page(c,token,question)
+   if body is None:return self.respond(404,'Assistant not available','text/plain')
+   return self.respond(200,body,'text/html; charset=utf-8',headers=[('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors *"),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff')])
   if p.startswith('/faq-v62/'):
    token=p[len('/faq-v62/'):]
    if '/' in token:return self.respond(404,'Not found','text/plain')

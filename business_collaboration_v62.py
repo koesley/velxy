@@ -101,6 +101,7 @@ def render(c,uid,wid,csrf):
     if role=="owner":
         out.append('<section class="panel"><h2>Public FAQ widget</h2><p>Status: '+('Published' if widget and widget[1] else 'Disabled')+'</p>')
         if widget:
+            out.append('<p>Conversational assistant iframe (replace YOUR_DOMAIN):</p><pre>&lt;iframe src="https://YOUR_DOMAIN/assistant-v64/'+h(widget[0])+'" title="Business Assistant" loading="lazy"&gt;&lt;/iframe&gt;</pre>')
             out.append('<p>Embeddable iframe (replace YOUR_DOMAIN with your actual website domain):</p><pre>&lt;iframe src="https://YOUR_DOMAIN/faq-v62/'+h(widget[0])+'" title="Business FAQ" loading="lazy"&gt;&lt;/iframe&gt;</pre>')
         out.append('<form method="post" action="/business-collaboration-v62">'+hidden+'<button name="action" value="enable">Publish FAQ</button><button name="action" value="disable">Disable FAQ</button><button name="action" value="rotate">Rotate widget token</button></form></section>')
     if role in ("owner","editor"):
