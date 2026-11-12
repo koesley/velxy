@@ -1,0 +1,33 @@
+name: V71 Workspace OAuth Sync
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: velxtria-oauth-scheduler
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VELXTRIA_DATABASE_URL: ${{ secrets.VELXTRIA_DATABASE_URL }}
+      VELXTRIA_SUPABASE_URL: ${{ secrets.VELXTRIA_SUPABASE_URL }}
+      VELXTRIA_SUPABASE_SERVICE_KEY: ${{ secrets.VELXTRIA_SUPABASE_SERVICE_KEY }}
+      VELXTRIA_V70_HUBSPOT_CLIENT_ID: ${{ secrets.VELXTRIA_V70_HUBSPOT_CLIENT_ID }}
+      VELXTRIA_V70_HUBSPOT_CLIENT_SECRET: ${{ secrets.VELXTRIA_V70_HUBSPOT_CLIENT_SECRET }}
+      VELXTRIA_V70_HUBSPOT_REDIRECT_URI: ${{ secrets.VELXTRIA_V70_HUBSPOT_REDIRECT_URI }}
+      VELXTRIA_V70_ENCRYPTION_KEY: ${{ secrets.VELXTRIA_V70_ENCRYPTION_KEY }}
+      VELXTRIA_REQUIRE_PERSISTENCE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Process due OAuth workspaces
+        if: ${{ env.VELXTRIA_DATABASE_URL != '' && env.VELXTRIA_SUPABASE_URL != '' && env.VELXTRIA_SUPABASE_SERVICE_KEY != '' && env.VELXTRIA_V70_HUBSPOT_CLIENT_ID != '' && env.VELXTRIA_V70_HUBSPOT_CLIENT_SECRET != '' && env.VELXTRIA_V70_HUBSPOT_REDIRECT_URI != '' && env.VELXTRIA_V70_ENCRYPTION_KEY != '' }}
+        run: python oauth_scheduler_v71.py
