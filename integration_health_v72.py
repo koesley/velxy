@@ -7,6 +7,7 @@ import urllib.request
 import hubspot_oauth_v70 as oauth
 import sync_control_v68 as sync
 import business_os_v59 as crm
+import sync_recovery_v74 as recovery
 
 MAX_PAGES=10
 PAGE_SIZE=100
@@ -63,6 +64,7 @@ def health(c,uid,wid,now=None):
     return {"connected":bool(connection),"token_status":("not_connected" if not connection else "refresh_due" if connection[0]<=now+60 else "valid"),"cadence":policy[0] if policy else "off","next_due":policy[1] if policy else 0,"last_state":last[0] if last else "never","last_added":last[1] if last else 0,"last_run":last[2] if last else 0}
 
 def render(c,uid,wid):
+    reliability=recovery.render(c,uid,wid)
     d=health(c,uid,wid)
     h=lambda x:html.escape(str(x),quote=True)
     def stamp(value):return time.strftime("%Y-%m-%d %H:%M UTC",time.gmtime(value)) if value else "—"
@@ -72,4 +74,4 @@ def render(c,uid,wid):
         '<p>Schedule: '+h(d["cadence"])+' · Next due: '+h(stamp(d["next_due"]))+'</p>'
         '<p>Last sync: '+h(d["last_state"])+' · '+h(stamp(d["last_run"]))+
         ' · Imported: '+h(d["last_added"])+'</p>'
-        '<p>Imports fetch up to 1,000 contacts across 10 pages per run.</p></section>')
+        '<p>Imports fetch up to 1,000 contacts across 10 pages per run.</p></section>'+reliability)
