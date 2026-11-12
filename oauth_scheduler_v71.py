@@ -7,6 +7,7 @@ import os
 import time
 import sync_control_v68 as sync
 import hubspot_oauth_v70 as oauth
+import integration_health_v72 as health
 import business_os_v59 as crm
 
 def due(c,now,limit):
@@ -43,7 +44,7 @@ def tick(connect,fetcher=None,requester=None,now=None,limit=25):
                       (rid,wid,uid,"started",0,now,0))
         try:
             with connect() as c:
-                added=oauth.import_contacts(c,uid,wid,fetcher=fetcher,requester=requester)
+                added=health.import_all(c,uid,wid,fetcher=fetcher,requester=requester)
             with connect() as c:
                 c.execute("UPDATE v68_sync_runs SET state='success',added=?,finished=? WHERE id=? AND workspace_id=?",
                           (added,int(time.time()),rid,wid))
