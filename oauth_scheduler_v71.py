@@ -8,6 +8,7 @@ import time
 import sync_control_v68 as sync
 import hubspot_oauth_v70 as oauth
 import integration_health_v72 as health
+import sync_retries_v73 as retries
 import business_os_v59 as crm
 
 def due(c,now,limit):
@@ -55,6 +56,7 @@ def tick(connect,fetcher=None,requester=None,now=None,limit=25):
                 c.execute("UPDATE v68_sync_runs SET state='failed',finished=? WHERE id=? AND workspace_id=?",
                           (int(time.time()),rid,wid))
                 crm.core.audit(c,uid,wid,"v71_oauth_sync_failed",rid)
+                retries.enqueue(c,wid,uid,now=now)
             results.append((wid,"failed",0))
     return results
 
@@ -65,6 +67,8 @@ def main():
     oauth.settings()
     from portal import db
     results=tick(db)
+    retry_results=retries.tick(db)
+    print("V73 retries: processed",len(retry_results))
     print("V71 OAuth sync: processed",len(results),"succeeded",sum(r[1]=="success" for r in results),"failed",sum(r[1]=="failed" for r in results))
 
 if __name__=="__main__":main()
