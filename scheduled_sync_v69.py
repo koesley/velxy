@@ -27,7 +27,7 @@ def claim(c,wid,uid,cadence,due,now):
 
 def tick(connect,fetcher=None,now=None,limit=25):
     now=int(time.time() if now is None else now)
-    # Claim in a short transaction; never hold a database lock across network I/O.
+    # Fail closed: a single shared HubSpot token must not sync unrelated tenants.\n    allowed=os.getenv('VELXTRIA_V69_WORKSPACE_ID','').strip()\n    if not allowed:raise ValueError('V69 workspace allowlist is not configured')\n    # Claim in a short transaction; never hold a database lock across network I/O.
     with connect() as c:
         candidates=due_policies(c,now,limit)
     results=[]
