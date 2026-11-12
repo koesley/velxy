@@ -25,7 +25,7 @@ class SchedulerTests(unittest.TestCase):
             sync.set_policy(c,1,"b","weekly",now=100)
         def fetch(url,token):
             return {"results":[{"properties":{"firstname":"Ada","lastname":"Lovelace","email":"ada@example.com"}}]}
-        with patch.dict(os.environ,{"VELXTRIA_V67_HUBSPOT_TOKEN":"long-enough-test-token"}):
+        with patch.dict(os.environ,{"VELXTRIA_V67_HUBSPOT_TOKEN":"long-enough-test-token","VELXTRIA_V69_WORKSPACE_ID":"a"}):
             result=worker.tick(self.connect,fetcher=fetch,now=86500)
             self.assertEqual(result,[("a","success",1)])
             self.assertEqual(worker.tick(self.connect,fetcher=fetch,now=86500),[])
@@ -34,7 +34,7 @@ class SchedulerTests(unittest.TestCase):
             self.assertEqual(len(sync.overview(c,1,"b")[2]),0)
     def test_disabled_not_due(self):
         with self.connect() as c:sync.set_policy(c,1,"a","off",now=100)
-        self.assertEqual(worker.tick(self.connect,now=100000),[])
+        with patch.dict(os.environ,{"VELXTRIA_V69_WORKSPACE_ID":"a"}):self.assertEqual(worker.tick(self.connect,now=100000),[])
     def test_failure_does_not_leak_and_no_immediate_retry(self):
         with self.connect() as c:sync.set_policy(c,1,"a","daily",now=100)
         with patch.dict(os.environ,{"VELXTRIA_V67_HUBSPOT_TOKEN":"long-enough-test-token"}):
