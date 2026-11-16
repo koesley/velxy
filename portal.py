@@ -446,6 +446,15 @@ class Handler(BaseHTTPRequestHandler):
   if urllib.parse.urlsplit(self.path).path == '/healthz': return self.respond(200,'ok','text/plain')
   if self.preview_guard(): return
   p=urllib.parse.urlsplit(self.path).path
+  if p=='/health/db':
+   if os.getenv('VELXTRIA_DEPLOYMENT_MODE') != 'render-preview':
+    return self.respond(404,'Not found','text/plain')
+   try:
+    import verify_database
+    status=verify_database.check()
+   except Exception:
+    status='failed'
+   return self.respond(200 if status=='connected' else 503,status,'text/plain')
   if p=='/style.css':return self.respond(200,(ROOT/'style.css').read_bytes()+(LANDING_CSS+WORKSPACE_CSS+V51_CSS+sovereign_v56.CSS+omega_intelligence_v55.CSS+aegis_v54.CSS+sentinel_v53.CSS+titan_intelligence_v52.CSS+ascendancy_v51.CSS+singularity_v6.CSS+omni_v7.CSS+sovereign_v8.CSS+constellation_v9.CSS+trinity_v10.CSS+omnipotence_v12.CSS+singularity_x_v13.CSS+prometheus_v14.CSS+omega_v15.CSS+evolution_v16.CSS+phoenix_v17.CSS+infinity_v18.CSS+ascension_v28.CSS+integration_v29.CSS+atlas_v38.CSS+nexus_reforged_v41.CSS).encode('utf-8'),'text/css; charset=utf-8')
   if p in ('/site-studio.css','/site-preview.css') and os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE:
    return self.respond(200,(ROOT/p.lstrip('/')).read_bytes(),'text/css; charset=utf-8')
