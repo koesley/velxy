@@ -1747,7 +1747,28 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/operator':
    with db() as c: body=operator_v5.render(c,user['id'],csrf)
    return self.respond(200,shell('Business Operator',body,user,csrf))
+  if p=='/billing/status':
+   # This endpoint only reconciles invoices owned by the signed-in user.
+   # BTCPay is testnet-only; never infer payment from a browser redirect.
+   state='not_configured'
+   if btcpay_integration.configured():
+    try:
+     with db() as c:btcpay_integration.reconcile(c,user['id'])
+     state='checked'
+    except RuntimeError:state='provider_unavailable'
+   with db() as c:
+    ent=subscriptions.entitlement(c,user['id'])
+    pending=c.execute("SELECT count(*) FROM btcpay_orders WHERE user_id=? AND status='pending'",(user['id'],)).fetchone()[0]
+   payload=json.dumps({'plan':ent['plan'],'status':ent['status'],
+                       'period_end':ent['end'],'pending_testnet_invoices':pending,
+                       'provider_check':state,'testnet_only':True})
+   return self.respond(200,payload,'application/json; charset=utf-8',
+                       headers=[('Cache-Control','no-store')])
   if p=='/account':
+   if btcpay_integration.configured():
+    try:
+     with db() as c:btcpay_integration.reconcile(c,user['id'])
+    except RuntimeError:pass
    with db() as c: licensed=c.execute('SELECT license_key FROM paid_licenses WHERE user_id=?',(user['id'],)).fetchone()
    state='No redeemed license'
    if licensed:
@@ -1764,7 +1785,7 @@ class Handler(BaseHTTPRequestHandler):
    billing='<section class="panel"><h2>Legacy testnet billing history</h2><p>PRO: '+('Active through '+escape(datefmt(ent['end'])) if ent['plan']=='pro' else 'Not currently active')+'. Payments are manual; no automatic charges.</p><div class="scroll"><table><thead><tr><th>Order</th><th>Created (UTC)</th><th>Status</th><th>Settled (UTC)</th></tr></thead><tbody>'
    for oid,status,created,settled in orders:
     billing+='<tr><td>'+escape(oid)+'</td><td>'+escape(datefmt(created))+'</td><td>'+escape(status)+'</td><td>'+escape(datefmt(settled))+'</td></tr>'
-   billing+='</tbody></table></div></section>'
+   billing+='</tbody></table></div><p><a href="/billing/status">Check verified payment status (JSON)</a></p><p>Testnet invoices activate automatically after provider-confirmed settlement when the signed-in customer checks the portal or account page. Payhip notifications are not independent payment proof and remain pending review.</p></section>'
    return self.respond(200,shell('Account',body+billing,user,csrf))
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
