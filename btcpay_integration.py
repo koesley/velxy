@@ -69,7 +69,7 @@ def reconcile(conn, user_id):
 
     A transaction/unique invoice record ensures repeated checks never extend access.
     """
-    orders = conn.execute("SELECT order_id,invoice_id FROM btcpay_orders WHERE user_id=? AND status='pending' AND invoice_id IS NOT NULL ORDER BY created_at DESC LIMIT 30", (user_id,)).fetchall()
+    orders = conn.execute("SELECT order_id,invoice_id FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-test-%' AND invoice_id IS NOT NULL ORDER BY created_at DESC LIMIT 30", (user_id,)).fetchall()
     activated = False
     for order_id, invoice_id in orders:
         invoice = request('GET', '/invoices/' + urllib.parse.quote(invoice_id, safe=''))

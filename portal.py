@@ -13,6 +13,7 @@ import agent_core
 import license_verification
 import subscriptions
 import btcpay_integration
+import btcpay_production
 import business_v3
 import business_v4
 import intelligence_v45
@@ -54,6 +55,7 @@ import sovereign_genesis_v56
 import sovereign_opportunities_v57
 import business_os_v59
 import business_agents_v59
+import mission_control
 import business_intelligence_v60
 import agent_engine_v61
 import business_collaboration_v62
@@ -116,6 +118,7 @@ DATA_ROOT=Path(os.getenv('VELXTRIA_DATA_DIR',str(ROOT))).resolve()
 DATA_ROOT.mkdir(parents=True,exist_ok=True)
 DB=DATA_ROOT/'portal.sqlite3'; REPORTS=DATA_ROOT/'customer_reports'; REPORTS.mkdir(exist_ok=True)
 MAX_BYTES=5*1024*1024; MAX_MONTHLY=50; LOCK=Lock()
+PATCHWORK_LOCK=Lock()
 REQUIRED=['Order ID','Order Date','Customer','Product','Quantity','Unit Price','Status','Region']
 
 def now(): return int(time.time())
@@ -126,6 +129,7 @@ def db():
  else:
   c.execute("""CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', access TEXT NOT NULL DEFAULT 'demo', created INTEGER NOT NULL)""")
  c.execute('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL, csrf TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
+ c.execute('CREATE TABLE IF NOT EXISTS patchwork_ai_limits (user_id INTEGER PRIMARY KEY, last_request INTEGER NOT NULL)')
  c.execute("CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, filename TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL, digest TEXT NOT NULL, email_status TEXT NOT NULL DEFAULT 'not_sent', FOREIGN KEY(user_id) REFERENCES users(id))")
  c.execute("CREATE TABLE IF NOT EXISTS deliveries (report_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', next_attempt INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(report_id) REFERENCES reports(id))")
  c.execute('CREATE TABLE IF NOT EXISTS paid_licenses (license_hash TEXT PRIMARY KEY, license_key TEXT NOT NULL, user_id INTEGER NOT NULL UNIQUE, redeemed_at INTEGER NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
@@ -182,7 +186,7 @@ def valid_email(v):return '@' in v and '.' in v.split('@')[-1] and len(v)<255 an
 
 def shell(title,body,user=None,csrf=''):
  nav=('<a href="/sovereign-unified-v56">✦ Unified Command</a> <a href="/sovereign-genesis-v56">✦ Project Genesis</a> <a href="/sovereign-command-v56">✦ Ask VELXTRIA</a> <a href="/sovereign-guardian-v56">✦ Guardian</a> <a href="/sovereign-connectors-v56">✦ Connectors</a> <a href="/sovereign-executive-v56">✦ Executive Council 2.0</a> <a href="/sovereign-future-v56">✦ Future Simulator</a> <a href="/sovereign-memory-v56">✦ Memory</a> <a href="/sovereign-execution-v56">✦ Execution</a> <a href="/sovereign-strategies-v56">✦ Strategies</a> <a href="/sovereign-opportunities-v56">✦ Opportunities</a> <a href="/sovereign-sync-v56">✦ Twin Sync</a> <a href="/sovereign-twin-v56">✦ Digital Twin</a> <a href="/sovereign-council-v56">✦ Sovereign Council</a> <a href="/sovereign-v56">✦ Sovereign V56</a> <a href="/omega-v55">✦ Omega V55</a> <a href="/aegis-v54">✦ Aegis V54</a> <a href="/sentinel-v53">✦ Sentinel V53</a> <a href="/titan-intelligence">✦ Titan V52</a> <a href="/ascendancy-v51">✦ Ascendancy V51</a> <a href="/singularity-v50">✦ Singularity V50</a> <a href="/nexus-reforged">Command Center</a> <a href="/infinity-engine">Intelligence</a> <a href="/autonomous-core">Experiments</a> <a href="/synapse">Synapse</a> <a href="/omniscience">Omniscience V49</a> <a href="/quantum-command">Quantum V48</a> <a href="/hyperion">Hyperion V47</a> <a href="/neural-network">Neural V45</a> <a href="/evolution-engine">Evolution V46</a> <a href="/">Reports</a> <a href="/workspace">Business</a> <a href="/genesis-prime">Apps</a> <a href="/oracle">Oracle</a> <a href="/atlas">Onboarding</a> <a href="/catalyst">Release checks</a> <a href="/account">Account</a> <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="link">Sign out</button></form>') if user else '<a href="/login">Sign in</a> <a href="/register">Create demo account</a>'
- return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/site-studio.css"></head><body class="{'workspace-page' if title == 'Business Workspace' else ''}"><header><div class="brand">✦ VELXTRIA <span>BUSINESS PLATFORM</span></div><nav class="velx-nav"><a class="velx-primary" href="/business-os-v59">Business OS</a><a class="velx-primary" href="/business-agents-v59">Agents</a><a class="velx-primary" href="/sovereign-omniverse-v57">Omniverse</a><a class="velx-primary" href="/sovereign-business-graph-v57">Business Graph</a><a class="velx-primary" href="/sovereign-opportunities-v57">Opportunity Radar</a><a class="velx-primary" href="/sovereign-council-v57">Council</a><a class="velx-primary" href="/sovereign-lab-v57">Decision Lab</a><a class="velx-primary" href="/sovereign-unified-v56">Command</a><a class="velx-primary" href="/sovereign-workflows-v56">Workflow Studio</a><a class="velx-primary" href="/sovereign-nexus-v56">Nexus</a><a class="velx-primary" href="/sovereign-workflow-runs-v56">Operations</a><a class="velx-primary" href="/">Reports</a><a class="velx-primary" href="/sovereign-genesis-v56">Genesis</a><a class="velx-primary" href="/sovereign-command-v56">Ask VELXTRIA</a><a class="velx-primary" href="/sovereign-guardian-v56">Guardian</a><a class="velx-primary" href="/sovereign-executive-v56">Intelligence</a><a class="velx-primary" href="/sovereign-strategies-v56">Strategies</a><a class="velx-primary" href="/sovereign-execution-v56">Execution</a><details class="velx-more"><summary>Explore platform ▾</summary><div class="velx-more-panel">{nav}</div></details></nav></header><main>{body}</main><footer>VELXTRIA private preview · Bitcoin payments require manual confirmation · Never upload sensitive data</footer></body></html>"""
+ return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/site-studio.css"></head><body class="{'workspace-page' if title == 'Business Workspace' else ''}"><header><div class="brand">✦ VELXTRIA <span>BUSINESS PLATFORM</span></div><nav class="velx-nav"><a class="velx-primary" href="/mission-control">Mission Control</a><a class="velx-primary" href="/billing">Billing</a><a class="velx-primary" href="/business-os-v59">Business OS</a><a class="velx-primary" href="/business-agents-v59">Agents</a><a class="velx-primary" href="/sovereign-omniverse-v57">Omniverse</a><a class="velx-primary" href="/sovereign-business-graph-v57">Business Graph</a><a class="velx-primary" href="/sovereign-opportunities-v57">Opportunity Radar</a><a class="velx-primary" href="/sovereign-council-v57">Council</a><a class="velx-primary" href="/sovereign-lab-v57">Decision Lab</a><a class="velx-primary" href="/sovereign-unified-v56">Command</a><a class="velx-primary" href="/sovereign-workflows-v56">Workflow Studio</a><a class="velx-primary" href="/sovereign-nexus-v56">Nexus</a><a class="velx-primary" href="/sovereign-workflow-runs-v56">Operations</a><a class="velx-primary" href="/">Reports</a><a class="velx-primary" href="/sovereign-genesis-v56">Genesis</a><a class="velx-primary" href="/sovereign-command-v56">Ask VELXTRIA</a><a class="velx-primary" href="/sovereign-guardian-v56">Guardian</a><a class="velx-primary" href="/sovereign-executive-v56">Intelligence</a><a class="velx-primary" href="/sovereign-strategies-v56">Strategies</a><a class="velx-primary" href="/sovereign-execution-v56">Execution</a><details class="velx-more"><summary>Explore platform ▾</summary><div class="velx-more-panel">{nav}</div></details></nav></header><main>{body}</main><footer>VELXTRIA private preview · Bitcoin payments require manual confirmation · Never upload sensitive data</footer></body></html>"""
 
 
 def landing_page():
@@ -446,6 +450,18 @@ class Handler(BaseHTTPRequestHandler):
   if urllib.parse.urlsplit(self.path).path == '/healthz': return self.respond(200,'ok','text/plain')
   if self.preview_guard(): return
   p=urllib.parse.urlsplit(self.path).path
+  # Preview-authenticated, read-only connectivity check. No credentials or
+  # exception messages are returned; unavailable outside private preview.
+  if p=='/health/db':
+   if os.getenv('VELXTRIA_DEPLOYMENT_MODE') != 'render-preview':
+    return self.respond(404,'Not found','text/plain')
+   try:
+    import verify_database
+    status=verify_database.check()
+   except Exception:
+    status='failed'
+   return self.respond(200 if status=='connected' else 503,
+                       status,'text/plain')
   if p=='/style.css':return self.respond(200,(ROOT/'style.css').read_bytes()+(LANDING_CSS+WORKSPACE_CSS+V51_CSS+sovereign_v56.CSS+omega_intelligence_v55.CSS+aegis_v54.CSS+sentinel_v53.CSS+titan_intelligence_v52.CSS+ascendancy_v51.CSS+singularity_v6.CSS+omni_v7.CSS+sovereign_v8.CSS+constellation_v9.CSS+trinity_v10.CSS+omnipotence_v12.CSS+singularity_x_v13.CSS+prometheus_v14.CSS+omega_v15.CSS+evolution_v16.CSS+phoenix_v17.CSS+infinity_v18.CSS+ascension_v28.CSS+integration_v29.CSS+atlas_v38.CSS+nexus_reforged_v41.CSS).encode('utf-8'),'text/css; charset=utf-8')
   if p in ('/site-studio.css','/site-preview.css') and os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE:
    return self.respond(200,(ROOT/p.lstrip('/')).read_bytes(),'text/css; charset=utf-8')
@@ -468,7 +484,13 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/register':return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form></section>'))
   if p=='/' and not user:return self.respond(200,shell('Sales reporting made simple',landing_page()))
   if not user:return self.redirect('/login')
+  if p=='/patchwork':
+   return self.respond(200,(ROOT/'tools'/'patchwork'/'dashboard.html').read_text(encoding='utf-8').replace('__PATCHWORK_CSRF__',html.escape(csrf,quote=True)),'text/html; charset=utf-8',headers=[('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'"),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff')])
   if p=='/':
+   if btcpay_production.configured():
+    try:
+     with db() as c:btcpay_production.reconcile(c,user['id'])
+    except RuntimeError:pass
    if btcpay_integration.configured():
     try:
      with db() as c:btcpay_integration.reconcile(c,user['id'])
@@ -480,11 +502,14 @@ class Handler(BaseHTTPRequestHandler):
    access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 3 reports total · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
    limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '3 free reports total'
-   if ent['plan']!='pro':
+   if ent['plan']!='pro' and btcpay_production.configured():
+    upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Pay securely using a unique BTCPay invoice. PRO activates after independently verified settlement.</p><form method="post" action="/btcpay/production/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Pay with Bitcoin</button></form><p><a href="/billing">Billing status</a></p></section>'
+   elif ent['plan']!='pro':
     btc_address=os.getenv('VELXTRIA_BITCOIN_ADDRESS','bc1qxdjxk3kzke0shnlqupkndyel7mf9v6fahfkgx4').strip()
     upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Direct Bitcoin payment is available by manual arrangement only. Contact the VELXTRIA operator to confirm the exact BTC amount and payment reference <strong>before sending</strong>. No automatic invoice, exchange-rate quote, payment verification, or access activation is enabled.</p><p>Bitcoin network (BTC) receiving address:</p><p><code style="overflow-wrap:anywhere;word-break:break-all">'+escape(btc_address)+'</code></p><p><strong>Do not send BTC until you receive a confirmed amount and instructions.</strong> Payments to the wrong network or address may be irreversible.</p></section>'
    else: upgrade_html=''
    body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section><section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
+   body+='<section class="panel"><h2>PATCHWORK · Software Diagnostics</h2><p>Review read-only Python scan reports. AI repairs and repository connections are not yet available.</p><a href="/patchwork">Open PATCHWORK diagnostics</a></section>'
    if os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE: body+='<section class="panel"><h2>Site Studio</h2><a href="/site-studio">Create a company website draft</a></section>'
    body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
    body+=upgrade_html
@@ -619,7 +644,7 @@ class Handler(BaseHTTPRequestHandler):
      body=business_intelligence_v60.render(c,user['id'],wid,csrf)
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
    return self.respond(200,shell('Business Intelligence V60',body,user,csrf))
-  if p in ('/business-os-v59','/business-os-v59.csv','/business-agents-v59'):
+  if p in ('/mission-control','/business-os-v59','/business-os-v59.csv','/business-agents-v59'):
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS V59 is not enabled.',user,csrf)
    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);wid=q.get('w',[''])[0]
    try:
@@ -629,6 +654,7 @@ class Handler(BaseHTTPRequestHandler):
      if not wid:raise ValueError('Create a workspace first')
      if p.endswith('.csv'):body=business_os_v59.export_csv(c,user['id'],wid)
      elif p=='/business-os-v59':body=business_os_v59.render(c,user['id'],wid,csrf)
+     elif p=='/mission-control':body=mission_control.render(c,user['id'],wid,csrf)
      else:body=business_agents_v59.render(c,user['id'],wid,csrf)
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
    if p.endswith('.csv'):return self.respond(200,body.encode('utf-8'),'text/csv; charset=utf-8',headers=[('Content-Disposition','attachment; filename="velxtria-leads.csv"')])
@@ -1740,7 +1766,67 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/operator':
    with db() as c: body=operator_v5.render(c,user['id'],csrf)
    return self.respond(200,shell('Business Operator',body,user,csrf))
+  if p=='/billing':
+   if btcpay_production.configured():
+    try:
+     with db() as c:btcpay_production.reconcile(c,user['id'])
+    except RuntimeError:pass
+   # Customer-facing status is computed from independently verified entitlements.
+   if btcpay_integration.configured():
+    try:
+     with db() as c:btcpay_integration.reconcile(c,user['id'])
+    except RuntimeError:pass
+   with db() as c:
+    ent=subscriptions.entitlement(c,user['id'])
+    pending=c.execute("SELECT count(*) FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-test-%'",(user['id'],)).fetchone()[0]
+   datefmt=lambda ts: datetime.fromtimestamp(ts,timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if ts else '—'
+   status='Verified PRO access through '+datefmt(ent['end']) if ent['plan']=='pro' else 'Free demo'
+   pending_note='A testnet invoice is awaiting verified settlement.' if pending else 'No pending testnet invoices.'
+   if btcpay_production.configured():
+    with db() as c:
+     prod_orders=c.execute("SELECT checkout_url FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-prod-%' ORDER BY created_at DESC LIMIT 1",(user['id'],)).fetchone()
+    pending_note='Production Bitcoin invoice awaiting settlement.' if prod_orders else pending_note
+   else:prod_orders=None
+   body='<section class="panel"><h1>Billing and access</h1><p><strong>'+escape(status)+'</strong></p><p>'+escape(pending_note)+'</p><p>Payhip payment notifications require independent verification; a checkout redirect never unlocks paid access.</p><p><a href="/account">Account and order history</a></p></section>'
+   if pending and btcpay_integration.configured():
+    body+='<section class="panel"><h2>Waiting for testnet payment confirmation</h2><p id="billing-progress" role="status">Checking verified settlement...</p><script>(function(){let tries=0;const el=document.getElementById("billing-progress");async function check(){if(++tries>24)return;try{const r=await fetch("/billing/status",{credentials:"same-origin",cache:"no-store"});if(!r.ok)throw Error("status");const d=await r.json();if(d.plan==="pro"){location.reload();return}if(d.pending_testnet_invoices===0){el.textContent="No pending testnet invoices.";return}el.textContent=d.provider_check==="provider_unavailable"?"Payment provider temporarily unavailable. Try again shortly.":"Waiting for verified testnet settlement."; }catch(e){el.textContent="Unable to check payment status. Refresh to retry.";}setTimeout(check,10000)}check()})()</script></section>'
+   if prod_orders:
+    body+='<section class="panel"><h2>Bitcoin payment pending</h2><p><a href="'+escape(prod_orders[0],quote=True)+'">Continue your BTCPay invoice</a></p><p id="prod-billing-progress" role="status">Waiting for verified settlement.</p><script>(function(){const el=document.getElementById("prod-billing-progress");async function poll(){try{const r=await fetch("/billing/status",{credentials:"same-origin",cache:"no-store"});if(!r.ok)throw Error();const d=await r.json();if(d.plan==="pro"){location.reload();return}if(!d.pending_production_invoices){el.textContent="No pending production invoice.";return}el.textContent="Waiting for verified Bitcoin settlement."}catch(e){el.textContent="Unable to check payment status."}setTimeout(poll,10000)}poll()})()</script></section>'
+   return self.respond(200,shell('Billing and access',body,user,csrf))
+  if p=='/billing/status':
+   prod_state='not_configured'
+   if btcpay_production.configured():
+    try:
+     with db() as c:btcpay_production.reconcile(c,user['id'])
+     prod_state='checked'
+    except RuntimeError:prod_state='provider_unavailable'
+   # This endpoint only reconciles invoices owned by the signed-in user.
+   # BTCPay is testnet-only; never infer payment from a browser redirect.
+   state='not_configured'
+   if btcpay_integration.configured():
+    try:
+     with db() as c:btcpay_integration.reconcile(c,user['id'])
+     state='checked'
+    except RuntimeError:state='provider_unavailable'
+   with db() as c:
+    ent=subscriptions.entitlement(c,user['id'])
+    pending=c.execute("SELECT count(*) FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-test-%'",(user['id'],)).fetchone()[0]
+   with db() as c:
+    prod_pending=c.execute("SELECT count(*) FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-prod-%'",(user['id'],)).fetchone()[0]
+   payload=json.dumps({'production_provider_check':prod_state,'pending_production_invoices':prod_pending,'production_enabled':btcpay_production.configured(),'plan':ent['plan'],'status':ent['status'],
+                       'period_end':ent['end'],'pending_testnet_invoices':pending,
+                       'provider_check':state,'testnet_only':True})
+   return self.respond(200,payload,'application/json; charset=utf-8',
+                       headers=[('Cache-Control','no-store')])
   if p=='/account':
+   if btcpay_production.configured():
+    try:
+     with db() as c:btcpay_production.reconcile(c,user['id'])
+    except RuntimeError:pass
+   if btcpay_integration.configured():
+    try:
+     with db() as c:btcpay_integration.reconcile(c,user['id'])
+    except RuntimeError:pass
    with db() as c: licensed=c.execute('SELECT license_key FROM paid_licenses WHERE user_id=?',(user['id'],)).fetchone()
    state='No redeemed license'
    if licensed:
@@ -1757,7 +1843,7 @@ class Handler(BaseHTTPRequestHandler):
    billing='<section class="panel"><h2>Legacy testnet billing history</h2><p>PRO: '+('Active through '+escape(datefmt(ent['end'])) if ent['plan']=='pro' else 'Not currently active')+'. Payments are manual; no automatic charges.</p><div class="scroll"><table><thead><tr><th>Order</th><th>Created (UTC)</th><th>Status</th><th>Settled (UTC)</th></tr></thead><tbody>'
    for oid,status,created,settled in orders:
     billing+='<tr><td>'+escape(oid)+'</td><td>'+escape(datefmt(created))+'</td><td>'+escape(status)+'</td><td>'+escape(datefmt(settled))+'</td></tr>'
-   billing+='</tbody></table></div></section>'
+   billing+='</tbody></table></div><p><a href="/billing/status">Check verified payment status (JSON)</a></p><p>Testnet invoices activate automatically after provider-confirmed settlement when the signed-in customer checks the portal or account page. Payhip notifications are not independent payment proof and remain pending review.</p></section>'
    return self.respond(200,shell('Account',body+billing,user,csrf))
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
@@ -1836,6 +1922,33 @@ class Handler(BaseHTTPRequestHandler):
   if not ident:return
   user,csrf,token=ident
   if not hmac.compare_digest(fields.get('csrf',''),csrf):return self.fail(403,'Session verification failed.',user,csrf)
+  if p=='/patchwork/ai-repair':
+   if os.getenv('VELXTRIA_PATCHWORK_AI_ENABLED','0')!='1':
+    return self.fail(403,'PATCHWORK AI requests are disabled on this server.',user,csrf)
+   if fields.get('action')!='request_ai_repair' or not uploaded:
+    return self.fail(400,'Choose a Python file and explicitly authorize the AI request.',user,csrf)
+   filename,data=uploaded
+   if not filename.lower().endswith('.py') or not data or len(data)>40000:
+    return self.fail(400,'Choose a nonempty Python file up to 40 KB.',user,csrf)
+   try: source=data.decode('utf-8')
+   except UnicodeError:return self.fail(400,'File must use UTF-8.',user,csrf)
+   key=os.getenv('OPENAI_API_KEY','')
+   if not key:return self.fail(503,'AI provider is not configured.',user,csrf)
+   # Persist the rate limit in the same database across workers and restarts.
+   # Conditional upsert prevents concurrent requests from bypassing the limit.
+   with db() as c:
+    stamp=now()
+    update=c.execute('INSERT INTO patchwork_ai_limits(user_id,last_request) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET last_request=excluded.last_request WHERE patchwork_ai_limits.last_request <= ?', (user['id'],stamp,stamp-3600))
+    if update.rowcount!=1:
+     return self.fail(429,'One AI repair request per account per hour.',user,csrf)
+   try:
+    from tools.patchwork.ai_repair import propose_with_ai
+    with tempfile.TemporaryDirectory() as directory:
+     (Path(directory)/'input.py').write_text(source,encoding='utf-8')
+     result=propose_with_ai(directory,'input.py',api_key=key,model=os.getenv('PATCHWORK_MODEL','gpt-4.1-mini'))
+    return self.respond(200,json.dumps(result),'application/json; charset=utf-8',headers=[('Cache-Control','no-store')])
+   except (ValueError,OSError) as exc:
+    return self.fail(422,'Repair request failed: '+str(exc)[:160],user,csrf)
   if p=='/logout':
    with db() as c:c.execute('DELETE FROM sessions WHERE token_hash=?',(hashlib.sha256(token.encode()).hexdigest(),))
    secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
@@ -2164,6 +2277,24 @@ class Handler(BaseHTTPRequestHandler):
       else: business_v3.process(c,user['id'],fields)
    except ValueError as exc:return self.fail(400,str(exc),user,csrf)
    return self.redirect('/workspace')
+  if p=='/btcpay/production/checkout':
+   if not btcpay_production.configured():
+    return self.fail(503,'Production Bitcoin checkout is not configured.',user,csrf)
+   with db() as c:
+    ent=subscriptions.entitlement(c,user['id'])
+    if ent['plan']=='pro':return self.redirect('/billing')
+    recent=c.execute("SELECT checkout_url FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-prod-%' ORDER BY created_at DESC LIMIT 1",(user['id'],)).fetchone()
+    if recent:return self.redirect('/billing')
+    order_id=btcpay_production.create_order(c,user['id'])
+   try:
+    invoice_id,checkout_url=btcpay_production.issue_invoice(order_id)
+   except (RuntimeError,ValueError):
+    with db() as c:c.execute("UPDATE btcpay_orders SET status='failed' WHERE order_id=? AND user_id=? AND status='creating'",(order_id,user['id']))
+    return self.fail(503,'Unable to create a verified Bitcoin invoice. Please retry later.',user,csrf)
+   with db() as c:
+    if not btcpay_production.attach_invoice(c,user['id'],order_id,invoice_id,checkout_url):
+     return self.fail(409,'Invoice could not be linked to your account.',user,csrf)
+   return self.redirect(checkout_url)
   if p=='/btcpay/checkout':
    if os.getenv('VELXTRIA_ENABLE_BTCPAY_TEST_CHECKOUT','0')!='1' or not btcpay_integration.configured():
     return self.fail(503,'Bitcoin test checkout is disabled.',user,csrf)

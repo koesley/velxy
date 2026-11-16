@@ -1,0 +1,40 @@
+name: PATCHWORK repair PR verification
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+jobs:
+  patchwork-repair-ci:
+    if: startsWith(github.head_ref, 'patchwork/review-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax-check repository Python files without executing them
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          skip={'.git','.venv','venv','node_modules','__pycache__','dist','build'}
+          count=0
+          for p in Path('.').rglob('*.py'):
+              if p.is_symlink() or any(part in skip for part in p.parts):
+                  continue
+              if p.stat().st_size > 1024*1024:
+                  raise SystemExit('Oversized Python source: '+str(p))
+              ast.parse(p.read_text(encoding='utf-8'),filename=str(p))
+              count+=1
+              if count>3000:
+                  raise SystemExit('Repository Python file count exceeded')
+          if count == 0:
+              raise SystemExit('No Python source files found')
+          print('Parsed',count,'Python files')
+          PY
+      - name: Run PATCHWORK regression suite
+        run: python -m unittest discover -s tools/patchwork -p 'test_*.py' -v

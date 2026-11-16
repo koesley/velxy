@@ -18,16 +18,12 @@ BUCKET = os.getenv('VELXTRIA_SUPABASE_BUCKET', 'velxy-reports')
 
 REMOTE = bool(DATABASE_URL)
 
-if REQUIRE and not (REMOTE and URL and KEY):
+# PostgreSQL metadata storage and Supabase report-object storage are separate.
+# Missing Supabase credentials must not prevent database connections.
+# Report operations remain fail-closed in _request() when storage is absent.
+if REQUIRE and not REMOTE:
     raise RuntimeError(
-        'Persistent mode requires VELXTRIA_DATABASE_URL, '
-        'VELXTRIA_SUPABASE_URL and VELXTRIA_SUPABASE_SERVICE_KEY'
-    )
-
-if REMOTE and not (URL and KEY):
-    raise RuntimeError(
-        'PostgreSQL requires private Supabase storage credentials '
-        '(no local ZIP fallback)'
+        'Persistent mode requires VELXTRIA_DATABASE_URL'
     )
 
 
