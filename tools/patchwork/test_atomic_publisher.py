@@ -34,6 +34,7 @@ class AtomicPublisherTests(unittest.TestCase):
         repo=root/'repo'
         repo.mkdir()
         (repo/'app.py').write_bytes(OLD)
+        self.release_digest=digest(archive.read_bytes())
         return archive,evidence,repo
 
     def fake(self, stale=False, moving=False):
@@ -63,7 +64,8 @@ class AtomicPublisherTests(unittest.TestCase):
             if path.endswith('/git/commits'):
                 return {'sha':'f'*40}
             if path.endswith('/git/commits/'+'f'*40):
-                return {'sha':'f'*40,'parents':[{'sha':SHA}]}
+                return {'sha':'f'*40,'parents':[{'sha':SHA}],
+                        'message':'Patchwork-Release-SHA256: '+self.release_digest+'\\nPatchwork-Base-SHA: '+SHA}
             if '/pulls?' in path:
                 count=sum('/pulls?' in p for _,p,_ in calls)
                 if count == 1:
