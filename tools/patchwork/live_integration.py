@@ -18,6 +18,8 @@ from github_publisher import api
 from isolated_verify import verify
 from release_gate import prepare_release
 from release_policy import analyze
+from live_readiness import audit as readiness_audit
+from release_decision import assess_release
 
 REPO_PATTERN = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
 FIXTURE = 'patchwork_integration_fixture.py'
@@ -29,7 +31,7 @@ def _digest(data):
     return hashlib.sha256(data).hexdigest()
 
 def run(repository, base_branch, *, token, approve=False, request=api,
-        expected_repository=None):
+        expected_repository=None, require_ci=False):
     if not approve:
         raise ValueError('Explicit --approve-live-disposable-test required')
     if not REPO_PATTERN.fullmatch(repository):
@@ -42,6 +44,11 @@ def run(repository, base_branch, *, token, approve=False, request=api,
         raise ValueError('GitHub token required')
     if not re.fullmatch(r'[A-Za-z0-9._/-]+',base_branch) or '..' in base_branch:
         raise ValueError('Invalid base branch')
+    # Fail closed before any writes. A successful readiness audit is required.
+    readiness=readiness_audit(repository,base_branch,token=token,
+                              expected_repository=expected_repository,request=request)
+    if readiness['status']!='ready':
+        raise ValueError('Disposable repository readiness audit blocked live probe')
     prefix = '/repos/' + repository
     repo_info = request(token,'GET',prefix)
     if repo_info.get('full_name') != repository or repo_info.get('archived') or repo_info.get('disabled'):
@@ -76,6 +83,15 @@ def run(repository, base_branch, *, token, approve=False, request=api,
         published=publish_atomic(repository,base_branch,archive,approve=True,
                                  token=token,evidence_path=report,source_root=source,
                                  request=request)
+        # Retain the approved archive only for the duration of remote verification.
+        # CI verification is optional for bootstrap; when required it must pass.
+        from urllib.parse import urlparse
+        pr_number=int(published['draft_pull_request'].rstrip('/').rsplit('/',1)[-1])
+        decision=assess_release(repository,base_branch,archive,published,pr_number,
+                                token=token,request=request)
+        if require_ci and decision['status']!='review_ready':
+            raise ValueError('Live repair published, but independent CI gate is blocked: '+
+                             '; '.join(decision['failures']))
     sha=published['commit_sha']
     remote=request(token,'GET',prefix+'/git/commits/'+sha)
     if remote.get('sha')!=sha or not remote.get('parents') or not re.fullmatch('[a-f0-9]{40}',remote['parents'][0]['sha']):
@@ -97,6 +113,7 @@ def run(repository, base_branch, *, token, approve=False, request=api,
             'repository':repository,'draft_pr':matching[0]['html_url'],
             'head_sha':sha,'source_unchanged':True,
             'real_docker_executed':True,'github_verified':True,
+            'release_decision':decision,
             'merged':False,'deployed':False,
             'note':'Draft PR intentionally left open for human review; no cleanup is automatic.'}
 
@@ -105,9 +122,10 @@ def main():
     parser.add_argument('repository')
     parser.add_argument('base_branch')
     parser.add_argument('--approve-live-disposable-test',action='store_true')
+    parser.add_argument('--require-ci',action='store_true',help='Fail if required GitHub Actions provenance is missing')
     args=parser.parse_args()
     print(json.dumps(run(args.repository,args.base_branch,token=os.getenv('GITHUB_TOKEN'),
-                         approve=args.approve_live_disposable_test,
+                         approve=args.approve_live_disposable_test,require_ci=args.require_ci,
                          expected_repository=os.getenv('PATCHWORK_DISPOSABLE_REPOSITORY')),indent=2))
 
 if __name__=='__main__':
