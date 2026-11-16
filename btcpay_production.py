@@ -19,8 +19,8 @@ def configured():
         endpoint()
     except ValueError:
         return False
-    return bool(os.getenv("VELXTRIA_BTCPAY_PROD_API_KEY", "").strip()
-                and os.getenv("VELXTRIA_BTCPAY_PROD_STORE_ID", "").strip())
+    return (os.getenv("VELXTRIA_ENABLE_BTCPAY_PRODUCTION", "0") == "1" and bool(os.getenv("VELXTRIA_BTCPAY_PROD_API_KEY", "").strip()
+                and os.getenv("VELXTRIA_BTCPAY_PROD_STORE_ID", "").strip()))
 
 
 def endpoint():
@@ -28,8 +28,8 @@ def endpoint():
     parsed = urllib.parse.urlsplit(raw)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("", "/"):
         raise ValueError("Production BTCPay requires a dedicated HTTPS origin")
-    if parsed.hostname == "testnet.demo.btcpayserver.org":
-        raise ValueError("Testnet cannot be used as a production BTCPay origin")
+    if parsed.hostname in ("testnet.demo.btcpayserver.org", "mainnet.demo.btcpayserver.org"):
+        raise ValueError("Public demo servers cannot be used as production BTCPay origins")
     if parsed.hostname.lower() in ("localhost",) or parsed.hostname.endswith(".local"):
         raise ValueError("Localhost is not a production BTCPay origin")
     try:
