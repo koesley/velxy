@@ -215,3 +215,25 @@ protection/rulesets to require the check and independent human review;
 this script alone cannot enforce a merge restriction. Tests executed on
 GitHub-hosted runners are not equivalent to the separately constrained
 Docker verifier and may execute project test code; use trusted PR sources.
+
+## V8: Atomic multi-file GitHub repair commits
+
+Use `atomic_publisher.py` instead of the legacy per-file publisher for
+approved repair releases. It validates local Docker test evidence and all
+source hashes against an immutable Git base commit before writing Git objects.
+It creates a single Git tree and commit containing every replacement, then
+creates a dedicated branch pointing at that complete commit and opens a draft
+PR. This avoids partially updated repair branches if a file upload fails.
+
+```bash
+GITHUB_TOKEN=your-token python tools/patchwork/atomic_publisher.py \
+  owner/repository main ../patchwork-staged.zip \
+  --verification-report ../patchwork-test-report.json --approve-draft-pr
+```
+
+The tool rechecks the base branch before creating its repair branch. Git
+objects may remain unreferenced after a failed request; a branch may remain
+if PR creation fails. It does not merge, deploy or change the base branch.
+The local JSON verification report is not cryptographically authenticated,
+so production merge rules must rely on independent GitHub CI checks and
+human review. GitHub Contents API limits and file restrictions still apply.
