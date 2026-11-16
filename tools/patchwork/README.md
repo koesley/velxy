@@ -380,3 +380,18 @@ published file bytes and exact draft PR branch identity.
 No real GitHub publishing test has been executed merely by adding
 these tools. The disposable repository and explicit opt-in are still
 required. Use a dedicated least-privilege token, not production secrets.
+
+## V16: High-risk AST occurrence policy
+
+The release policy now compares **counts of high-risk function calls**
+between the original and replacement Python ASTs. A newly added
+`exec()` is blocked even if the original source already used
+`exec()`. The denylist also covers newly added destructive file
+operations (`shutil.rmtree`, `os.remove`, `os.unlink`,
+`os.chmod`, `os.chown`) and additional subprocess execution
+helpers. Four focused tests guard these cases. The atomic publisher
+enforces the updated policy before GitHub writes.
+
+This remains heuristic static analysis, not proof that a change is safe.
+Aliases, dynamic dispatch, semantic changes to existing calls and
+malicious code can evade the heuristic; human review is still required.
