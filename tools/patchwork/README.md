@@ -307,3 +307,21 @@ container, push a branch, open a PR, verify a live CI job, merge or deploy.
 Its purpose is to catch interface and orchestration regressions before
 a separate disposable-repository integration test with real services.
 The regression test runs under the PATCHWORK validation workflow.
+
+## V13: Real Docker verification integration
+
+Run `python tools/patchwork/real_docker_integration.py` on a host
+with Docker installed and access to the allowlisted
+`python:3.11-alpine` image. This creates a disposable two-file Python
+fixture, stages an approved repair, checks V9 release policy, and runs
+the repaired fixture's unittest suite in a real Docker container using
+PATCHWORK's constrained `isolated_verify.verify` command. It checks
+the resulting release-bound evidence and proves the original fixture
+was unchanged. It does not contact GitHub, create PRs, merge or deploy.
+
+The `PATCHWORK real Docker integration` GitHub Actions workflow runs
+this fixture on pushes to the development branch and on explicit
+workflow dispatch. It is separate from the offline mock rehearsal.
+Only the controlled fixture is executed; this is not a guarantee that
+arbitrary customer repositories or untrusted code are safe to execute.
+A green run is required before calling the real-container path tested.
