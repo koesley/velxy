@@ -13,7 +13,7 @@ import sys
 
 from github_publisher import api
 
-REQUIRED_CHECKS = ('PATCHWORK diagnostics validation / verify',)
+REQUIRED_CHECKS = ('verify',)
 SHA_PATTERN = re.compile(r'^[0-9a-f]{40}$')
 
 def inspect_pr(repository, number, *, token, expected_sha=None,
