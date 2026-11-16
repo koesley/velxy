@@ -50,6 +50,9 @@ class AtomicPublisherTests(unittest.TestCase):
                 return {'object':{'sha':'b'*40 if moving and count>1 else SHA}}
             if path.endswith('/git/commits/'+SHA):
                 return {'tree':{'sha':'c'*40}}
+            if '/commits/' in path and method == 'GET' and '/git/commits/' not in path:
+                return {'sha':'f'*40,'parents':[{'sha':SHA}],
+                        'files':[{'filename':'app.py','status':'modified'}]}
             if '/contents/app.py' in path:
                 contents = (NEW if '?ref='+'f'*40 in path else (b'wrong' if stale else OLD))
                 return {'content':base64.b64encode(contents).decode()}
