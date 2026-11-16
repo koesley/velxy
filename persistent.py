@@ -18,17 +18,10 @@ BUCKET = os.getenv('VELXTRIA_SUPABASE_BUCKET', 'velxy-reports')
 
 REMOTE = bool(DATABASE_URL)
 
-if REQUIRE and not (REMOTE and URL and KEY):
-    raise RuntimeError(
-        'Persistent mode requires VELXTRIA_DATABASE_URL, '
-        'VELXTRIA_SUPABASE_URL and VELXTRIA_SUPABASE_SERVICE_KEY'
-    )
-
-if REMOTE and not (URL and KEY):
-    raise RuntimeError(
-        'PostgreSQL requires private Supabase storage credentials '
-        '(no local ZIP fallback)'
-    )
+# PostgreSQL and private report-object storage are independent services.
+# Report operations remain fail-closed when Supabase is not configured.
+if REQUIRE and not REMOTE:
+    raise RuntimeError('Persistent mode requires VELXTRIA_DATABASE_URL')
 
 
 class PgConnection:
