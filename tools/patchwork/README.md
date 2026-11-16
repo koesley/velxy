@@ -395,3 +395,21 @@ enforces the updated policy before GitHub writes.
 This remains heuristic static analysis, not proof that a change is safe.
 Aliases, dynamic dispatch, semantic changes to existing calls and
 malicious code can evade the heuristic; human review is still required.
+
+## V17: Unified policy-enforced publishing
+
+The legacy `github_publisher.publish` function and CLI no longer
+write GitHub files one-by-one. They delegate to
+`atomic_publisher.publish_atomic`, which requires a passing
+release-bound verification report, a local source checkout for the
+release policy, explicit staging approval, immutable remote source
+checks, and one atomic Git commit plus draft PR. The compatibility CLI
+now requires `--source-root`; sensitive changes additionally require
+`--approve-sensitive-review`.
+
+Previously documented V4 per-file publication behavior is retired.
+New regression tests ensure the compatibility entrypoint fails closed
+without policy context, rejects high-risk changes before network
+access, and delegates to the atomic implementation. This closes the
+known supported legacy publication bypass; it does not prove that
+other GitHub credentials or manual repository writes are impossible.
