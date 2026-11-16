@@ -68,6 +68,9 @@ def rehearse():
                 return {'tree':{'sha':'b'*40}}
             if path.endswith('/git/commits/'+commit_sha):
                 return {'sha':commit_sha,'parents':[{'sha':base_sha}]}
+            if '/commits/' in path and method == 'GET' and '/git/commits/' not in path:
+                return {'sha':commit_sha,'parents':[{'sha':base_sha}],
+                        'files':[{'filename':rel,'status':'modified'} for rel in originals]}
             if '/contents/' in path:
                 rel=path.split('/contents/',1)[1].split('?',1)[0]
                 content = replacements[rel].encode() if '?ref='+commit_sha in path else originals[rel].encode()
