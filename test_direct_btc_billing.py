@@ -11,6 +11,7 @@ class BillingTests(unittest.TestCase):
         self.conn.execute("CREATE TABLE users(id INTEGER PRIMARY KEY, email TEXT)")
         self.conn.execute("INSERT INTO users VALUES(1,'buyer@example.com')")
         subscriptions.setup(self.conn)
+        self.conn.commit()
         with patch.object(orders, "receive_address", return_value="bc1q" + "a"*38):
             self.order = orders.allocate_sqlite(self.conn, 1, "wallet", "public")
         self.conn.commit()
