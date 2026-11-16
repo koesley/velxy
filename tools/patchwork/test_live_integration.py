@@ -1,5 +1,7 @@
 """Negative safety tests for live GitHub integration gate."""
 import unittest
+import base64
+from live_integration import OLD
 from live_integration import run
 
 class LiveIntegrationSafetyTests(unittest.TestCase):
@@ -32,6 +34,27 @@ class LiveIntegrationSafetyTests(unittest.TestCase):
             run('owner/disposable','main',token='dummy',approve=True,request=request,
                 expected_repository='owner/other')
         self.assertFalse(calls)
+
+    def test_require_ci_missing_workflow_blocks_before_writes(self):
+        calls=[]
+        def request(token,method,path,payload=None):
+            calls.append((method,path))
+            if path=='/repos/owner/disposable':
+                return {'full_name':'owner/disposable','private':True,
+                        'default_branch':'main','archived':False,'disabled':False,
+                        'permissions':{'push':True,'pull':True}}
+            if '/git/ref/heads/main' in path:
+                return {'object':{'sha':'a'*40}}
+            if '/contents/patchwork_integration_fixture.py' in path:
+                return {'content':base64.b64encode(OLD.encode()).decode()}
+            if '/contents/.github/workflows/patchwork-repair-pr.yml' in path:
+                return {'type':'missing'}
+            raise AssertionError(path)
+        with self.assertRaisesRegex(ValueError,'workflow'):
+            run('owner/disposable','main',token='dummy',approve=True,request=request,
+                expected_repository='owner/disposable',require_ci=True)
+        self.assertTrue(calls)
+        self.assertTrue(all(method=='GET' for method,_ in calls))
 
     def test_disposable_fixture_mismatch_prevents_writes(self):
         calls=[]
