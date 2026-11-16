@@ -46,6 +46,8 @@ def run(repository, base_branch, *, token, approve=False, request=api,
     repo_info = request(token,'GET',prefix)
     if repo_info.get('full_name') != repository or repo_info.get('archived') or repo_info.get('disabled'):
         raise ValueError('Repository identity or state mismatch')
+    if repo_info.get('private') is not True:
+        raise ValueError('Disposable integration repository must be private')
     if repo_info.get('default_branch') != base_branch:
         raise ValueError('Only the disposable repository default branch is supported')
     info = request(token,'GET',prefix+'/contents/'+FIXTURE+'?ref='+urllib.parse.quote(base_branch,safe=''))
@@ -82,10 +84,15 @@ def run(repository, base_branch, *, token, approve=False, request=api,
     remote_ref=request(token,'GET',prefix+'/git/ref/heads/'+urllib.parse.quote(branch,safe='/'))
     if remote_ref.get('object',{}).get('sha')!=sha:
         raise ValueError('Published branch SHA differs from expected commit')
+    repaired=request(token,'GET',prefix+'/contents/'+FIXTURE+'?ref='+sha)
+    if _digest(base64.b64decode(repaired['content'])) != _digest(NEW.encode()):
+        raise ValueError('Published commit does not contain the approved replacement')
     prs=request(token,'GET',prefix+'/pulls?state=open&head='+urllib.parse.quote(repository.split('/')[0]+':'+branch,safe=':')+'&base='+urllib.parse.quote(base_branch,safe=''))
     matching=[pr for pr in prs if pr.get('draft') is True and pr.get('head',{}).get('sha')==sha]
     if len(matching)!=1:
         raise ValueError('Could not confirm exactly one open draft PR for immutable head')
+    if matching[0].get('base',{}).get('ref')!=base_branch or matching[0].get('head',{}).get('ref')!=branch:
+        raise ValueError('Draft PR targets an unexpected branch')
     return {'schema':'patchwork-live-integration-v1','status':'published_for_review',
             'repository':repository,'draft_pr':matching[0]['html_url'],
             'head_sha':sha,'source_unchanged':True,
