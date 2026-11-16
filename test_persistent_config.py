@@ -25,7 +25,8 @@ class PersistenceConfigurationTests(unittest.TestCase):
     def test_report_storage_stays_fail_closed(self):
         p = self.run_isolated(
             "import persistent; "
-            "persistent.store(1,'r',b'payload','/tmp/never-write')")
+            "persistent.store(1,'r',b'payload','/tmp/never-write')",
+            VELXTRIA_DATABASE_URL="postgresql://example.invalid/test")
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("Supabase Storage is not configured", p.stderr)
 
