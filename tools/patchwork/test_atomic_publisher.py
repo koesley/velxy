@@ -30,7 +30,10 @@ class AtomicPublisherTests(unittest.TestCase):
             'schema':'patchwork-isolated-verification-v1','status':'passed',
             'exit_code':0,'tests_discovered':2,'release_sha256':digest(archive.read_bytes()),
             'source_repository_modified':False,'tests_executed_on_host':False}))
-        return archive,evidence
+        repo=root/'repo'
+        repo.mkdir()
+        (repo/'app.py').write_bytes(OLD)
+        return archive,evidence,repo
 
     def fake(self, stale=False, moving=False):
         calls=[]
@@ -56,10 +59,10 @@ class AtomicPublisherTests(unittest.TestCase):
 
     def test_single_commit_draft_pr(self):
         with tempfile.TemporaryDirectory() as temp:
-            archive,evidence=self.fixture(temp)
+            archive,evidence,repo=self.fixture(temp)
             request,calls=self.fake()
             result=publish_atomic('owner/repo','main',archive,approve=True,
-                                  token='dummy',evidence_path=evidence,request=request)
+                                  token='dummy',evidence_path=evidence,source_root=repo,request=request)
             self.assertTrue(result['atomic_commit'])
             self.assertEqual(sum(method=='POST' and path.endswith('/git/commits')
                                  for method,path,_ in calls),1)
@@ -84,6 +87,27 @@ class AtomicPublisherTests(unittest.TestCase):
                 publish_atomic('owner/repo','main',archive,approve=True,token='dummy',
                                evidence_path=evidence,request=request)
             self.assertFalse(any(path.endswith('/git/refs') for _,path,_ in calls))
+
+    def test_policy_blocks_risky_repair_before_network(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive,evidence,repo=self.fixture(temp)
+            # Replace archive contents with a dangerous call, then update
+            # the evidence digest to keep the policy as the failing gate.
+            changed=b'exec("x=2")\\n'
+            manifest={'schema':'patchwork-staged-release-v1','approved_for_staging':True,
+                      'files':[{'file':'app.py','original_sha256':digest(OLD),
+                                'replacement_sha256':digest(changed)}]}
+            with zipfile.ZipFile(archive,'w') as out:
+                out.writestr('patchwork-manifest.json',json.dumps(manifest))
+                out.writestr('proposed/app.py',changed)
+            report=json.loads(evidence.read_text())
+            report['release_sha256']=digest(archive.read_bytes())
+            evidence.write_text(json.dumps(report))
+            request,calls=self.fake()
+            with self.assertRaises(ValueError):
+                publish_atomic('owner/repo','main',archive,approve=True,token='dummy',
+                               evidence_path=evidence,source_root=repo,request=request)
+            self.assertFalse(calls)
 
     def test_missing_evidence_prevents_network(self):
         with tempfile.TemporaryDirectory() as temp:
