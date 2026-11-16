@@ -13,6 +13,7 @@ import agent_core
 import license_verification
 import subscriptions
 import btcpay_integration
+import btcpay_production
 import business_v3
 import business_v4
 import intelligence_v45
@@ -474,6 +475,10 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/patchwork':
    return self.respond(200,(ROOT/'tools'/'patchwork'/'dashboard.html').read_text(encoding='utf-8').replace('__PATCHWORK_CSRF__',html.escape(csrf,quote=True)),'text/html; charset=utf-8',headers=[('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'"),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff')])
   if p=='/':
+   if btcpay_production.configured():
+    try:
+     with db() as c:btcpay_production.reconcile(c,user['id'])
+    except RuntimeError:pass
    if btcpay_integration.configured():
     try:
      with db() as c:btcpay_integration.reconcile(c,user['id'])
@@ -485,7 +490,9 @@ class Handler(BaseHTTPRequestHandler):
    access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 3 reports total · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
    limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '3 free reports total'
-   if ent['plan']!='pro':
+   if ent['plan']!='pro' and btcpay_production.configured():
+    upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Pay securely using a unique BTCPay invoice. PRO activates after independently verified settlement.</p><form method="post" action="/btcpay/production/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Pay with Bitcoin</button></form><p><a href="/billing">Billing status</a></p></section>'
+   elif ent['plan']!='pro':
     btc_address=os.getenv('VELXTRIA_BITCOIN_ADDRESS','bc1qxdjxk3kzke0shnlqupkndyel7mf9v6fahfkgx4').strip()
     upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Direct Bitcoin payment is available by manual arrangement only. Contact the VELXTRIA operator to confirm the exact BTC amount and payment reference <strong>before sending</strong>. No automatic invoice, exchange-rate quote, payment verification, or access activation is enabled.</p><p>Bitcoin network (BTC) receiving address:</p><p><code style="overflow-wrap:anywhere;word-break:break-all">'+escape(btc_address)+'</code></p><p><strong>Do not send BTC until you receive a confirmed amount and instructions.</strong> Payments to the wrong network or address may be irreversible.</p></section>'
    else: upgrade_html=''
@@ -1748,6 +1755,10 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c: body=operator_v5.render(c,user['id'],csrf)
    return self.respond(200,shell('Business Operator',body,user,csrf))
   if p=='/billing':
+   if btcpay_production.configured():
+    try:
+     with db() as c:btcpay_production.reconcile(c,user['id'])
+    except RuntimeError:pass
    # Customer-facing status is computed from independently verified entitlements.
    if btcpay_integration.configured():
     try:
@@ -1759,11 +1770,24 @@ class Handler(BaseHTTPRequestHandler):
    datefmt=lambda ts: datetime.fromtimestamp(ts,timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if ts else '—'
    status='Verified PRO access through '+datefmt(ent['end']) if ent['plan']=='pro' else 'Free demo'
    pending_note='A testnet invoice is awaiting verified settlement.' if pending else 'No pending testnet invoices.'
+   if btcpay_production.configured():
+    with db() as c:
+     prod_orders=c.execute("SELECT checkout_url FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-prod-%' ORDER BY created_at DESC LIMIT 1",(user['id'],)).fetchone()
+    pending_note='Production Bitcoin invoice awaiting settlement.' if prod_orders else pending_note
+   else:prod_orders=None
    body='<section class="panel"><h1>Billing and access</h1><p><strong>'+escape(status)+'</strong></p><p>'+escape(pending_note)+'</p><p>Payhip payment notifications require independent verification; a checkout redirect never unlocks paid access.</p><p><a href="/account">Account and order history</a></p></section>'
    if pending and btcpay_integration.configured():
     body+='<section class="panel"><h2>Waiting for testnet payment confirmation</h2><p id="billing-progress" role="status">Checking verified settlement...</p><script>(function(){let tries=0;const el=document.getElementById("billing-progress");async function check(){if(++tries>24)return;try{const r=await fetch("/billing/status",{credentials:"same-origin",cache:"no-store"});if(!r.ok)throw Error("status");const d=await r.json();if(d.plan==="pro"){location.reload();return}if(d.pending_testnet_invoices===0){el.textContent="No pending testnet invoices.";return}el.textContent=d.provider_check==="provider_unavailable"?"Payment provider temporarily unavailable. Try again shortly.":"Waiting for verified testnet settlement."; }catch(e){el.textContent="Unable to check payment status. Refresh to retry.";}setTimeout(check,10000)}check()})()</script></section>'
+   if prod_orders:
+    body+='<section class="panel"><h2>Bitcoin payment pending</h2><p><a href="'+escape(prod_orders[0],quote=True)+'">Continue your BTCPay invoice</a></p><p id="prod-billing-progress" role="status">Waiting for verified settlement.</p><script>(function(){const el=document.getElementById("prod-billing-progress");async function poll(){try{const r=await fetch("/billing/status",{credentials:"same-origin",cache:"no-store"});if(!r.ok)throw Error();const d=await r.json();if(d.plan==="pro"){location.reload();return}if(!d.pending_production_invoices){el.textContent="No pending production invoice.";return}el.textContent="Waiting for verified Bitcoin settlement."}catch(e){el.textContent="Unable to check payment status."}setTimeout(poll,10000)}poll()})()</script></section>'
    return self.respond(200,shell('Billing and access',body,user,csrf))
   if p=='/billing/status':
+   prod_state='not_configured'
+   if btcpay_production.configured():
+    try:
+     with db() as c:btcpay_production.reconcile(c,user['id'])
+     prod_state='checked'
+    except RuntimeError:prod_state='provider_unavailable'
    # This endpoint only reconciles invoices owned by the signed-in user.
    # BTCPay is testnet-only; never infer payment from a browser redirect.
    state='not_configured'
@@ -1775,12 +1799,18 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c:
     ent=subscriptions.entitlement(c,user['id'])
     pending=c.execute("SELECT count(*) FROM btcpay_orders WHERE user_id=? AND status='pending'",(user['id'],)).fetchone()[0]
-   payload=json.dumps({'plan':ent['plan'],'status':ent['status'],
+   with db() as c:
+    prod_pending=c.execute("SELECT count(*) FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-prod-%'",(user['id'],)).fetchone()[0]
+   payload=json.dumps({'production_provider_check':prod_state,'pending_production_invoices':prod_pending,'production_enabled':btcpay_production.configured(),'plan':ent['plan'],'status':ent['status'],
                        'period_end':ent['end'],'pending_testnet_invoices':pending,
                        'provider_check':state,'testnet_only':True})
    return self.respond(200,payload,'application/json; charset=utf-8',
                        headers=[('Cache-Control','no-store')])
   if p=='/account':
+   if btcpay_production.configured():
+    try:
+     with db() as c:btcpay_production.reconcile(c,user['id'])
+    except RuntimeError:pass
    if btcpay_integration.configured():
     try:
      with db() as c:btcpay_integration.reconcile(c,user['id'])
@@ -2235,6 +2265,24 @@ class Handler(BaseHTTPRequestHandler):
       else: business_v3.process(c,user['id'],fields)
    except ValueError as exc:return self.fail(400,str(exc),user,csrf)
    return self.redirect('/workspace')
+  if p=='/btcpay/production/checkout':
+   if not btcpay_production.configured():
+    return self.fail(503,'Production Bitcoin checkout is not configured.',user,csrf)
+   with db() as c:
+    ent=subscriptions.entitlement(c,user['id'])
+    if ent['plan']=='pro':return self.redirect('/billing')
+    recent=c.execute("SELECT checkout_url FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-prod-%' ORDER BY created_at DESC LIMIT 1",(user['id'],)).fetchone()
+    if recent:return self.redirect('/billing')
+    order_id=btcpay_production.create_order(c,user['id'])
+   try:
+    invoice_id,checkout_url=btcpay_production.issue_invoice(order_id)
+   except (RuntimeError,ValueError):
+    with db() as c:c.execute("UPDATE btcpay_orders SET status='failed' WHERE order_id=? AND user_id=? AND status='creating'",(order_id,user['id']))
+    return self.fail(503,'Unable to create a verified Bitcoin invoice. Please retry later.',user,csrf)
+   with db() as c:
+    if not btcpay_production.attach_invoice(c,user['id'],order_id,invoice_id,checkout_url):
+     return self.fail(409,'Invoice could not be linked to your account.',user,csrf)
+   return self.redirect(checkout_url)
   if p=='/btcpay/checkout':
    if os.getenv('VELXTRIA_ENABLE_BTCPAY_TEST_CHECKOUT','0')!='1' or not btcpay_integration.configured():
     return self.fail(503,'Bitcoin test checkout is disabled.',user,csrf)
