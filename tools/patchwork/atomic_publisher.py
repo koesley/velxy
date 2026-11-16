@@ -40,6 +40,7 @@ def publish_atomic(repository, base_branch, archive_path, *, approve=False,
         raise ValueError('Release policy blocked this repair')
     if policy['status'] == 'needs_review' and not approve_sensitive:
         raise ValueError('Sensitive repair requires explicit --approve-sensitive-review')
+    release_digest = hashlib.sha256(__import__('pathlib').Path(archive_path).read_bytes()).hexdigest()
     files = load_release(archive_path)
     if len({rel for rel, _, _ in files}) != len(files):
         raise ValueError('Duplicate release target paths')
@@ -73,7 +74,7 @@ def publish_atomic(repository, base_branch, archive_path, *, approve=False,
                    {'base_tree': tree_sha, 'tree': entries})
     new_commit = request(token, 'POST', prefix + '/git/commits',
                          {'message': 'PATCHWORK: atomic reviewed repair (' +
-                          str(len(files)) + ' files)', 'tree': tree['sha'],
+                          str(len(files)) + ' files)\\n\\nPatchwork-Release-SHA256: ' + release_digest + '\\nPatchwork-Base-SHA: ' + base_sha, 'tree': tree['sha'],
                           'parents': [base_sha]})
     new_sha = new_commit['sha']
     if not SHA.fullmatch(new_sha):
@@ -146,7 +147,8 @@ def publish_atomic(repository, base_branch, archive_path, *, approve=False,
             pr = matches[0]
             reused = True
     publication = {'draft_pull_request': pr['html_url'], 'branch': branch,
-                   'commit_sha': new_sha, 'files': len(files), 'merged': False,
+                   'commit_sha': new_sha, 'base_commit_sha': base_sha,
+                   'release_sha256': release_digest, 'files': len(files), 'merged': False,
                    'deployed': False, 'atomic_commit': True, 'reused_existing_pr': reused}
     # Fail closed: a successful POST response is not publication proof.
     # Import lazily to avoid the compatibility publisher import cycle.
