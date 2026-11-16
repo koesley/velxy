@@ -125,3 +125,24 @@ archive contains `patchwork-manifest.json` and proposed replacement files
 under `proposed/`. Source hashes and duplicate target checks protect
 against stale or ambiguous proposals. Do not extract or run untrusted
 proposals without a separate security review and isolated test process.
+
+## V4: GitHub-native draft repair pull requests
+
+The explicit-approval GitHub publisher takes a V3 staged release ZIP,
+verifies the original source hashes against the selected remote base branch,
+creates a dedicated repair branch, uploads proposed replacements, and opens
+a **draft** pull request. It never merges, deploys or runs project code.
+
+```bash
+GITHUB_TOKEN=your-fine-grained-token python tools/patchwork/github_publisher.py \
+  owner/repository main ../patchwork-staged.zip --approve-draft-pr
+```
+
+Use a fine-grained GitHub token scoped to the target repository with
+Contents: Read and write and Pull requests: Read and write. Do not paste
+tokens into reports or commits. Branch creation and file uploads are
+remote writes: use a test repository first. If the API fails mid-operation,
+a partially populated branch may remain and require manual cleanup.
+The publisher currently uses one GitHub Contents API commit per file and
+does not automatically retry, resume, run tests, or merge. The target
+repository should require branch protection and passing CI checks.
