@@ -145,9 +145,17 @@ def publish_atomic(repository, base_branch, archive_path, *, approve=False,
                 raise
             pr = matches[0]
             reused = True
-    return {'draft_pull_request': pr['html_url'], 'branch': branch,
-            'commit_sha': new_sha, 'files': len(files), 'merged': False,
-            'deployed': False, 'atomic_commit': True, 'reused_existing_pr': reused}
+    publication = {'draft_pull_request': pr['html_url'], 'branch': branch,
+                   'commit_sha': new_sha, 'files': len(files), 'merged': False,
+                   'deployed': False, 'atomic_commit': True, 'reused_existing_pr': reused}
+    # Fail closed: a successful POST response is not publication proof.
+    # Import lazily to avoid the compatibility publisher import cycle.
+    from publication_postflight import verify_publication
+    verification = verify_publication(repository, base_branch, archive_path,
+                                      publication, token=token, request=request)
+    publication['postflight_verified'] = verification['status'] == 'verified'
+    publication['postflight_schema'] = verification['schema']
+    return publication
 
 def main():
     parser = argparse.ArgumentParser(description='Publish one atomic repair commit as a draft PR')
