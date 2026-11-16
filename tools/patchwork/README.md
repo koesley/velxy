@@ -146,3 +146,26 @@ a partially populated branch may remain and require manual cleanup.
 The publisher currently uses one GitHub Contents API commit per file and
 does not automatically retry, resume, run tests, or merge. The target
 repository should require branch protection and passing CI checks.
+
+## V5: isolated repair verification
+
+With Docker installed, validate an approved V3 staged ZIP against a Python
+repository in a temporary copy, without changing the source repository:
+
+```bash
+python tools/patchwork/isolated_verify.py . ../patchwork-staged.zip \
+  --approve-isolated-tests --output ../patchwork-test-report.json
+```
+
+The verifier checks source hashes before staging replacements, copies up to
+3,000 Python files / 30 MB, then runs unittest discovery in a container
+with networking disabled, dropped capabilities, no-new-privileges, a read-only
+filesystem, limited memory/CPU/processes and a 120-second timeout.
+Docker is required; there is no host-execution fallback. It records
+pass/fail, output tails and elapsed time in a private JSON report.
+The test discovery command does execute repository Python tests **inside**
+the container, so use only with code you are authorized to test. Containers
+are not a complete boundary against malicious code, and no secrets should
+be exposed to the test environment. The default Python image may need
+to be pulled beforehand, and Docker daemon access must be secured.
+Passing tests do not automatically authorize a merge or deployment.
