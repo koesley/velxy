@@ -11,7 +11,7 @@ class GateTests(unittest.TestCase):
                 return {'state':'open', 'draft':draft,
                         'head':{'sha':SHA,'repo':{'full_name':'owner/repo'}}}
             return {'total_count':runs, 'check_runs':[{
-                'name':'verify', 'status':'completed', 'conclusion':conclusion,
+                'name':'patchwork-repair-ci', 'status':'completed', 'conclusion':conclusion,
                 'head_sha':head_sha, 'app':{'slug':'github-actions'}
             } for _ in range(runs)]}
         return request
