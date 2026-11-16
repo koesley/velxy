@@ -18,7 +18,6 @@ from github_publisher import api
 from isolated_verify import verify
 from release_gate import prepare_release
 from release_policy import analyze
-from live_readiness import audit as readiness_audit
 from release_decision import assess_release
 
 REPO_PATTERN = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
@@ -45,6 +44,7 @@ def run(repository, base_branch, *, token, approve=False, request=api,
     if not re.fullmatch(r'[A-Za-z0-9._/-]+',base_branch) or '..' in base_branch:
         raise ValueError('Invalid base branch')
     # Fail closed before any writes. A successful readiness audit is required.
+    from live_readiness import audit as readiness_audit
     readiness=readiness_audit(repository,base_branch,token=token,
                               expected_repository=expected_repository,request=request)
     if readiness['status']!='ready':
