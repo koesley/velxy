@@ -40,7 +40,7 @@ def redeem(db, token, user_id, clock=None):
     updated = db.execute("UPDATE guest_invites SET redeemed_by=?,redeemed_at=? WHERE token_hash=? AND redeemed_by IS NULL AND expires_at>?",
                          (user_id, now, digest, now))
     # sqlite3 and psycopg cursors both expose rowcount; reject races.
-    if updated.rowcount != 1:
+    if getattr(updated, 'rowcount', getattr(getattr(updated, 'cursor', None), 'rowcount', None)) != 1:
         return False
     db.execute("INSERT INTO guest_access(user_id,expires_at) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at",
                (user_id, row[0]))
