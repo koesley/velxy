@@ -36,7 +36,7 @@ class PostflightTests(unittest.TestCase):
             calls.append(method)
             if '/git/commits/' in path:
                 return {'sha':SHA,'parents':[{'sha':'b'*40 if wrong_parent else 'a'*40}],
-                        'message':'Patchwork-Release-SHA256: '+self.release_digest+'\\nPatchwork-Base-SHA: '+'a'*40}
+                        'message':'Patchwork-Release-SHA256: '+self.release_digest+'\nPatchwork-Base-SHA: '+'a'*40}
             if '/commits/' in path:
                 changed=[{'filename':'app.py','status':'modified'}]
                 if extra_file:
