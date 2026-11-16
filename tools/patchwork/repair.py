@@ -29,7 +29,7 @@ def propose_missing_colon(root, relative_path):
         stripped = line.strip()
         # Avoid guessing on comments, multiline headers, and existing colons.
         if ('#' in stripped or ':' in stripped or '\\' in stripped or
-            not stripped.startswith(KEYWORDS) or not stripped.endswith((')', 'else', 'try', 'finally'))):
+            not stripped.startswith(KEYWORDS)):
             return {'status': 'unsupported', 'diff': '', 'explanation': 'Manual review required'}
         candidate = list(lines)
         ending = '\r\n' if line.endswith('\r\n') else ('\n' if line.endswith('\n') else '')
