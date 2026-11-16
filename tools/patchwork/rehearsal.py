@@ -70,7 +70,7 @@ def rehearse():
                 return {'sha':commit_sha,'parents':[{'sha':base_sha}]}
             if '/contents/' in path:
                 rel=path.split('/contents/',1)[1].split('?',1)[0]
-                content = replacements[rel] if '?ref='+commit_sha in path else originals[rel].encode()
+                content = replacements[rel].encode() if '?ref='+commit_sha in path else originals[rel].encode()
                 return {'content':base64.b64encode(content).decode()}
             if path.endswith('/git/blobs'):
                 return {'sha':'c'*40}
