@@ -278,3 +278,17 @@ The older `github_publisher.py` remains available for compatibility and
 entrypoint or restrict it separately. The local policy and test reports
 are not trusted attestations; enforce independent GitHub CI and review
 through repository rulesets.
+
+## V11: Staged archive security hardening
+
+All repair consumers using `github_publisher.load_release` now reject
+duplicate target paths, unexpected archive entries, ZIP symlinks,
+encrypted entries, directory entries, oversized manifests, and oversized
+uncompressed ZIP entries before extracting replacement contents. An
+adversarial regression suite tests duplicate targets, compressed oversized
+payloads, symlink entries, and valid archives.
+
+These checks reduce archive-processing risks but are not a complete
+defense against malicious code or compromised repositories. V10's
+policy gate remains mandatory for the atomic publisher. Production
+deployment is not automatic.
