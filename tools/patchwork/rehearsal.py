@@ -8,6 +8,7 @@ import base64
 import hashlib
 import json
 import subprocess
+import urllib.error
 import tempfile
 from pathlib import Path
 
@@ -56,6 +57,8 @@ def rehearse():
         calls=[]
         def github(token, method, path, payload=None):
             calls.append((method,path,payload))
+            if '/git/ref/heads/patchwork/' in path:
+                raise urllib.error.HTTPError(path,404,'Not Found',{},None)
             if '/git/ref/heads/' in path:
                 return {'object':{'sha':base_sha}}
             if path.endswith('/git/commits/'+base_sha):
@@ -69,6 +72,8 @@ def rehearse():
                 return {'sha':'d'*40}
             if path.endswith('/git/commits'):
                 return {'sha':commit_sha}
+            if '/pulls?' in path:
+                return []
             if path.endswith('/pulls'):
                 return {'html_url':'https://github.com/owner/repo/pull/42'}
             return {}
