@@ -65,7 +65,7 @@ class AtomicPublisherTests(unittest.TestCase):
                 return {'sha':'f'*40}
             if path.endswith('/git/commits/'+'f'*40):
                 return {'sha':'f'*40,'parents':[{'sha':SHA}],
-                        'message':'Patchwork-Release-SHA256: '+self.release_digest+'\\nPatchwork-Base-SHA: '+SHA}
+                        'message':'Patchwork-Release-SHA256: '+self.release_digest+'\nPatchwork-Base-SHA: '+SHA}
             if '/pulls?' in path:
                 count=sum('/pulls?' in p for _,p,_ in calls)
                 if count == 1:
@@ -114,7 +114,7 @@ class AtomicPublisherTests(unittest.TestCase):
             archive,evidence,repo=self.fixture(temp)
             # Replace archive contents with a dangerous call, then update
             # the evidence digest to keep the policy as the failing gate.
-            changed=b'exec("x=2")\\n'
+            changed=b'exec("x=2")\n'
             manifest={'schema':'patchwork-staged-release-v1','approved_for_staging':True,
                       'files':[{'file':'app.py','original_sha256':digest(OLD),
                                 'replacement_sha256':digest(changed)}]}
