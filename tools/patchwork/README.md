@@ -444,3 +444,20 @@ This verification is explicitly invoked by a caller after publication;
 it is not an automatic merge gate and does not itself make any GitHub
 writes. Real GitHub integration still requires the private disposable
 repository and opt-in credentials described in V14-V15.
+
+## V20: Mandatory postflight before publication success
+
+`atomic_publisher.publish_atomic` now invokes the independent
+`publication_postflight.verify_publication` before returning a
+successful publication record. It verifies the remote commit,
+review branch, every staged replacement file and the open draft PR.
+The returned result includes `postflight_verified: true` and the
+verification schema. The legacy compatibility publisher delegates to
+this same enforced path.
+
+If postflight fails, the publisher raises instead of claiming
+success. A GitHub draft PR or branch may already exist after that
+failure; the retry-safe V18 logic can inspect and reuse it on a
+subsequent attempt. No automatic rollback, merge or deployment occurs.
+The verification is a point-in-time integrity check, not a trusted CI
+attestation or a substitute for human review.
