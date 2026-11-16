@@ -256,3 +256,25 @@ payments, secrets, database migrations), and enforces a configurable
 This is an additional manual preflight step; it is **not yet enforced by
 the GitHub atomic publisher**. Heuristic AST checks cannot prove security,
 and a passing report does not replace CI or human code review.
+
+## V10: Enforced release policy at atomic publication
+
+Atomic publishing now **fails closed** unless the caller supplies a local
+repository checkout via `--source-root`. It checks original source digests,
+runs V9's policy analysis, and rejects blocked releases before any GitHub API
+request. Sensitive modules or new dependencies require explicit
+`--approve-sensitive-review`; passing this flag does not waive blockers.
+
+```bash
+GITHUB_TOKEN=your-token python tools/patchwork/atomic_publisher.py \
+  owner/repository main ../patchwork-staged.zip \
+  --source-root . --verification-report ../patchwork-test-report.json \
+  --approve-draft-pr
+```
+
+For reviewed sensitive changes, append `--approve-sensitive-review`.
+The older `github_publisher.py` remains available for compatibility and
+**does not enforce V9 policy**. Production users should disable the legacy
+entrypoint or restrict it separately. The local policy and test reports
+are not trusted attestations; enforce independent GitHub CI and review
+through repository rulesets.
