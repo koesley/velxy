@@ -62,6 +62,7 @@ class PublisherTests(unittest.TestCase):
     def test_stale_base_prevents_writes(self):
         with tempfile.TemporaryDirectory() as root:
             archive = self.make_zip(root)
+            evidence = self.make_evidence(root, archive)
             calls = []
             def mock(token, method, path, payload=None):
                 calls.append(method)
