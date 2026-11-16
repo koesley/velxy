@@ -15,6 +15,7 @@ class MonitoringTests(unittest.TestCase):
         self.db.execute("CREATE TABLE users(id INTEGER PRIMARY KEY, email TEXT)")
         self.db.execute("INSERT INTO users VALUES(1,'buyer@example.com')")
         subscriptions.setup(self.db)
+        self.db.commit()
         with patch.object(orders, "receive_address", return_value=ADDRESS):
             self.order = orders.allocate_sqlite(self.db, 1, "wallet", "public")
         billing.quote_order(self.db, self.order["order_id"], 1, rate="100000", now=1000)
