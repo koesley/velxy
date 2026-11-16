@@ -325,3 +325,37 @@ workflow dispatch. It is separate from the offline mock rehearsal.
 Only the controlled fixture is executed; this is not a guarantee that
 arbitrary customer repositories or untrusted code are safe to execute.
 A green run is required before calling the real-container path tested.
+
+## V14: Opt-in real GitHub disposable-repository integration
+
+The `live_integration.py` probe is designed to validate real Docker
+execution followed by GitHub Git-object publishing, branch creation,
+and draft-PR inspection. It **does not run automatically in CI**.
+
+Prerequisites: create a separate disposable GitHub repository (never
+`koesley/velxy`), place `patchwork_integration_fixture.py` on its
+default branch containing exactly:
+
+```python
+def patchwork_fixture():
+    return 1
+```
+
+Ensure Docker is installed, the allowlisted image is available, and a
+least-privilege GitHub token can create draft pull requests in that
+disposable repository. Then run:
+
+```bash
+export PATCHWORK_DISPOSABLE_REPOSITORY=owner/disposable-repo
+export GITHUB_TOKEN=your-disposable-repo-token
+python tools/patchwork/live_integration.py owner/disposable-repo main \
+  --approve-live-disposable-test
+```
+
+The probe rejects production repository `koesley/velxy`, requires an
+exact environment allowlist and approval, verifies the remote baseline,
+uses a real Docker verification report, and checks the resulting Git
+commit, branch and open draft PR against the expected immutable SHA.
+It intentionally leaves the draft PR open; there is no automatic merge,
+deployment or deletion. **No live GitHub integration run is claimed
+until a separate disposable repository is configured and tested.**
