@@ -1,4 +1,4 @@
-"""PATCHWORK V4: GitHub draft pull request publisher.
+"""PATCHWORK V17: compatibility facade for policy-enforced atomic publishing.
 
 Explicitly approved, review-only release ZIP -> dedicated branch -> draft PR.
 No auto-merge, execution or deployment. Uses stdlib HTTPS GitHub API.
@@ -106,46 +106,19 @@ def validate_test_evidence(archive_path, evidence_path):
         raise ValueError('Missing, stale or unsuccessful isolated verification')
     return report
 
-def publish(repository, base_branch, archive_path, *, approve=False, token=None, request=api, evidence_path=None):
-    if not approve:
-        raise ValueError('Explicit --approve-draft-pr required')
-    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
-        raise ValueError('Invalid repository')
-    if not re.fullmatch(r'[A-Za-z0-9._/-]+', base_branch) or '..' in base_branch or base_branch.startswith('/'):
-        raise ValueError('Invalid base branch')
-    if not token:
-        raise ValueError('GITHUB_TOKEN is required')
-    evidence = validate_test_evidence(archive_path, evidence_path)
-    files = load_release(archive_path)
-    prefix = '/repos/' + repository
-    head = request(token, 'GET', prefix + '/git/ref/heads/' + urllib.parse.quote(base_branch, safe='/'))
-    base_sha = head['object']['sha']
-    # Verify every original against the base branch BEFORE any writes.
-    originals = []
-    for rel, replacement, digest in files:
-        file_info = request(token, 'GET', prefix + '/contents/' + urllib.parse.quote(rel, safe='/') + '?ref=' + urllib.parse.quote(base_branch, safe=''))
-        original = base64.b64decode(file_info['content'])
-        if hashlib.sha256(original).hexdigest() != digest:
-            raise ValueError('Stale source on GitHub: ' + rel)
-        originals.append((rel, replacement, file_info['sha']))
-    branch = 'patchwork/review-' + hashlib.sha256((base_sha + ''.join(rel for rel, _, _ in originals) + ''.join(hashlib.sha256(data).hexdigest() for _, data, _ in originals)).encode()).hexdigest()[:16]
-    request(token, 'POST', prefix + '/git/refs', {'ref': 'refs/heads/' + branch, 'sha': base_sha})
-    for rel, replacement, _ in originals:
-        # Read SHA from the new branch; do not blindly overwrite concurrent changes.
-        info = request(token, 'GET', prefix + '/contents/' + urllib.parse.quote(rel, safe='/') + '?ref=' + urllib.parse.quote(branch, safe=''))
-        if hashlib.sha256(base64.b64decode(info['content'])).hexdigest() != next(d for p, _, d in files if p == rel):
-            raise ValueError('Source changed during publication: ' + rel)
-        request(token, 'PUT', prefix + '/contents/' + urllib.parse.quote(rel, safe='/'), {
-            'message': 'PATCHWORK: stage reviewed repair for ' + rel,
-            'branch': branch, 'sha': info['sha'],
-            'content': base64.b64encode(replacement).decode('ascii')})
-    pr = request(token, 'POST', prefix + '/pulls', {
-        'title': 'PATCHWORK: review staged repairs (' + str(len(files)) + ' files)',
-        'head': branch, 'base': base_branch, 'draft': True,
-        'body': 'PATCHWORK staged repair proposals. Human review required.\\n\\n'
-                'No tests were run by the publisher. No automatic merge or deployment.\\n'
-                'Review source changes and required CI before approving.'})
-    return {'draft_pull_request': pr['html_url'], 'branch': branch, 'files': len(files), 'merged': False}
+def publish(repository, base_branch, archive_path, *, approve=False, token=None,
+            request=api, evidence_path=None, source_root=None,
+            approve_sensitive=False):
+    """Compatibility API: delegate exclusively to policy-enforced atomic publisher.
+
+    The legacy per-file GitHub Contents API write path has been retired.
+    """
+    from atomic_publisher import publish_atomic
+    return publish_atomic(
+        repository, base_branch, archive_path, approve=approve, token=token,
+        evidence_path=evidence_path, request=request, source_root=source_root,
+        approve_sensitive=approve_sensitive)
+
 
 def main():
     parser = argparse.ArgumentParser(description='Publish reviewed ZIP as a GitHub draft PR')
@@ -153,11 +126,16 @@ def main():
     parser.add_argument('base_branch')
     parser.add_argument('release_zip')
     parser.add_argument('--approve-draft-pr', action='store_true')
+    parser.add_argument('--source-root', required=True,
+                        help='Checkout required for fail-closed release policy')
+    parser.add_argument('--approve-sensitive-review', action='store_true')
     parser.add_argument('--verification-report', required=True, help='Passing Docker verification JSON for this exact ZIP')
     args = parser.parse_args()
     print(json.dumps(publish(args.repository, args.base_branch, args.release_zip,
                              approve=args.approve_draft_pr, token=os.getenv('GITHUB_TOKEN'),
-                             evidence_path=args.verification_report), indent=2))
+                             evidence_path=args.verification_report,
+                             source_root=args.source_root,
+                             approve_sensitive=args.approve_sensitive_review), indent=2))
 
 if __name__ == '__main__':
     sys.exit(main())
