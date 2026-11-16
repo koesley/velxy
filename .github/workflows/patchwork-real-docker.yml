@@ -1,0 +1,27 @@
+name: PATCHWORK real Docker integration
+on:
+  push:
+    branches:
+      - feature/patchwork-scanner
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-docker-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout controlled source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check Docker availability
+        run: docker info --format '{{.ServerVersion}}'
+      - name: Pre-pull allowlisted verification image
+        run: docker pull python:3.11-alpine
+      - name: Run real isolated Docker verification
+        run: python tools/patchwork/real_docker_integration.py
