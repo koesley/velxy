@@ -13,13 +13,15 @@ import re
 import urllib.parse
 
 from github_publisher import api, load_release, validate_test_evidence
+from release_policy import analyze as analyze_release_policy
 
 REPO = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
 BRANCH = re.compile(r'^[A-Za-z0-9._/-]+$')
 SHA = re.compile(r'^[0-9a-f]{40}$')
 
 def publish_atomic(repository, base_branch, archive_path, *, approve=False,
-                   token=None, evidence_path=None, request=api):
+                   token=None, evidence_path=None, request=api,
+                   source_root=None, approve_sensitive=False):
     if not approve:
         raise ValueError('Explicit --approve-draft-pr is required')
     if not token:
@@ -31,6 +33,13 @@ def publish_atomic(repository, base_branch, archive_path, *, approve=False,
             or base_branch.endswith('.lock')):
         raise ValueError('Invalid base branch')
     validate_test_evidence(archive_path, evidence_path)
+    if source_root is None:
+        raise ValueError('Local source repository is required for policy enforcement')
+    policy = analyze_release_policy(source_root, archive_path)
+    if policy['status'] == 'blocked':
+        raise ValueError('Release policy blocked this repair')
+    if policy['status'] == 'needs_review' and not approve_sensitive:
+        raise ValueError('Sensitive repair requires explicit --approve-sensitive-review')
     files = load_release(archive_path)
     if len({rel for rel, _, _ in files}) != len(files):
         raise ValueError('Duplicate release target paths')
@@ -93,11 +102,15 @@ def main():
     parser.add_argument('base_branch')
     parser.add_argument('release_zip')
     parser.add_argument('--verification-report', required=True)
+    parser.add_argument('--source-root', required=True, help='Repository checkout used for policy verification')
+    parser.add_argument('--approve-sensitive-review', action='store_true')
     parser.add_argument('--approve-draft-pr', action='store_true')
     args = parser.parse_args()
     print(json.dumps(publish_atomic(args.repository, args.base_branch, args.release_zip,
                                     approve=args.approve_draft_pr,
                                     evidence_path=args.verification_report,
+                                    source_root=args.source_root,
+                                    approve_sensitive=args.approve_sensitive_review,
                                     token=os.getenv('GITHUB_TOKEN')), indent=2))
 
 if __name__ == '__main__':
