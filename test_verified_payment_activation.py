@@ -18,14 +18,14 @@ class VerifiedTestnetPaymentTests(unittest.TestCase):
         subscriptions.setup(self.c)
         btc.setup(self.c)
         self.c.execute("""INSERT INTO btcpay_orders(order_id,user_id,invoice_id,status,created_at)
-                          VALUES ('order-1',1,'invoice-1','pending',1)""")
+                          VALUES ('vx-test-order-1',1,'invoice-1','pending',1)""")
         self.c.commit()
 
     def tearDown(self):
         self.c.close()
 
     def invoice(self, **changes):
-        result={'id':'invoice-1','metadata':{'orderId':'order-1'},
+        result={'id':'invoice-1','metadata':{'orderId':'vx-test-order-1'},
                 'status':'Settled','amount':btc.PRICE,'currency':'USD'}
         result.update(changes)
         return result
