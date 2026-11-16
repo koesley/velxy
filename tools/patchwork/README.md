@@ -34,3 +34,18 @@ Run unit tests locally with:
 ```bash
 python -m unittest discover -s tools/patchwork -p 'test_*.py' -v
 ```
+
+## V0.6 AI-to-dashboard review bridge
+
+Generate a review bundle using the opt-in AI command:
+
+```bash
+python tools/patchwork/ai_repair.py . broken.py --confirm-upload --review-file patchwork-review.json
+```
+
+Then sign in to the VELXTRIA portal, visit `/patchwork`, and select the
+JSON file under **AI proposal review**. The file is parsed locally in the
+browser. The CLI bundle contains the complete original and proposed source:
+keep it private and delete it when no longer needed. Existing output paths
+are never overwritten. This feature does not execute tests, apply patches,
+create GitHub pull requests, or make AI calls from the website.
