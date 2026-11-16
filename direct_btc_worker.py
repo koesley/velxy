@@ -13,6 +13,9 @@ import direct_btc_billing
 
 def scan_once(conn, *, now=None):
     now = int(time.time()) if now is None else now
+    # Ensure observation storage exists even for expired quotes and new databases.
+    direct_btc_monitor.setup(conn)
+    conn.commit()
     rows = conn.execute("""SELECT o.order_id,o.user_id,q.expires_at
         FROM direct_btc_orders o JOIN direct_btc_quotes q ON q.order_id=o.order_id
         WHERE o.status='pending' ORDER BY q.issued_at LIMIT 100""").fetchall()
@@ -25,6 +28,9 @@ def scan_once(conn, *, now=None):
             txs = conn.execute("""SELECT txid,vout FROM direct_btc_observations
                 WHERE order_id=? ORDER BY observed_at LIMIT 100""", (order_id,)).fetchall()
             for txid, vout in txs:
+                # Serialize payment claims and entitlement writes across workers.
+                # Roll back every unsuccessful attempt before trying another output.
+                conn.execute("BEGIN IMMEDIATE")
                 if direct_btc_billing.settle_verified_output(
                         conn, order_id, user_id, txid, vout, verified_at=now):
                     activated += 1
