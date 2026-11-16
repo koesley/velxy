@@ -84,3 +84,29 @@ def verified_settlement(invoice_id, order_id):
         return False
     return (info.get("status") == "Settled" and amount == PRICE_USD
             and info.get("currency") == "USD")
+
+
+def issue_invoice(order_id):
+    """Create a production invoice, returning a validated hosted checkout URL.
+
+    Only call for a previously committed, user-owned order.
+    """
+    if not order_id or not order_id.startswith("vx-prod-"):
+        raise ValueError("Invalid production order identifier")
+    result = api_request("POST", "/invoices", {
+        "amount": str(PRICE_USD), "currency": "USD",
+        "metadata": {"orderId": order_id, "itemDesc": "VELXTRIA PRO - 30 days"},
+        "checkout": {"speedPolicy": "HighSpeed"}
+    })
+    if not isinstance(result, dict):
+        raise RuntimeError("Invalid BTCPay invoice response")
+    invoice_id, checkout_url = result.get("id"), result.get("checkoutLink")
+    if not isinstance(invoice_id, str) or not invoice_id or not isinstance(checkout_url, str):
+        raise RuntimeError("Invalid BTCPay invoice response")
+    parsed = urllib.parse.urlsplit(checkout_url)
+    origin = urllib.parse.urlsplit(endpoint())
+    if (parsed.scheme != "https" or parsed.netloc != origin.netloc
+            or not parsed.path.startswith("/i/") or not parsed.path[3:]
+            or parsed.username or parsed.password or parsed.fragment):
+        raise RuntimeError("Untrusted BTCPay checkout URL")
+    return invoice_id, checkout_url
