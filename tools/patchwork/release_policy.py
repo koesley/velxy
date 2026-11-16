@@ -4,6 +4,7 @@ Static, read-only policy analysis of an approved staged repair archive.
 No source execution, repository modification, GitHub writes, or deployments.
 """
 import ast
+from collections import Counter
 import hashlib
 import json
 import re
@@ -19,13 +20,13 @@ MAX_CHANGED_LINES = 1200
 MAX_FILES = 25
 
 def _calls(tree):
-    found = set()
+    found = Counter()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
         if isinstance(func, ast.Name):
-            found.add(func.id)
+            found[func.id] += 1
         elif isinstance(func, ast.Attribute):
             parts = [func.attr]
             obj = func.value
@@ -34,7 +35,7 @@ def _calls(tree):
                 obj = obj.value
             if isinstance(obj, ast.Name):
                 parts.append(obj.id)
-            found.add('.'.join(reversed(parts)))
+            found['.'.join(reversed(parts))] += 1
     return found
 
 def _imports(tree):
@@ -81,10 +82,17 @@ def analyze(root, archive_path, *, max_changed_lines=MAX_CHANGED_LINES):
         if any(part.lower().find(word) >= 0 for part in Path(rel).parts for word in SENSITIVE):
             findings.append({'file':rel,'severity':'review','rule':'sensitive-path',
                              'message':'Sensitive module requires specialist review'})
-        introduced = _calls(new_ast) - _calls(old_ast)
-        flagged = sorted(x for x in introduced if x in DANGEROUS
-                         or x in ('os.system', 'subprocess.Popen', 'subprocess.run',
-                                  'subprocess.call', 'pickle.loads', 'yaml.load'))
+        # Compare occurrence counts, not just membership: a second exec() is
+        # dangerous even when the original module already contained one.
+        old_calls = _calls(old_ast)
+        new_calls = _calls(new_ast)
+        introduced = new_calls - old_calls
+        high_risk = DANGEROUS | {'os.system', 'subprocess.Popen', 'subprocess.run',
+                                 'subprocess.call', 'pickle.loads', 'yaml.load',
+                                 'shutil.rmtree', 'os.remove', 'os.unlink',
+                                 'os.chmod', 'os.chown', 'subprocess.check_output',
+                                 'subprocess.check_call'}
+        flagged = sorted(x for x, count in introduced.items() if count > 0 and x in high_risk)
         if flagged:
             findings.append({'file':rel,'severity':'block','rule':'dangerous-call',
                              'message':'New high-risk call(s): ' + ', '.join(flagged)})
