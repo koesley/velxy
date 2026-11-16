@@ -110,3 +110,61 @@ def issue_invoice(order_id):
             or parsed.username or parsed.password or parsed.fragment):
         raise RuntimeError("Untrusted BTCPay checkout URL")
     return invoice_id, checkout_url
+
+
+def create_order(conn, user_id):
+    """Persist a production order before issuing any invoice."""
+    import secrets
+    import time
+    order_id = "vx-prod-" + secrets.token_hex(16)
+    conn.execute("INSERT INTO btcpay_orders(order_id,user_id,created_at) VALUES (?,?,?)",
+                 (order_id, user_id, int(time.time())))
+    return order_id
+
+
+def attach_invoice(conn, user_id, order_id, invoice_id, checkout_url):
+    """Attach invoice only to the creating account's unclaimed order."""
+    result = conn.execute(
+        "UPDATE btcpay_orders SET invoice_id=?,checkout_url=?,status='pending' "
+        "WHERE order_id=? AND user_id=? AND status='creating' AND invoice_id IS NULL",
+        (invoice_id, checkout_url, order_id, user_id))
+    return (result.cursor.rowcount if hasattr(result, "cursor") else result.rowcount) == 1
+
+
+def reconcile(conn, user_id):
+    """Atomically grant a 30-day period for each independently settled invoice."""
+    import time
+    import subscriptions
+    orders = conn.execute(
+        "SELECT order_id,invoice_id FROM btcpay_orders WHERE user_id=? AND "
+        "status='pending' AND order_id LIKE 'vx-prod-%' AND invoice_id IS NOT NULL "
+        "ORDER BY created_at DESC LIMIT 30", (user_id,)).fetchall()
+    activated = False
+    for order_id, invoice_id in orders:
+        if not verified_settlement(invoice_id, order_id):
+            continue
+        now = int(time.time())
+        claimed = conn.execute(
+            "UPDATE btcpay_orders SET status='settled',settled_at=? "
+            "WHERE order_id=? AND user_id=? AND invoice_id=? AND status='pending'",
+            (now, order_id, user_id, invoice_id))
+        count = claimed.cursor.rowcount if hasattr(claimed, "cursor") else claimed.rowcount
+        if count != 1:
+            continue
+        previous = conn.execute(
+            "SELECT period_end FROM subscriptions WHERE user_id=?", (user_id,)).fetchone()
+        start = max(now, previous[0] if previous and previous[0] > now else now)
+        conn.execute("""INSERT INTO subscriptions
+            (user_id,product_key,pricing_plan,status,source_reference,period_start,period_end,verified_at,verification_source,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET
+            product_key=excluded.product_key,pricing_plan=excluded.pricing_plan,
+            status=excluded.status,source_reference=excluded.source_reference,
+            period_start=excluded.period_start,period_end=excluded.period_end,
+            verified_at=excluded.verified_at,verification_source=excluded.verification_source,
+            updated_at=excluded.updated_at""",
+            (user_id, subscriptions.PRODUCT_KEY, subscriptions.PRICING_PLAN,
+             "active", invoice_id, start, start + 30 * 86400, now,
+             "btcpay_production_verified", now))
+        activated = True
+    return activated
