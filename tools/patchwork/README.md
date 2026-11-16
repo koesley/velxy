@@ -169,3 +169,25 @@ are not a complete boundary against malicious code, and no secrets should
 be exposed to the test environment. The default Python image may need
 to be pulled beforehand, and Docker daemon access must be secured.
 Passing tests do not automatically authorize a merge or deployment.
+
+## V6: Verification-gated GitHub publishing
+
+The GitHub draft PR publisher now **requires a successful isolated verification
+report for the exact staged release ZIP**. It rejects missing, failed, stale,
+zero-test and mismatched reports before contacting GitHub. The Docker verifier
+records the ZIP SHA-256 and requires at least one discovered unittest test.
+
+```bash
+python tools/patchwork/isolated_verify.py . ../patchwork-staged.zip \
+  --approve-isolated-tests --output ../patchwork-test-report.json
+
+GITHUB_TOKEN=your-token python tools/patchwork/github_publisher.py \
+  owner/repository main ../patchwork-staged.zip \
+  --verification-report ../patchwork-test-report.json --approve-draft-pr
+```
+
+This is a **local workflow integrity gate**, not a cryptographic attestation.
+A user with write access to the report can forge JSON; do not treat it as
+independent proof of CI. Before production, require trusted CI-issued
+attestations bound to immutable commit hashes and branch protections.
+The publisher still creates draft PRs only; it never merges or deploys.
