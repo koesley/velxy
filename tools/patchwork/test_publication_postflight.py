@@ -27,12 +27,17 @@ class PostflightTests(unittest.TestCase):
                      'draft_pull_request':'https://github.com/owner/repo/pull/10'}
         return archive,publication
 
-    def mock(self,*,modified=False,non_draft=False,changed_ref=False):
+    def mock(self,*,modified=False,non_draft=False,changed_ref=False,extra_file=False):
         calls=[]
         def request(token,method,path,payload=None):
             calls.append(method)
             if '/git/commits/' in path:
                 return {'sha':SHA,'parents':[{'sha':'a'*40}]}
+            if '/commits/' in path:
+                changed=[{'filename':'app.py','status':'modified'}]
+                if extra_file:
+                    changed.append({'filename':'secrets.py','status':'modified'})
+                return {'sha':SHA,'parents':[{'sha':'a'*40}],'files':changed}
             if '/git/ref/heads/' in path:
                 return {'object':{'sha':'a'*40 if changed_ref else SHA}}
             if '/contents/app.py' in path:
@@ -64,6 +69,13 @@ class PostflightTests(unittest.TestCase):
             archive,pub=self.fixture(root)
             request,_=self.mock(non_draft=True)
             with self.assertRaisesRegex(ValueError,'identity'):
+                verify_publication('owner/repo','main',archive,pub,token='fake',request=request)
+
+    def test_unapproved_extra_file_is_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            archive,pub=self.fixture(root)
+            request,_=self.mock(extra_file=True)
+            with self.assertRaisesRegex(ValueError,'file count'):
                 verify_publication('owner/repo','main',archive,pub,token='fake',request=request)
 
     def test_moved_branch_is_rejected(self):
