@@ -50,6 +50,14 @@ def run(repository, base_branch, *, token, approve=False, request=api,
     if readiness['status']!='ready':
         raise ValueError('Disposable repository readiness audit blocked live probe')
     prefix = '/repos/' + repository
+    if require_ci:
+        # A repair PR cannot satisfy the release decision unless the required
+        # workflow already exists on the disposable default branch.
+        workflow_path='.github/workflows/patchwork-repair-pr.yml'
+        workflow=request(token,'GET',prefix+'/contents/'+workflow_path+
+                         '?ref='+urllib.parse.quote(base_branch,safe=''))
+        if workflow.get('type')!='file' or not workflow.get('sha'):
+            raise ValueError('Required repair PR workflow is missing on disposable default branch')
     repo_info = request(token,'GET',prefix)
     if repo_info.get('full_name') != repository or repo_info.get('archived') or repo_info.get('disabled'):
         raise ValueError('Repository identity or state mismatch')
