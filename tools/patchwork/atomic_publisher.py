@@ -74,7 +74,7 @@ def publish_atomic(repository, base_branch, archive_path, *, approve=False,
                    {'base_tree': tree_sha, 'tree': entries})
     new_commit = request(token, 'POST', prefix + '/git/commits',
                          {'message': 'PATCHWORK: atomic reviewed repair (' +
-                          str(len(files)) + ' files)\\n\\nPatchwork-Release-SHA256: ' + release_digest + '\\nPatchwork-Base-SHA: ' + base_sha, 'tree': tree['sha'],
+                          str(len(files)) + ' files)\n\nPatchwork-Release-SHA256: ' + release_digest + '\nPatchwork-Base-SHA: ' + base_sha, 'tree': tree['sha'],
                           'parents': [base_sha]})
     new_sha = new_commit['sha']
     if not SHA.fullmatch(new_sha):
