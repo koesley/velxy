@@ -84,17 +84,70 @@ def publish_atomic(repository, base_branch, archive_path, *, approve=False,
     if latest['object']['sha'] != base_sha:
         raise ValueError('Base branch moved during preparation; no repair branch created')
     branch = 'patchwork/review-' + new_sha[:16]
-    request(token, 'POST', prefix + '/git/refs',
-            {'ref': 'refs/heads/' + branch, 'sha': new_sha})
-    pr = request(token, 'POST', prefix + '/pulls',
-                 {'title': 'PATCHWORK: atomic repair review (' + str(len(files)) + ' files)',
-                  'head': branch, 'base': base_branch, 'draft': True,
-                  'body': 'Atomic multi-file repair commit. Human review and GitHub CI required. '
-                          'Local verification report is not a trusted CI attestation. '
-                          'No automatic merge or deployment.'})
+    # Recover from a previous partial attempt without moving an existing ref.
+    # A pre-existing review branch must point to exactly this immutable commit.
+    ref_path = prefix + '/git/ref/heads/' + urllib.parse.quote(branch, safe='/')
+    try:
+        existing = request(token, 'GET', ref_path)
+    except Exception as exc:
+        # GitHub's standard 404 means absent. Other errors (401/403/5xx,
+        # network failures) must fail closed, not be interpreted as absence.
+        if getattr(exc, 'code', None) != 404:
+            raise
+        existing = None
+    if existing is not None:
+        if existing.get('object', {}).get('sha') != new_sha:
+            raise ValueError('Existing review branch points to a different commit')
+    else:
+        try:
+            request(token, 'POST', prefix + '/git/refs',
+                    {'ref': 'refs/heads/' + branch, 'sha': new_sha})
+        except Exception:
+            # A concurrent retry may have created the same branch.
+            current = request(token, 'GET', ref_path)
+            if current.get('object', {}).get('sha') != new_sha:
+                raise
+    owner = repository.split('/')[0]
+    query = ('?state=open&head=' + urllib.parse.quote(owner + ':' + branch, safe=':')
+             + '&base=' + urllib.parse.quote(base_branch, safe=''))
+    existing_prs = request(token, 'GET', prefix + '/pulls' + query)
+    if not isinstance(existing_prs, list):
+        raise ValueError('Invalid GitHub PR listing')
+    matches = [item for item in existing_prs
+               if item.get('head', {}).get('sha') == new_sha
+               and item.get('head', {}).get('ref') == branch
+               and item.get('base', {}).get('ref') == base_branch]
+    if len(matches) > 1 or (existing_prs and len(matches) != len(existing_prs)):
+        raise ValueError('Conflicting review pull request already exists')
+    if matches:
+        if matches[0].get('draft') is not True:
+            raise ValueError('Existing review pull request is not a draft')
+        pr = matches[0]
+        reused = True
+    else:
+        try:
+            pr = request(token, 'POST', prefix + '/pulls',
+                         {'title': 'PATCHWORK: atomic repair review (' + str(len(files)) + ' files)',
+                          'head': branch, 'base': base_branch, 'draft': True,
+                          'body': 'Atomic multi-file repair commit. Human review and GitHub CI required. '
+                                  'Local verification report is not a trusted CI attestation. '
+                                  'No automatic merge or deployment.'})
+            reused = False
+        except Exception:
+            # If GitHub accepted the POST but the response was lost, detect
+            # the resulting draft instead of blindly creating another one.
+            recovered = request(token, 'GET', prefix + '/pulls' + query)
+            matches = [item for item in recovered
+                       if item.get('head', {}).get('sha') == new_sha
+                       and item.get('draft') is True
+                       and item.get('base', {}).get('ref') == base_branch]
+            if len(matches) != 1 or len(recovered) != 1:
+                raise
+            pr = matches[0]
+            reused = True
     return {'draft_pull_request': pr['html_url'], 'branch': branch,
             'commit_sha': new_sha, 'files': len(files), 'merged': False,
-            'deployed': False, 'atomic_commit': True}
+            'deployed': False, 'atomic_commit': True, 'reused_existing_pr': reused}
 
 def main():
     parser = argparse.ArgumentParser(description='Publish one atomic repair commit as a draft PR')
