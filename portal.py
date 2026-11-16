@@ -116,7 +116,7 @@ DATA_ROOT=Path(os.getenv('VELXTRIA_DATA_DIR',str(ROOT))).resolve()
 DATA_ROOT.mkdir(parents=True,exist_ok=True)
 DB=DATA_ROOT/'portal.sqlite3'; REPORTS=DATA_ROOT/'customer_reports'; REPORTS.mkdir(exist_ok=True)
 MAX_BYTES=5*1024*1024; MAX_MONTHLY=50; LOCK=Lock()
-PATCHWORK_RATE={}; PATCHWORK_LOCK=Lock()
+PATCHWORK_LOCK=Lock()
 REQUIRED=['Order ID','Order Date','Customer','Product','Quantity','Unit Price','Status','Region']
 
 def now(): return int(time.time())
@@ -127,6 +127,7 @@ def db():
  else:
   c.execute("""CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', access TEXT NOT NULL DEFAULT 'demo', created INTEGER NOT NULL)""")
  c.execute('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL, csrf TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
+ c.execute('CREATE TABLE IF NOT EXISTS patchwork_ai_limits (user_id INTEGER PRIMARY KEY, last_request INTEGER NOT NULL)')
  c.execute("CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, filename TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL, digest TEXT NOT NULL, email_status TEXT NOT NULL DEFAULT 'not_sent', FOREIGN KEY(user_id) REFERENCES users(id))")
  c.execute("CREATE TABLE IF NOT EXISTS deliveries (report_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', next_attempt INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(report_id) REFERENCES reports(id))")
  c.execute('CREATE TABLE IF NOT EXISTS paid_licenses (license_hash TEXT PRIMARY KEY, license_key TEXT NOT NULL, user_id INTEGER NOT NULL UNIQUE, redeemed_at INTEGER NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
@@ -1852,10 +1853,14 @@ class Handler(BaseHTTPRequestHandler):
    except UnicodeError:return self.fail(400,'File must use UTF-8.',user,csrf)
    key=os.getenv('OPENAI_API_KEY','')
    if not key:return self.fail(503,'AI provider is not configured.',user,csrf)
-   with PATCHWORK_LOCK:
-    last=PATCHWORK_RATE.get(user['id'],0)
-    if now()-last<3600:return self.fail(429,'One AI repair request per account per hour.',user,csrf)
-    PATCHWORK_RATE[user['id']]=now()
+   # Persist the rate limit in the same database across workers and restarts.
+   # Conditional upsert prevents concurrent requests from bypassing the limit.
+   with db() as c:
+    stamp=now()
+    c.execute('INSERT INTO patchwork_ai_limits(user_id,last_request) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET last_request=excluded.last_request WHERE patchwork_ai_limits.last_request <= ?', (user['id'],stamp,stamp-3600))
+    updated=c.execute('SELECT last_request FROM patchwork_ai_limits WHERE user_id=?',(user['id'],)).fetchone()
+    if not updated or updated[0]!=stamp:
+     return self.fail(429,'One AI repair request per account per hour.',user,csrf)
    try:
     from tools.patchwork.ai_repair import propose_with_ai
     with tempfile.TemporaryDirectory() as directory:
