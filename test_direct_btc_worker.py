@@ -32,6 +32,12 @@ class WorkerTests(unittest.TestCase):
         observe.assert_not_called()
         self.assertEqual(result["activated"],0)
 
+    def test_expired_quote_initializes_observation_storage(self):
+        result = worker.scan_once(self.db, now=2000)
+        self.assertEqual(result["activated"], 0)
+        tables = self.db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        self.assertIn(("direct_btc_observations",), tables)
+
     def test_launch_guard_never_enables_checkout(self):
         self.assertFalse(guard.live_checkout_enabled())
         self.assertFalse(guard.readiness()["ready"])
