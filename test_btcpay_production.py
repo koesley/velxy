@@ -51,6 +51,37 @@ class ProductionBTCPayTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             prod.issue_invoice("vx-test-order1")
 
+    def test_production_reconcile_is_idempotent_and_account_scoped(self):
+        import sqlite3
+        import time
+        import subscriptions
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE btcpay_orders (order_id TEXT PRIMARY KEY, user_id INTEGER, invoice_id TEXT, checkout_url TEXT DEFAULT '', status TEXT DEFAULT 'creating', created_at INTEGER, settled_at INTEGER DEFAULT 0)")
+        subscriptions.setup(db)
+        db.execute("INSERT INTO btcpay_orders (order_id,user_id,invoice_id,status,created_at) VALUES (?,?,?,?,?)",
+                   ("vx-prod-one", 7, "inv-one", "pending", int(time.time())))
+        with patch.object(prod, "verified_settlement", return_value=True) as verify:
+            self.assertFalse(prod.reconcile(db, 8))
+            verify.assert_not_called()
+            self.assertTrue(prod.reconcile(db, 7))
+            first = db.execute("SELECT period_end FROM subscriptions WHERE user_id=7").fetchone()[0]
+            self.assertFalse(prod.reconcile(db, 7))
+            self.assertEqual(first, db.execute("SELECT period_end FROM subscriptions WHERE user_id=7").fetchone()[0])
+        self.assertEqual(db.execute("SELECT status FROM btcpay_orders WHERE order_id='vx-prod-one'").fetchone()[0], "settled")
+
+    def test_unsettled_invoice_never_unlocks(self):
+        import sqlite3
+        import time
+        import subscriptions
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE btcpay_orders (order_id TEXT PRIMARY KEY, user_id INTEGER, invoice_id TEXT, checkout_url TEXT DEFAULT '', status TEXT DEFAULT 'creating', created_at INTEGER, settled_at INTEGER DEFAULT 0)")
+        subscriptions.setup(db)
+        db.execute("INSERT INTO btcpay_orders (order_id,user_id,invoice_id,status,created_at) VALUES (?,?,?,?,?)",
+                   ("vx-prod-two", 7, "inv-two", "pending", int(time.time())))
+        with patch.object(prod, "verified_settlement", return_value=False):
+            self.assertFalse(prod.reconcile(db, 7))
+        self.assertIsNone(db.execute("SELECT user_id FROM subscriptions WHERE user_id=7").fetchone())
+
     def test_no_empty_identifiers(self):
         with patch.object(prod, "api_request") as request:
             self.assertFalse(prod.verified_settlement("", "order"))
