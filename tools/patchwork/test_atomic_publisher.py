@@ -72,11 +72,11 @@ class AtomicPublisherTests(unittest.TestCase):
 
     def test_stale_source_prevents_writes(self):
         with tempfile.TemporaryDirectory() as temp:
-            archive,evidence=self.fixture(temp)
+            archive,evidence,repo=self.fixture(temp)
             request,calls=self.fake(stale=True)
             with self.assertRaises(ValueError):
                 publish_atomic('owner/repo','main',archive,approve=True,token='dummy',
-                               evidence_path=evidence,request=request)
+                               evidence_path=evidence,source_root=repo,request=request)
             self.assertFalse(any(method!='GET' for method,_,_ in calls))
 
     def test_moved_base_prevents_branch_creation(self):
