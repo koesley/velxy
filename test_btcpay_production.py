@@ -17,6 +17,24 @@ class ProductionBTCPayTests(unittest.TestCase):
             with self.subTest(url=url), patch.dict(os.environ, {"VELXTRIA_BTCPAY_PROD_URL": url}):
                 self.assertFalse(prod.configured())
 
+    def test_demo_host_never_enables_production(self):
+        for host in ("https://mainnet.demo.btcpayserver.org",
+                     "https://testnet.demo.btcpayserver.org"):
+            with self.subTest(host=host), patch.dict(os.environ, {
+                "VELXTRIA_BTCPAY_PROD_URL": host,
+                "VELXTRIA_BTCPAY_PROD_API_KEY": "fake",
+                "VELXTRIA_BTCPAY_PROD_STORE_ID": "fake",
+                "VELXTRIA_ENABLE_BTCPAY_PRODUCTION": "1"}):
+                self.assertFalse(prod.configured())
+
+    def test_production_is_opt_in(self):
+        with patch.dict(os.environ, {
+            "VELXTRIA_BTCPAY_PROD_URL": "https://payments.example.com",
+            "VELXTRIA_BTCPAY_PROD_API_KEY": "fake",
+            "VELXTRIA_BTCPAY_PROD_STORE_ID": "fake",
+            "VELXTRIA_ENABLE_BTCPAY_PRODUCTION": "0"}):
+            self.assertFalse(prod.configured())
+
     def test_requires_credentials(self):
         with patch.dict(os.environ, {"VELXTRIA_BTCPAY_PROD_URL": "https://payments.example.com",
                                      "VELXTRIA_BTCPAY_PROD_API_KEY": "",
