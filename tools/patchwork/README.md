@@ -475,3 +475,18 @@ report success when the remote commit contains an unapproved change.
 
 This is a read-only point-in-time check and is not a substitute for
 GitHub branch protection, CI provenance or human review.
+
+## V22: Release provenance and base-parent binding
+
+The atomic publisher records the SHA256 of the exact approved ZIP
+and the immutable base commit SHA in the Git commit message as
+`Patchwork-Release-SHA256` and `Patchwork-Base-SHA` trailers.
+The publication record carries both identifiers. Mandatory postflight
+verifies the release digest against the local archive, checks the
+actual Git commit parent against the recorded base SHA, and requires
+both provenance trailers in the remote commit message. A mismatched
+archive, parent or missing trailer blocks a success report.
+
+These are integrity checks, not cryptographic signatures or trusted
+GitHub Actions attestations. A caller with GitHub write access can
+forge commit messages; human review and CI remain required.
