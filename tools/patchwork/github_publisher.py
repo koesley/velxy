@@ -68,7 +68,26 @@ def load_release(archive_path):
             results.append((rel, data, item['original_sha256']))
         return results
 
-def publish(repository, base_branch, archive_path, *, approve=False, token=None, request=api):
+def validate_test_evidence(archive_path, evidence_path):
+    if not evidence_path:
+        raise ValueError('A passing isolated verification report is required')
+    evidence_file = __import__('pathlib').Path(evidence_path)
+    if evidence_file.stat().st_size > 100_000:
+        raise ValueError('Verification report too large')
+    report = json.loads(evidence_file.read_text(encoding='utf-8'))
+    archive_digest = hashlib.sha256(__import__('pathlib').Path(archive_path).read_bytes()).hexdigest()
+    if (report.get('schema') != 'patchwork-isolated-verification-v1'
+            or report.get('status') != 'passed'
+            or report.get('exit_code') != 0
+            or not isinstance(report.get('tests_discovered'), int)
+            or report['tests_discovered'] < 1
+            or report.get('release_sha256') != archive_digest
+            or report.get('source_repository_modified') is not False
+            or report.get('tests_executed_on_host') is not False):
+        raise ValueError('Missing, stale or unsuccessful isolated verification')
+    return report
+
+def publish(repository, base_branch, archive_path, *, approve=False, token=None, request=api, evidence_path=None):
     if not approve:
         raise ValueError('Explicit --approve-draft-pr required')
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
@@ -77,6 +96,7 @@ def publish(repository, base_branch, archive_path, *, approve=False, token=None,
         raise ValueError('Invalid base branch')
     if not token:
         raise ValueError('GITHUB_TOKEN is required')
+    evidence = validate_test_evidence(archive_path, evidence_path)
     files = load_release(archive_path)
     prefix = '/repos/' + repository
     head = request(token, 'GET', prefix + '/git/ref/heads/' + urllib.parse.quote(base_branch, safe='/'))
@@ -114,9 +134,11 @@ def main():
     parser.add_argument('base_branch')
     parser.add_argument('release_zip')
     parser.add_argument('--approve-draft-pr', action='store_true')
+    parser.add_argument('--verification-report', required=True, help='Passing Docker verification JSON for this exact ZIP')
     args = parser.parse_args()
     print(json.dumps(publish(args.repository, args.base_branch, args.release_zip,
-                             approve=args.approve_draft_pr, token=os.getenv('GITHUB_TOKEN')), indent=2))
+                             approve=args.approve_draft_pr, token=os.getenv('GITHUB_TOKEN'),
+                             evidence_path=args.verification_report), indent=2))
 
 if __name__ == '__main__':
     sys.exit(main())
