@@ -12,7 +12,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from proposal_engine import _target, validate_proposal
+try:
+    from .proposal_engine import _target, validate_proposal
+except ImportError:  # Direct CLI invocation
+    from proposal_engine import _target, validate_proposal
 
 MAX_INPUT = 40_000
 
