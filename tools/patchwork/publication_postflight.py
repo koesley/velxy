@@ -28,13 +28,24 @@ def verify_publication(repository, base_branch, archive_path, publication, *,
         raise ValueError('Branch name and commit SHA mismatch')
     if not isinstance(base_branch,str) or not re.fullmatch(r'[A-Za-z0-9._/-]+',base_branch) or '..' in base_branch:
         raise ValueError('Invalid base branch')
+    release_digest=hashlib.sha256(__import__('pathlib').Path(archive_path).read_bytes()).hexdigest()
+    if publication.get('release_sha256')!=release_digest:
+        raise ValueError('Publication release digest does not match approved archive')
+    expected_parent=publication.get('base_commit_sha')
+    if not isinstance(expected_parent,str) or not SHA.fullmatch(expected_parent):
+        raise ValueError('Missing expected base commit SHA')
     files=load_release(archive_path)
     if publication.get('files') != len(files):
         raise ValueError('Publication file count mismatch')
     prefix='/repos/'+repository
     commit=request(token,'GET',prefix+'/git/commits/'+sha)
-    if commit.get('sha') != sha or len(commit.get('parents',[]))!=1:
-        raise ValueError('Unexpected Git commit or parent count')
+    if (commit.get('sha') != sha or len(commit.get('parents',[]))!=1
+            or commit['parents'][0].get('sha')!=expected_parent):
+        raise ValueError('Unexpected Git commit parent or identity')
+    message=commit.get('message','')
+    if ('Patchwork-Release-SHA256: '+release_digest not in message.splitlines()
+            or 'Patchwork-Base-SHA: '+expected_parent not in message.splitlines()):
+        raise ValueError('Missing or incorrect release provenance in commit message')
     # The GitHub commit-files endpoint exposes the full diff against the
     # commit's parent. Fail closed if the commit contains any unapproved file.
     diff=request(token,'GET',prefix+'/commits/'+sha+'?per_page=100')
@@ -79,5 +90,6 @@ def verify_publication(repository, base_branch, archive_path, publication, *,
     return {'schema':'patchwork-publication-postflight-v1',
             'status':'verified','repository':repository,'head_sha':sha,
             'draft_pull_request':pr['html_url'],'files_verified':len(files),'commit_file_set_verified':True,
+            'base_commit_sha':expected_parent,'release_sha256':release_digest,
             'github_writes_performed':False,'merged':False,'deployed':False,
             'warning':'Read-only point-in-time verification; human review and CI still required.'}
