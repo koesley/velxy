@@ -508,3 +508,37 @@ proof of workflow trustworthiness. The required workflow must
 actually run on generated repair PRs, and administrators must
 configure GitHub rulesets to enforce checks before merging. The
 inspector does not make GitHub writes or deploy code.
+
+
+## Integrated release decision — review-readiness gate
+
+`release_decision.py` combines three independently verified requirements
+into one **read-only**, fail-closed decision: (1) revalidate the complete
+GitHub repair commit, approved archive fingerprint, base parent, changed
+file set, branch, and open draft PR; (2) verify the exact required GitHub
+Actions workflow, job, and check run for the immutable commit; and (3)
+re-read the PR identity and draft status after both inspections. It
+returns `review_ready` only if all three pass, otherwise `blocked`
+with per-gate reasons. This is a point-in-time inspection; it never
+merges, deploys, or authorizes production changes.
+
+From the repository root, with a GitHub token that can read Actions
+and checks:
+
+```bash
+python tools/patchwork/release_decision.py owner/repo main \
+  approved-release.zip publication.json 123
+```
+
+`publication.json` is the JSON output of the approved atomic
+publisher. The command exits nonzero on a blocked decision. Keep
+release archives and evidence private. The command is **not** an
+automated GitHub ruleset or a signed attestation.
+
+**Deployment blocker:** The repair PR workflow currently lives on
+the PATCHWORK feature branch, not necessarily the repository default
+branch. GitHub's `pull_request` workflows generally must be present
+on the default branch to run on generated repair PRs. Until an
+authorized merge installs the workflow and a real repair PR completes
+its checks, the release decision is expected to remain blocked.
+Do not interpret skipped PR checks as a passing release gate.
