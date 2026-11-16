@@ -471,7 +471,7 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/' and not user:return self.respond(200,shell('Sales reporting made simple',landing_page()))
   if not user:return self.redirect('/login')
   if p=='/patchwork':
-   return self.respond(200,(ROOT/'tools'/'patchwork'/'dashboard.html').read_text(encoding='utf-8').replace('__PATCHWORK_CSRF__',html.escape(csrf,quote=True)),'text/html; charset=utf-8',headers=[('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'"),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff')])
+   return self.respond(200,(ROOT/'tools'/'patchwork'/'dashboard.html').read_text(encoding='utf-8').replace('__PATCHWORK_CSRF__',html.escape(csrf,quote=True)),'text/html; charset=utf-8',headers=[('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'"),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff')])
   if p=='/':
    if btcpay_integration.configured():
     try:
