@@ -359,3 +359,24 @@ commit, branch and open draft PR against the expected immutable SHA.
 It intentionally leaves the draft PR open; there is no automatic merge,
 deployment or deletion. **No live GitHub integration run is claimed
 until a separate disposable repository is configured and tested.**
+
+## V15: Read-only GitHub integration readiness audit
+
+Before running the V14 live publisher, audit a **private disposable**
+repository without modifying it:
+
+```bash
+export PATCHWORK_DISPOSABLE_REPOSITORY=owner/disposable-repo
+export GITHUB_TOKEN=your-disposable-repo-token
+python tools/patchwork/live_readiness.py owner/disposable-repo main
+```
+
+The audit validates repository identity and privacy, active state,
+default branch, read/write permissions, immutable base SHA, and the
+expected fixture contents. It uses GET requests only, never creates
+branches or PRs. The live integration probe additionally checks the
+published file bytes and exact draft PR branch identity.
+
+No real GitHub publishing test has been executed merely by adding
+these tools. The disposable repository and explicit opt-in are still
+required. Use a dedicated least-privilege token, not production secrets.
