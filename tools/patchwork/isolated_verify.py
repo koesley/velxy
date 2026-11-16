@@ -89,7 +89,7 @@ def verify(root, release_zip, *, approve=False, image=DEFAULT_IMAGE,
             stderr = result.stderr[-12000:]
             # unittest returns zero even when no tests are discovered.
             import re
-            discovered = re.search(r'Ran (\\d+) tests? in', stdout + '\\n' + stderr)
+            discovered = re.search(r'Ran (\d+) tests? in', stdout + '\n' + stderr)
             tests_count = int(discovered.group(1)) if discovered else 0
             status = 'passed' if exit_code == 0 and tests_count > 0 else 'failed'
         except subprocess.TimeoutExpired:
