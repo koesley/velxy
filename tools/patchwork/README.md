@@ -191,3 +191,27 @@ A user with write access to the report can forge JSON; do not treat it as
 independent proof of CI. Before production, require trusted CI-issued
 attestations bound to immutable commit hashes and branch protections.
 The publisher still creates draft PRs only; it never merges or deploys.
+
+## V7: GitHub-native immutable-commit verification
+
+A new `.github/workflows/patchwork-repair-pr.yml` workflow checks Python
+syntax and PATCHWORK regression tests on draft repair branches named
+`patchwork/review-*`. It runs on GitHub-hosted runners without repository
+write permissions or credentials persisted by checkout.
+
+After the draft PR is created, inspect GitHub's checks on its exact commit:
+
+```bash
+GITHUB_TOKEN=your-read-token python tools/patchwork/github_ci_gate.py \
+  owner/repository 123 --expected-sha 0123456789abcdef0123456789abcdef01234567
+```
+
+The gate requires a single successful `patchwork-repair-ci` check from
+GitHub Actions on that immutable SHA and rejects pending, failed, missing,
+duplicate or stale checks. It is read-only and does not merge anything.
+The workflow must exist on the repository's default branch for GitHub to
+reliably recognize it for new PRs. Administrators must configure branch
+protection/rulesets to require the check and independent human review;
+this script alone cannot enforce a merge restriction. Tests executed on
+GitHub-hosted runners are not equivalent to the separately constrained
+Docker verifier and may execute project test code; use trusted PR sources.
