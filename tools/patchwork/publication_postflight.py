@@ -35,6 +35,25 @@ def verify_publication(repository, base_branch, archive_path, publication, *,
     commit=request(token,'GET',prefix+'/git/commits/'+sha)
     if commit.get('sha') != sha or len(commit.get('parents',[]))!=1:
         raise ValueError('Unexpected Git commit or parent count')
+    # The GitHub commit-files endpoint exposes the full diff against the
+    # commit's parent. Fail closed if the commit contains any unapproved file.
+    diff=request(token,'GET',prefix+'/commits/'+sha+'?per_page=100')
+    changed=diff.get('files')
+    expected_paths={rel for rel,_,_ in files}
+    if (not isinstance(changed,list) or len(changed)!=len(expected_paths)
+            or diff.get('sha')!=sha
+            or len(diff.get('parents',[]))!=1
+            or diff['parents'][0].get('sha')!=commit['parents'][0].get('sha')):
+        raise ValueError('Commit diff is incomplete or differs from approved file count')
+    observed_paths=set()
+    for item in changed:
+        if (not isinstance(item,dict) or item.get('status')!='modified'
+                or not isinstance(item.get('filename'),str)
+                or item['filename'] in observed_paths):
+            raise ValueError('Unexpected file operation in published commit')
+        observed_paths.add(item['filename'])
+    if observed_paths != expected_paths:
+        raise ValueError('Published commit includes unapproved file changes')
     ref=request(token,'GET',prefix+'/git/ref/heads/'+urllib.parse.quote(branch,safe='/'))
     if ref.get('object',{}).get('sha') != sha:
         raise ValueError('Review branch changed after publication')
@@ -59,6 +78,6 @@ def verify_publication(repository, base_branch, archive_path, publication, *,
         raise ValueError('Draft PR identity mismatch')
     return {'schema':'patchwork-publication-postflight-v1',
             'status':'verified','repository':repository,'head_sha':sha,
-            'draft_pull_request':pr['html_url'],'files_verified':len(files),
+            'draft_pull_request':pr['html_url'],'files_verified':len(files),'commit_file_set_verified':True,
             'github_writes_performed':False,'merged':False,'deployed':False,
             'warning':'Read-only point-in-time verification; human review and CI still required.'}
