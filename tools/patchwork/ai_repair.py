@@ -16,7 +16,7 @@ from proposal_engine import _target, validate_proposal
 
 MAX_INPUT = 40_000
 
-def propose_with_ai(root, relative_path, *, api_key, model, endpoint='https://api.openai.com/v1/chat/completions', transport=None):
+def propose_with_ai(root, relative_path, *, api_key, model, endpoint='https://api.openai.com/v1/chat/completions', transport=None, include_replacement=False):
     if not api_key or not model:
         raise ValueError('API key and model are required')
     if endpoint != 'https://api.openai.com/v1/chat/completions':
@@ -61,6 +61,8 @@ def propose_with_ai(root, relative_path, *, api_key, model, endpoint='https://ap
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise ValueError('AI response was not a valid repair proposal') from exc
     result = validate_proposal(root, relative_path, replacement, expected_sha256=digest)
+    if include_replacement and result['status'] == 'ready_for_review':
+        result['replacement'] = replacement
     result['ai_generated'] = True
     result['model'] = model
     result['explanation'] = explanation[:1000]
@@ -72,6 +74,7 @@ def main():
     parser.add_argument('repository')
     parser.add_argument('file')
     parser.add_argument('--model', default=os.getenv('PATCHWORK_MODEL', 'gpt-4.1-mini'))
+    parser.add_argument('--review-file', help='Write a local review bundle containing original and replacement source (sensitive)')
     parser.add_argument('--confirm-upload', action='store_true', help='Consent to send this source file to the AI provider')
     args = parser.parse_args()
     if not args.confirm_upload:
@@ -80,7 +83,18 @@ def main():
     if not key:
         parser.error('Set OPENAI_API_KEY in the environment')
     try:
-        result = propose_with_ai(args.repository, args.file, api_key=key, model=args.model)
+        result = propose_with_ai(args.repository, args.file, api_key=key, model=args.model, include_replacement=bool(args.review_file))
+        if args.review_file and result['status'] == 'ready_for_review':
+            source = _target(args.repository, args.file).read_text(encoding='utf-8')
+            bundle = {'schema': 'patchwork-review-v1', 'file': args.file, 'original': source,
+                      'replacement': result.pop('replacement'), 'review_status': 'unapproved',
+                      'syntax_validated': result['syntax_valid'], 'tests_run': False, 'applied': False,
+                      'ai_generated': True, 'model': args.model}
+            destination = Path(args.review_file).expanduser().absolute()
+            fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w', encoding='utf-8') as out:
+                json.dump(bundle, out, indent=2)
+            result['review_file_written'] = str(destination)
     except ValueError as exc:
         parser.error(str(exc))
     print(json.dumps(result, indent=2))
