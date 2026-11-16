@@ -106,3 +106,22 @@ directories and limits text inspection to 256 KB per file. It does **not**
 parse or validate YAML/TOML syntax, audit actual dependency CVEs, or prove
 security vulnerabilities. Heuristic warnings require human review.
 Reports are stored locally, never overwritten, and not uploaded by the CLI.
+
+## V3: Approval-gated multi-file release packaging
+
+PATCHWORK can now take up to 25 individually reviewed `patchwork-review-v1`
+bundles, verify that their original source files have not changed, syntax
+check every Python replacement, and produce a single staged ZIP outside the
+repository. It **never** applies the changes, runs the proposed code, pushes
+a Git branch, opens a PR, or deploys.
+
+```bash
+python tools/patchwork/release_gate.py . review-a.json review-b.json \
+  --output ../patchwork-staged.zip --approve-staging
+```
+
+The explicit `--approve-staging` flag authorizes only ZIP creation. The
+archive contains `patchwork-manifest.json` and proposed replacement files
+under `proposed/`. Source hashes and duplicate target checks protect
+against stale or ambiguous proposals. Do not extract or run untrusted
+proposals without a separate security review and isolated test process.
