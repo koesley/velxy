@@ -55,6 +55,7 @@ def verify(root, release_zip, *, approve=False, image=DEFAULT_IMAGE,
     base = Path(root).resolve(strict=True)
     if not base.is_dir():
         raise ValueError('Repository root must be a directory')
+    release_digest = hashlib.sha256(Path(release_zip).read_bytes()).hexdigest()
     candidates = load_release(release_zip)
     # Validate all source hashes before staging any files.
     for rel, replacement, digest in candidates:
@@ -86,12 +87,17 @@ def verify(root, release_zip, *, approve=False, image=DEFAULT_IMAGE,
             exit_code = result.returncode
             stdout = result.stdout[-12000:]
             stderr = result.stderr[-12000:]
-            status = 'passed' if exit_code == 0 else 'failed'
+            # unittest returns zero even when no tests are discovered.
+            import re
+            discovered = re.search(r'Ran (\\d+) tests? in', stdout + '\\n' + stderr)
+            tests_count = int(discovered.group(1)) if discovered else 0
+            status = 'passed' if exit_code == 0 and tests_count > 0 else 'failed'
         except subprocess.TimeoutExpired:
-            exit_code, stdout, stderr, status = None, '', 'Isolated test timeout', 'timeout'
+            exit_code, stdout, stderr, status, tests_count = None, '', 'Isolated test timeout', 'timeout', 0
         except OSError:
-            exit_code, stdout, stderr, status = None, '', 'Docker unavailable', 'unavailable'
+            exit_code, stdout, stderr, status, tests_count = None, '', 'Docker unavailable', 'unavailable', 0
         return {'schema': 'patchwork-isolated-verification-v1', 'status': status,
+                'release_sha256': release_digest, 'tests_discovered': tests_count,
                 'exit_code': exit_code, 'elapsed_seconds': round(time.monotonic()-started, 2),
                 'files_copied': copied, 'replacements_staged': len(candidates),
                 'stdout_tail': stdout, 'stderr_tail': stderr,
