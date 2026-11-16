@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 import zipfile
+import urllib.error
 from pathlib import Path
 from atomic_publisher import publish_atomic
 
@@ -39,8 +40,10 @@ class AtomicPublisherTests(unittest.TestCase):
         calls=[]
         def request(token, method, path, payload=None):
             calls.append((method,path,payload))
+            if '/git/ref/heads/patchwork/' in path:
+                raise urllib.error.HTTPError(path,404,'Not Found',{},None)
             if '/git/ref/heads/' in path:
-                count=sum('/git/ref/heads/' in p for _,p,_ in calls)
+                count=sum('/git/ref/heads/main' in p for _,p,_ in calls)
                 return {'object':{'sha':'b'*40 if moving and count>1 else SHA}}
             if path.endswith('/git/commits/'+SHA):
                 return {'tree':{'sha':'c'*40}}
@@ -52,6 +55,8 @@ class AtomicPublisherTests(unittest.TestCase):
                 return {'sha':'e'*40}
             if path.endswith('/git/commits'):
                 return {'sha':'f'*40}
+            if '/pulls?' in path:
+                return []
             if path.endswith('/pulls'):
                 return {'html_url':'https://github.com/owner/repo/pull/10'}
             return {}
