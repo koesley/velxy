@@ -1857,9 +1857,8 @@ class Handler(BaseHTTPRequestHandler):
    # Conditional upsert prevents concurrent requests from bypassing the limit.
    with db() as c:
     stamp=now()
-    c.execute('INSERT INTO patchwork_ai_limits(user_id,last_request) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET last_request=excluded.last_request WHERE patchwork_ai_limits.last_request <= ?', (user['id'],stamp,stamp-3600))
-    updated=c.execute('SELECT last_request FROM patchwork_ai_limits WHERE user_id=?',(user['id'],)).fetchone()
-    if not updated or updated[0]!=stamp:
+    update=c.execute('INSERT INTO patchwork_ai_limits(user_id,last_request) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET last_request=excluded.last_request WHERE patchwork_ai_limits.last_request <= ?', (user['id'],stamp,stamp-3600))
+    if update.rowcount!=1:
      return self.fail(429,'One AI repair request per account per hour.',user,csrf)
    try:
     from tools.patchwork.ai_repair import propose_with_ai
