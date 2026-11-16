@@ -490,3 +490,21 @@ archive, parent or missing trailer blocks a success report.
 These are integrity checks, not cryptographic signatures or trusted
 GitHub Actions attestations. A caller with GitHub write access can
 forge commit messages; human review and CI remain required.
+
+## V23: GitHub Actions provenance inspection
+
+`ci_provenance.verify_ci_provenance(repository, pull_request,
+token=..., expected_sha=...)` is a read-only, fail-closed inspector
+that correlates the open draft PR's exact immutable head SHA with
+a unique successful GitHub Actions check named
+`patchwork-repair-ci`, a successful pull-request workflow run from
+`.github/workflows/patchwork-repair-pr.yml`, and its successful
+matching job/check-run identity. Duplicate or mismatched runs,
+incorrect workflow paths, stale SHAs and failed jobs are rejected.
+Five offline adversarial tests cover these scenarios.
+
+This is **not** a signed attestation, automatic merge approval or
+proof of workflow trustworthiness. The required workflow must
+actually run on generated repair PRs, and administrators must
+configure GitHub rulesets to enforce checks before merging. The
+inspector does not make GitHub writes or deploy code.
