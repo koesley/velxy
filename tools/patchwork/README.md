@@ -292,3 +292,18 @@ These checks reduce archive-processing risks but are not a complete
 defense against malicious code or compromised repositories. V10's
 policy gate remains mandatory for the atomic publisher. Production
 deployment is not automatic.
+
+## V12: Full lifecycle integration rehearsal
+
+Run `python tools/patchwork/rehearsal.py` to exercise a **two-file**
+release from review JSON through approved staging, risk policy,
+isolated-verifier command generation, atomic GitHub draft PR creation and
+immutable-SHA CI gate inspection. The rehearsal verifies that source
+files remain unchanged and the GitHub write sequence creates exactly one
+commit, with no per-file PUT operations.
+
+**Docker and GitHub are mocked.** This rehearsal does not run a real
+container, push a branch, open a PR, verify a live CI job, merge or deploy.
+Its purpose is to catch interface and orchestration regressions before
+a separate disposable-repository integration test with real services.
+The regression test runs under the PATCHWORK validation workflow.
