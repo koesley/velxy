@@ -27,7 +27,7 @@ class BillingTests(unittest.TestCase):
     def settle(self, **kwargs):
         return billing.settle_verified_output(
             self.conn, self.order["order_id"], 1, "a"*64, 0,
-            amount_sats=49000, confirmed_block_time=1100, verified_at=2000, **kwargs)
+            verified_at=2000, fetch=lambda path: {}, **kwargs)
 
     def test_fixed_quote(self):
         quote = self.quote()
@@ -36,29 +36,29 @@ class BillingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.quote()
 
-    def test_success_once_and_30_days(self):
+    def test_settlement_fails_closed_until_expiry_proof(self):
         self.quote()
-        self.assertTrue(self.settle())
+        self.assertFalse(self.settle())
         self.conn.commit()
-        self.assertEqual(subscriptions.entitlement(self.conn, 1, 2000)["plan"], "pro")
-        self.assertEqual(subscriptions.entitlement(self.conn, 1, 2000)["end"], 2000+30*86400)
+        self.assertEqual(subscriptions.entitlement(self.conn, 1, 2000)["plan"], "demo")
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM direct_btc_claims").fetchone()[0], 0)
         self.assertFalse(self.settle())
 
     def test_no_underpayment_or_late_payment(self):
         self.quote()
         self.assertFalse(billing.settle_verified_output(
             self.conn,self.order["order_id"],1,"a"*64,0,
-            amount_sats=48999,confirmed_block_time=1100,verified_at=2000))
+            verified_at=2000,fetch=lambda path: {}))
         self.assertFalse(billing.settle_verified_output(
             self.conn,self.order["order_id"],1,"a"*64,0,
-            amount_sats=49000,confirmed_block_time=1901,verified_at=2000))
+            verified_at=2000,fetch=lambda path: {}))
         self.assertEqual(subscriptions.entitlement(self.conn,1,2000)["plan"],"demo")
 
     def test_wrong_user_cannot_activate(self):
         self.quote()
         self.assertFalse(billing.settle_verified_output(
             self.conn,self.order["order_id"],2,"a"*64,0,
-            amount_sats=49000,confirmed_block_time=1100,verified_at=2000))
+            verified_at=2000,fetch=lambda path: {}))
 
     def test_invalid_exchange_rates(self):
         for rate in ("0", "-1", "NaN", "Infinity"):
