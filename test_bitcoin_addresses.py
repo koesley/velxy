@@ -6,7 +6,7 @@ import bitcoin_addresses as b
 def sample_zpub():
     # Public generator point, arbitrary public chain code; no private wallet data.
     payload = (b.ZPUB + bytes([3]) + bytes(4) + (0x80000000).to_bytes(4, "big")
-               + bytes(32) + bytes(range(32)) + b._compress(b.G))
+               + bytes(range(32)) + b._compress(b.G))
     checksum = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
     n = int.from_bytes(payload + checksum, "big")
     chars = ""
