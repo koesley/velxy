@@ -86,3 +86,23 @@ Existing reports are never overwritten. Import the JSON into the
 **Repository repair campaigns** panel in the authenticated PATCHWORK page.
 No generated changes are applied or executed. Campaign reports may contain
 sensitive code excerpts in proposed diffs; store them privately.
+
+## V2 multi-language security triage
+
+PATCHWORK now supports a read-only multi-language inventory alongside Python
+repair campaigns. Run:
+
+```bash
+python tools/patchwork/triage.py . --output patchwork-triage.json
+```
+
+Import the report into the **Multi-language security triage** section of the
+authenticated PATCHWORK dashboard. The scanner examines up to 2,000 source
+and manifest files across Python, JavaScript, TypeScript, JSON, YAML, TOML,
+Dockerfiles, and common package manifests. It validates JSON syntax, flags
+selected risky code constructs, and identifies wildcard/latest dependency
+versions in package.json. It skips symlinks and common generated/dependency
+directories and limits text inspection to 256 KB per file. It does **not**
+parse or validate YAML/TOML syntax, audit actual dependency CVEs, or prove
+security vulnerabilities. Heuristic warnings require human review.
+Reports are stored locally, never overwritten, and not uploaded by the CLI.
