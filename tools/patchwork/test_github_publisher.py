@@ -39,39 +39,30 @@ class PublisherTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 publish('owner/repo', 'main', archive, token='dummy')
 
-    def test_draft_pr_only(self):
-        with tempfile.TemporaryDirectory() as root:
-            archive = self.make_zip(root)
-            evidence = self.make_evidence(root, archive)
-            calls = []
-            def mock(token, method, path, payload=None):
-                calls.append((method, path, payload))
-                if path.endswith('/git/ref/heads/main'):
-                    return {'object': {'sha': 'a'*40}}
-                if '/contents/src/a.py' in path and method == 'GET':
-                    return {'sha': 'blobsha', 'content': base64.b64encode(b'x = 1\n').decode()}
-                if path.endswith('/pulls'):
-                    return {'html_url': 'https://github.com/owner/repo/pull/7'}
-                return {}
-            result = publish('owner/repo', 'main', archive, approve=True, token='dummy', request=mock, evidence_path=evidence)
-            self.assertEqual(result['draft_pull_request'], 'https://github.com/owner/repo/pull/7')
-            self.assertTrue(next(payload for method, path, payload in calls if path.endswith('/pulls'))['draft'])
+    def test_legacy_publisher_uses_atomic_draft_pr(self):
+        from unittest.mock import patch
+        with patch('atomic_publisher.publish_atomic',
+                   return_value={'draft_pull_request':'https://github.com/owner/repo/pull/7',
+                                 'atomic_commit':True,'merged':False}) as atomic:
+            result = publish('owner/repo', 'main', 'release.zip',
+                             approve=True, token='dummy', source_root='repo',
+                             evidence_path='evidence.json')
+            self.assertTrue(result['atomic_commit'])
             self.assertFalse(result['merged'])
-            self.assertFalse(any('/merges' in path for _, path, _ in calls))
+            atomic.assert_called_once()
 
-    def test_stale_base_prevents_writes(self):
+    def test_missing_policy_root_prevents_all_network_writes(self):
         with tempfile.TemporaryDirectory() as root:
             archive = self.make_zip(root)
             evidence = self.make_evidence(root, archive)
             calls = []
             def mock(token, method, path, payload=None):
                 calls.append(method)
-                if '/git/ref/' in path:
-                    return {'object': {'sha': 'a'*40}}
-                return {'sha': 'blobsha', 'content': base64.b64encode(b'changed').decode()}
+                raise AssertionError('Network should not be used')
             with self.assertRaises(ValueError):
-                publish('owner/repo', 'main', archive, approve=True, token='dummy', request=mock, evidence_path=evidence)
-            self.assertEqual(calls, ['GET','GET'])
+                publish('owner/repo', 'main', archive, approve=True, token='dummy',
+                        request=mock, evidence_path=evidence)
+            self.assertEqual(calls, [])
 
     def test_missing_or_stale_test_evidence_blocks_publication(self):
         with tempfile.TemporaryDirectory() as root:
