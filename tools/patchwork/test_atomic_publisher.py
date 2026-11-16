@@ -81,11 +81,11 @@ class AtomicPublisherTests(unittest.TestCase):
 
     def test_moved_base_prevents_branch_creation(self):
         with tempfile.TemporaryDirectory() as temp:
-            archive,evidence=self.fixture(temp)
+            archive,evidence,repo=self.fixture(temp)
             request,calls=self.fake(moving=True)
             with self.assertRaises(ValueError):
                 publish_atomic('owner/repo','main',archive,approve=True,token='dummy',
-                               evidence_path=evidence,request=request)
+                               evidence_path=evidence,source_root=repo,request=request)
             self.assertFalse(any(path.endswith('/git/refs') for _,path,_ in calls))
 
     def test_policy_blocks_risky_repair_before_network(self):
@@ -111,7 +111,7 @@ class AtomicPublisherTests(unittest.TestCase):
 
     def test_missing_evidence_prevents_network(self):
         with tempfile.TemporaryDirectory() as temp:
-            archive,evidence=self.fixture(temp)
+            archive,evidence,repo=self.fixture(temp)
             request,calls=self.fake()
             with self.assertRaises(ValueError):
                 publish_atomic('owner/repo','main',archive,approve=True,token='dummy',
