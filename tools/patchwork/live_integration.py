@@ -10,6 +10,7 @@ import json
 import os
 import re
 import tempfile
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -97,9 +98,20 @@ def run(repository, base_branch, *, token, approve=False, request=api,
         pr_number=int(published['draft_pull_request'].rstrip('/').rsplit('/',1)[-1])
         decision=assess_release(repository,base_branch,archive,published,pr_number,
                                 token=token,request=request)
-        if require_ci and decision['status']!='review_ready':
-            raise ValueError('Live repair published, but independent CI gate is blocked: '+
-                             '; '.join(decision['failures']))
+        # CI starts asynchronously after GitHub creates the draft PR. Retry
+        # read-only checks for at most five minutes, never merge or deploy.
+        if require_ci:
+            deadline=time.monotonic()+300
+            while decision['status']!='review_ready' and time.monotonic()<deadline:
+                if (decision['checks']['publication_integrity']=='blocked'
+                        or decision['checks']['final_pr_identity']=='blocked'):
+                    break
+                time.sleep(15)
+                decision=assess_release(repository,base_branch,archive,published,pr_number,
+                                        token=token,request=request)
+            if decision['status']!='review_ready':
+                raise ValueError('Live repair published, but independent CI gate is blocked: '+
+                                 '; '.join(decision['failures']))
     sha=published['commit_sha']
     remote=request(token,'GET',prefix+'/git/commits/'+sha)
     if remote.get('sha')!=sha or not remote.get('parents') or not re.fullmatch('[a-f0-9]{40}',remote['parents'][0]['sha']):
