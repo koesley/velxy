@@ -237,3 +237,22 @@ if PR creation fails. It does not merge, deploy or change the base branch.
 The local JSON verification report is not cryptographically authenticated,
 so production merge rules must rely on independent GitHub CI checks and
 human review. GitHub Contents API limits and file restrictions still apply.
+
+## V9: Repair blast-radius and release policy analyzer
+
+Before publishing an atomic repair, inspect its entire staged ZIP with:
+
+```bash
+python tools/patchwork/release_policy.py . ../patchwork-staged.zip \
+  --output ../patchwork-policy-report.json
+```
+
+The read-only policy analyzer checks every source digest, parses both versions
+of each Python file, measures changed lines, flags newly introduced
+high-risk calls and imports, identifies sensitive modules (authentication,
+payments, secrets, database migrations), and enforces a configurable
+1,200-line change budget. It returns `eligible`, `needs_review` or
+`blocked` with per-file findings. A blocked report exits nonzero.
+This is an additional manual preflight step; it is **not yet enforced by
+the GitHub atomic publisher**. Heuristic AST checks cannot prove security,
+and a passing report does not replace CI or human code review.
