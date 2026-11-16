@@ -86,6 +86,7 @@ def settle_verified_output(conn, order_id, user_id, txid, vout, *,
     time to decide whether a payment was sent before expiry.
     """
     import direct_btc_orders
+    import direct_btc_monitor
     now = int(time.time()) if verified_at is None else verified_at
     row = conn.execute("""SELECT o.status,q.expected_sats,q.issued_at,q.expires_at
         FROM direct_btc_orders o JOIN direct_btc_quotes q ON q.order_id=o.order_id
@@ -98,16 +99,18 @@ def settle_verified_output(conn, order_id, user_id, txid, vout, *,
     outputs = direct_bitcoin.verify_transaction(txid, address_row[0], row[1], row[2], fetch=fetch)
     if not any(output[1] == vout for output in outputs):
         return False
-    # A block timestamp is NOT reliable evidence of the time of broadcast.
-    # We cannot safely enforce quote expiry from confirmation data alone.
-    # Until first-seen-time tracking is implemented, fail closed.
-    return False
+    # Accept only transactions independently observed by our server while the
+    # quote was active. Missed observations fail closed rather than guessing.
+    direct_btc_monitor.setup(conn)
+    if not direct_btc_monitor.observed_in_quote(conn, order_id, txid, vout):
+        return False
     if not direct_btc_orders.claim_output(conn, order_id, txid, vout, now=now):
         return False
     changed = conn.execute("""UPDATE direct_btc_orders SET status='settled'
         WHERE order_id=? AND user_id=? AND status='pending'""", (order_id, user_id))
     if changed.rowcount != 1:
         raise RuntimeError("Concurrent settlement detected; rollback required")
+    subscriptions.setup(conn)
     previous = conn.execute("SELECT period_end FROM subscriptions WHERE user_id=?",
                             (user_id,)).fetchone()
     start = max(now, previous[0] if previous and previous[0] > now else now)
