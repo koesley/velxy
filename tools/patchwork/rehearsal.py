@@ -58,14 +58,20 @@ def rehearse():
         def github(token, method, path, payload=None):
             calls.append((method,path,payload))
             if '/git/ref/heads/patchwork/' in path:
-                raise urllib.error.HTTPError(path,404,'Not Found',{},None)
+                count=sum('/git/ref/heads/patchwork/' in p for _,p,_ in calls)
+                if count == 1:
+                    raise urllib.error.HTTPError(path,404,'Not Found',{},None)
+                return {'object':{'sha':commit_sha}}
             if '/git/ref/heads/' in path:
                 return {'object':{'sha':base_sha}}
             if path.endswith('/git/commits/'+base_sha):
                 return {'tree':{'sha':'b'*40}}
+            if path.endswith('/git/commits/'+commit_sha):
+                return {'sha':commit_sha,'parents':[{'sha':base_sha}]}
             if '/contents/' in path:
                 rel=path.split('/contents/',1)[1].split('?',1)[0]
-                return {'content':base64.b64encode(originals[rel].encode()).decode()}
+                content = replacements[rel] if '?ref='+commit_sha in path else originals[rel].encode()
+                return {'content':base64.b64encode(content).decode()}
             if path.endswith('/git/blobs'):
                 return {'sha':'c'*40}
             if path.endswith('/git/trees'):
@@ -73,7 +79,11 @@ def rehearse():
             if path.endswith('/git/commits'):
                 return {'sha':commit_sha}
             if '/pulls?' in path:
-                return []
+                count=sum('/pulls?' in p for _,p,_ in calls)
+                if count == 1:
+                    return []
+                return [{'draft':True,'head':{'sha':commit_sha,'ref':'patchwork/review-'+commit_sha[:16]},
+                         'base':{'ref':'main'},'html_url':'https://github.com/owner/repo/pull/42'}]
             if path.endswith('/pulls'):
                 return {'html_url':'https://github.com/owner/repo/pull/42'}
             return {}
