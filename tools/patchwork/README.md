@@ -428,3 +428,19 @@ No merge, deployment or automatic cleanup is performed. This is
 best-effort idempotency, not a distributed transaction: orphaned Git
 objects can still remain after failed attempts and concurrent
 publication races may still require human intervention.
+
+## V19: Independent GitHub publication postflight
+
+`publication_postflight.verify_publication(repository, base_branch,
+archive_path, publication, token=...)` independently reads the GitHub
+commit, immutable review branch, every proposed source file at the
+commit SHA, and the matching open draft PR. It rejects mismatched
+file contents, moved branches, unexpected commit parents, changed PR
+identity or non-draft PRs. The result is a read-only
+`patchwork-publication-postflight-v1` report. Four offline tests
+exercise successful verification and adversarial mismatches.
+
+This verification is explicitly invoked by a caller after publication;
+it is not an automatic merge gate and does not itself make any GitHub
+writes. Real GitHub integration still requires the private disposable
+repository and opt-in credentials described in V14-V15.
