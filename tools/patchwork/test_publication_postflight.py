@@ -24,15 +24,19 @@ class PostflightTests(unittest.TestCase):
             z.writestr('patchwork-manifest.json',json.dumps(manifest))
             z.writestr('proposed/app.py',NEW)
         publication={'atomic_commit':True,'commit_sha':SHA,'branch':BRANCH,'files':1,
-                     'draft_pull_request':'https://github.com/owner/repo/pull/10'}
+                     'draft_pull_request':'https://github.com/owner/repo/pull/10',
+                     'base_commit_sha':'a'*40,'release_sha256':digest(archive.read_bytes())}
+        self.release_digest=digest(archive.read_bytes())
         return archive,publication
 
-    def mock(self,*,modified=False,non_draft=False,changed_ref=False,extra_file=False):
+    def mock(self,*,modified=False,non_draft=False,changed_ref=False,extra_file=False,
+             wrong_parent=False):
         calls=[]
         def request(token,method,path,payload=None):
             calls.append(method)
             if '/git/commits/' in path:
-                return {'sha':SHA,'parents':[{'sha':'a'*40}]}
+                return {'sha':SHA,'parents':[{'sha':'b'*40 if wrong_parent else 'a'*40}],
+                        'message':'Patchwork-Release-SHA256: '+self.release_digest+'\\nPatchwork-Base-SHA: '+'a'*40}
             if '/commits/' in path:
                 changed=[{'filename':'app.py','status':'modified'}]
                 if extra_file:
@@ -70,6 +74,22 @@ class PostflightTests(unittest.TestCase):
             request,_=self.mock(non_draft=True)
             with self.assertRaisesRegex(ValueError,'identity'):
                 verify_publication('owner/repo','main',archive,pub,token='fake',request=request)
+
+    def test_wrong_commit_parent_is_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            archive,pub=self.fixture(root)
+            request,_=self.mock(wrong_parent=True)
+            with self.assertRaisesRegex(ValueError,'parent'):
+                verify_publication('owner/repo','main',archive,pub,token='fake',request=request)
+
+    def test_release_digest_mismatch_is_rejected_before_network(self):
+        with tempfile.TemporaryDirectory() as root:
+            archive,pub=self.fixture(root)
+            pub['release_sha256']='0'*64
+            request,calls=self.mock()
+            with self.assertRaisesRegex(ValueError,'digest'):
+                verify_publication('owner/repo','main',archive,pub,token='fake',request=request)
+            self.assertFalse(calls)
 
     def test_unapproved_extra_file_is_rejected(self):
         with tempfile.TemporaryDirectory() as root:
