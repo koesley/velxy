@@ -23,6 +23,16 @@ class PublisherTests(unittest.TestCase):
             archive.writestr('proposed/'+rel, new)
         return path
 
+    def make_evidence(self, root, archive):
+        path = Path(root)/'verification.json'
+        path.write_text(json.dumps({
+            'schema': 'patchwork-isolated-verification-v1',
+            'status': 'passed', 'exit_code': 0, 'tests_discovered': 2,
+            'release_sha256': digest(archive.read_bytes()),
+            'source_repository_modified': False, 'tests_executed_on_host': False
+        }))
+        return path
+
     def test_requires_explicit_approval(self):
         with tempfile.TemporaryDirectory() as root:
             archive = self.make_zip(root)
@@ -32,6 +42,7 @@ class PublisherTests(unittest.TestCase):
     def test_draft_pr_only(self):
         with tempfile.TemporaryDirectory() as root:
             archive = self.make_zip(root)
+            evidence = self.make_evidence(root, archive)
             calls = []
             def mock(token, method, path, payload=None):
                 calls.append((method, path, payload))
@@ -42,7 +53,7 @@ class PublisherTests(unittest.TestCase):
                 if path.endswith('/pulls'):
                     return {'html_url': 'https://github.com/owner/repo/pull/7'}
                 return {}
-            result = publish('owner/repo', 'main', archive, approve=True, token='dummy', request=mock)
+            result = publish('owner/repo', 'main', archive, approve=True, token='dummy', request=mock, evidence_path=evidence)
             self.assertEqual(result['draft_pull_request'], 'https://github.com/owner/repo/pull/7')
             self.assertTrue(next(payload for method, path, payload in calls if path.endswith('/pulls'))['draft'])
             self.assertFalse(result['merged'])
@@ -58,8 +69,21 @@ class PublisherTests(unittest.TestCase):
                     return {'object': {'sha': 'a'*40}}
                 return {'sha': 'blobsha', 'content': base64.b64encode(b'changed').decode()}
             with self.assertRaises(ValueError):
-                publish('owner/repo', 'main', archive, approve=True, token='dummy', request=mock)
+                publish('owner/repo', 'main', archive, approve=True, token='dummy', request=mock, evidence_path=evidence)
             self.assertEqual(calls, ['GET','GET'])
+
+    def test_missing_or_stale_test_evidence_blocks_publication(self):
+        with tempfile.TemporaryDirectory() as root:
+            archive = self.make_zip(root)
+            with self.assertRaises(ValueError):
+                publish('owner/repo', 'main', archive, approve=True, token='dummy')
+            evidence = self.make_evidence(root, archive)
+            data = json.loads(evidence.read_text())
+            data['release_sha256'] = '0'*64
+            evidence.write_text(json.dumps(data))
+            with self.assertRaises(ValueError):
+                publish('owner/repo', 'main', archive, approve=True, token='dummy',
+                        evidence_path=evidence)
 
     def test_zip_path_traversal_rejected(self):
         with tempfile.TemporaryDirectory() as root:
