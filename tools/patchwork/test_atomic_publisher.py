@@ -41,22 +41,32 @@ class AtomicPublisherTests(unittest.TestCase):
         def request(token, method, path, payload=None):
             calls.append((method,path,payload))
             if '/git/ref/heads/patchwork/' in path:
-                raise urllib.error.HTTPError(path,404,'Not Found',{},None)
+                count=sum('/git/ref/heads/patchwork/' in p for _,p,_ in calls)
+                if count == 1:
+                    raise urllib.error.HTTPError(path,404,'Not Found',{},None)
+                return {'object':{'sha':'f'*40}}
             if '/git/ref/heads/' in path:
                 count=sum('/git/ref/heads/main' in p for _,p,_ in calls)
                 return {'object':{'sha':'b'*40 if moving and count>1 else SHA}}
             if path.endswith('/git/commits/'+SHA):
                 return {'tree':{'sha':'c'*40}}
             if '/contents/app.py' in path:
-                return {'content':base64.b64encode(b'wrong' if stale else OLD).decode()}
+                contents = (NEW if '?ref='+'f'*40 in path else (b'wrong' if stale else OLD))
+                return {'content':base64.b64encode(contents).decode()}
             if path.endswith('/git/blobs'):
                 return {'sha':'d'*40}
             if path.endswith('/git/trees'):
                 return {'sha':'e'*40}
             if path.endswith('/git/commits'):
                 return {'sha':'f'*40}
+            if path.endswith('/git/commits/'+'f'*40):
+                return {'sha':'f'*40,'parents':[{'sha':SHA}]}
             if '/pulls?' in path:
-                return []
+                count=sum('/pulls?' in p for _,p,_ in calls)
+                if count == 1:
+                    return []
+                return [{'draft':True,'head':{'sha':'f'*40,'ref':'patchwork/review-'+'f'*16},
+                         'base':{'ref':'main'},'html_url':'https://github.com/owner/repo/pull/10'}]
             if path.endswith('/pulls'):
                 return {'html_url':'https://github.com/owner/repo/pull/10'}
             return {}
@@ -69,6 +79,7 @@ class AtomicPublisherTests(unittest.TestCase):
             result=publish_atomic('owner/repo','main',archive,approve=True,
                                   token='dummy',evidence_path=evidence,source_root=repo,request=request)
             self.assertTrue(result['atomic_commit'])
+            self.assertTrue(result['postflight_verified'])
             self.assertEqual(sum(method=='POST' and path.endswith('/git/commits')
                                  for method,path,_ in calls),1)
             self.assertFalse(any(method=='PUT' for method,_,_ in calls))
