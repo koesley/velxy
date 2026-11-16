@@ -542,3 +542,52 @@ on the default branch to run on generated repair PRs. Until an
 authorized merge installs the workflow and a real repair PR completes
 its checks, the release decision is expected to remain blocked.
 Do not interpret skipped PR checks as a passing release gate.
+
+
+## Live disposable-repository acceptance test
+
+The live integration runner now performs a **read-only readiness audit
+before any write** and evaluates the integrated release decision after
+publishing a draft PR. With `--require-ci`, it also checks that the
+required workflow file exists on the disposable default branch before
+publishing and waits up to five minutes for GitHub Actions to complete.
+It never merges, deploys, closes, or deletes a PR.
+
+**Prerequisites (must be provisioned separately):**
+
+1. A dedicated **private** disposable repository (never
+   `koesley/velxy`) with the exact file
+   `patchwork_integration_fixture.py` containing:
+   ```python
+   def patchwork_fixture():
+       return 1
+   ```
+2. The approved `.github/workflows/patchwork-repair-pr.yml` on that
+   disposable repository's default branch, with Actions enabled.
+3. Docker installed and runnable locally for isolated verification.
+4. A narrowly scoped GitHub token with access to that disposable
+   repository, PRs, Git contents, Actions runs and checks. Do not
+   commit or paste tokens into source or chat.
+
+First perform the read-only audit:
+
+```bash
+export PATCHWORK_DISPOSABLE_REPOSITORY=owner/private-patchwork-test
+export GITHUB_TOKEN=... # Set securely in the environment
+python tools/patchwork/live_readiness.py "$PATCHWORK_DISPOSABLE_REPOSITORY" main
+```
+
+After explicitly approving the live test and ensuring the required
+workflow is on the disposable default branch:
+
+```bash
+python tools/patchwork/live_integration.py "$PATCHWORK_DISPOSABLE_REPOSITORY" main \
+  --approve-live-disposable-test --require-ci
+```
+
+The runner intentionally leaves the generated draft PR open for human
+review. If CI is delayed, fails, or the workflow is missing, the
+decision remains blocked. A failed result after publishing does not
+imply the draft PR was rolled back; inspect the repository manually.
+This test has not been executed against a live disposable repository
+unless its actual GitHub run evidence is separately provided.
