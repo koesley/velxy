@@ -413,3 +413,18 @@ without policy context, rejects high-risk changes before network
 access, and delegates to the atomic implementation. This closes the
 known supported legacy publication bypass; it does not prove that
 other GitHub credentials or manual repository writes are impossible.
+
+## V18: Retry-safe GitHub draft publication
+
+The atomic publisher now checks for an existing deterministic review
+branch and draft PR before creating them. It reuses an existing branch
+only if it points to the exact intended commit, and reuses an open PR
+only if its immutable head, branch and base match. A lost response
+after branch or PR creation triggers a verification lookup instead of
+blindly repeating a write. Authentication, authorization and network
+errors are not treated as absent branches.
+
+No merge, deployment or automatic cleanup is performed. This is
+best-effort idempotency, not a distributed transaction: orphaned Git
+objects can still remain after failed attempts and concurrent
+publication races may still require human intervention.
