@@ -116,6 +116,7 @@ DATA_ROOT=Path(os.getenv('VELXTRIA_DATA_DIR',str(ROOT))).resolve()
 DATA_ROOT.mkdir(parents=True,exist_ok=True)
 DB=DATA_ROOT/'portal.sqlite3'; REPORTS=DATA_ROOT/'customer_reports'; REPORTS.mkdir(exist_ok=True)
 MAX_BYTES=5*1024*1024; MAX_MONTHLY=50; LOCK=Lock()
+PATCHWORK_RATE={}; PATCHWORK_LOCK=Lock()
 REQUIRED=['Order ID','Order Date','Customer','Product','Quantity','Unit Price','Status','Region']
 
 def now(): return int(time.time())
@@ -1839,6 +1840,30 @@ class Handler(BaseHTTPRequestHandler):
   if not ident:return
   user,csrf,token=ident
   if not hmac.compare_digest(fields.get('csrf',''),csrf):return self.fail(403,'Session verification failed.',user,csrf)
+  if p=='/patchwork/ai-repair':
+   if os.getenv('VELXTRIA_PATCHWORK_AI_ENABLED','0')!='1':
+    return self.fail(403,'PATCHWORK AI requests are disabled on this server.',user,csrf)
+   if fields.get('action')!='request_ai_repair' or not uploaded:
+    return self.fail(400,'Choose a Python file and explicitly authorize the AI request.',user,csrf)
+   filename,data=uploaded
+   if not filename.lower().endswith('.py') or not data or len(data)>40000:
+    return self.fail(400,'Choose a nonempty Python file up to 40 KB.',user,csrf)
+   try: source=data.decode('utf-8')
+   except UnicodeError:return self.fail(400,'File must use UTF-8.',user,csrf)
+   key=os.getenv('OPENAI_API_KEY','')
+   if not key:return self.fail(503,'AI provider is not configured.',user,csrf)
+   with PATCHWORK_LOCK:
+    last=PATCHWORK_RATE.get(user['id'],0)
+    if now()-last<3600:return self.fail(429,'One AI repair request per account per hour.',user,csrf)
+    PATCHWORK_RATE[user['id']]=now()
+   try:
+    from tools.patchwork.ai_repair import propose_with_ai
+    with tempfile.TemporaryDirectory() as directory:
+     (Path(directory)/'input.py').write_text(source,encoding='utf-8')
+     result=propose_with_ai(directory,'input.py',api_key=key,model=os.getenv('PATCHWORK_MODEL','gpt-4.1-mini'))
+    return self.respond(200,json.dumps(result),'application/json; charset=utf-8',headers=[('Cache-Control','no-store')])
+   except (ValueError,OSError) as exc:
+    return self.fail(422,'Repair request failed: '+str(exc)[:160],user,csrf)
   if p=='/logout':
    with db() as c:c.execute('DELETE FROM sessions WHERE token_hash=?',(hashlib.sha256(token.encode()).hexdigest(),))
    secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
