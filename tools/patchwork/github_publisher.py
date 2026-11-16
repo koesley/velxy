@@ -35,11 +35,24 @@ def api(token, method, path, payload=None):
 
 def load_release(archive_path):
     with zipfile.ZipFile(archive_path) as archive:
-        names = archive.namelist()
+        infos = archive.infolist()
+        names = [item.filename for item in infos]
+        if any(item.is_dir() or item.flag_bits & 1 or
+               ((item.external_attr >> 16) & 0o170000) == 0o120000
+               for item in infos):
+            raise ValueError('Directories, encrypted entries and symlinks are forbidden')
+        if any(item.file_size > MAX_TOTAL or item.compress_size > MAX_TOTAL
+               for item in infos):
+            raise ValueError('Oversized ZIP entry')
+        if sum(item.file_size for item in infos) > MAX_TOTAL + 65536:
+            raise ValueError('ZIP exceeds uncompressed size budget')
         if not names or len(names) > MAX_FILES + 1 or len(names) != len(set(names)):
             raise ValueError('Invalid ZIP entry count or duplicates')
         if 'patchwork-manifest.json' not in names:
             raise ValueError('Missing release manifest')
+        manifest_info = archive.getinfo('patchwork-manifest.json')
+        if manifest_info.file_size > 65536:
+            raise ValueError('Oversized release manifest')
         manifest = json.loads(archive.read('patchwork-manifest.json'))
         if manifest.get('schema') != 'patchwork-staged-release-v1' or manifest.get('approved_for_staging') is not True:
             raise ValueError('Invalid release manifest')
@@ -49,6 +62,7 @@ def load_release(archive_path):
         if len(names) != len(files) + 1:
             raise ValueError('Unexpected ZIP entries')
         results = []
+        seen_paths = set()
         total = 0
         for item in files:
             if not isinstance(item, dict):
@@ -56,6 +70,9 @@ def load_release(archive_path):
             rel = item.get('file')
             if not isinstance(rel, str) or not rel.endswith('.py') or not rel or rel.startswith('/') or '\\' in rel or any(part in ('', '.', '..') for part in rel.split('/')):
                 raise ValueError('Unsafe path')
+            if rel in seen_paths:
+                raise ValueError('Duplicate release target path')
+            seen_paths.add(rel)
             entry = 'proposed/' + rel
             if entry not in names:
                 raise ValueError('Missing proposed file')
@@ -66,6 +83,8 @@ def load_release(archive_path):
             if not re.fullmatch('[a-f0-9]{64}', str(item.get('original_sha256', ''))):
                 raise ValueError('Invalid source digest')
             results.append((rel, data, item['original_sha256']))
+        if set(names) != {'patchwork-manifest.json'} | {'proposed/' + rel for rel in seen_paths}:
+            raise ValueError('Unexpected ZIP entries')
         return results
 
 def validate_test_evidence(archive_path, evidence_path):
