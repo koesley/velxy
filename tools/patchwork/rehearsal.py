@@ -68,7 +68,7 @@ def rehearse():
                 return {'tree':{'sha':'b'*40}}
             if path.endswith('/git/commits/'+commit_sha):
                 return {'sha':commit_sha,'parents':[{'sha':base_sha}],
-                        'message':'Patchwork-Release-SHA256: '+sha(archive.read_bytes())+'\\nPatchwork-Base-SHA: '+base_sha}
+                        'message':'Patchwork-Release-SHA256: '+sha(archive.read_bytes())+'\nPatchwork-Base-SHA: '+base_sha}
             if '/commits/' in path and method == 'GET' and '/git/commits/' not in path:
                 return {'sha':commit_sha,'parents':[{'sha':base_sha}],
                         'files':[{'filename':rel,'status':'modified'} for rel in originals]}
