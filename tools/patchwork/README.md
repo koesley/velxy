@@ -63,3 +63,26 @@ report with a unified diff. It never applies changes or runs project code.
 The in-memory throttle is not distributed or durable; use a shared database
 limiter before public/multi-instance rollout. The feature is experimental
 and should remain disabled in production until security review and tests.
+
+## V1 repository-wide repair campaigns
+
+Run a bounded, read-only scan across a Python repository:
+
+```bash
+python tools/patchwork/campaign.py . --output patchwork-campaign.json
+```
+
+Optionally generate AI proposals for up to five syntax-error files not
+handled by the conservative built-in colon rule. This **uploads source code
+to OpenAI** and may incur API costs:
+
+```bash
+OPENAI_API_KEY=your-key python tools/patchwork/campaign.py . --output campaign-ai.json --ai --confirm-upload
+```
+
+The scanner considers up to 500 Python files, excludes symlinks and common
+dependency directories, and limits individual AI input files to 40 KB.
+Existing reports are never overwritten. Import the JSON into the
+**Repository repair campaigns** panel in the authenticated PATCHWORK page.
+No generated changes are applied or executed. Campaign reports may contain
+sensitive code excerpts in proposed diffs; store them privately.
