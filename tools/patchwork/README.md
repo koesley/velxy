@@ -461,3 +461,17 @@ failure; the retry-safe V18 logic can inspect and reuse it on a
 subsequent attempt. No automatic rollback, merge or deployment occurs.
 The verification is a point-in-time integrity check, not a trusted CI
 attestation or a substitute for human review.
+
+## V21: Whole-commit changed-file allowlist
+
+Mandatory publication postflight now inspects the GitHub commit diff
+against its parent and verifies that **the complete set of modified
+files exactly equals the approved staged release**. Unexpected
+additions, deletions, renames, duplicate paths, or unrelated file
+modifications fail the verification even when every approved
+replacement's bytes match. Parent identity is cross-checked across
+the Git commit and commit-diff APIs. The publisher therefore cannot
+report success when the remote commit contains an unapproved change.
+
+This is a read-only point-in-time check and is not a substitute for
+GitHub branch protection, CI provenance or human review.
