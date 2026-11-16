@@ -1766,7 +1766,7 @@ class Handler(BaseHTTPRequestHandler):
     except RuntimeError:pass
    with db() as c:
     ent=subscriptions.entitlement(c,user['id'])
-    pending=c.execute("SELECT count(*) FROM btcpay_orders WHERE user_id=? AND status='pending'",(user['id'],)).fetchone()[0]
+    pending=c.execute("SELECT count(*) FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-test-%'",(user['id'],)).fetchone()[0]
    datefmt=lambda ts: datetime.fromtimestamp(ts,timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if ts else '—'
    status='Verified PRO access through '+datefmt(ent['end']) if ent['plan']=='pro' else 'Free demo'
    pending_note='A testnet invoice is awaiting verified settlement.' if pending else 'No pending testnet invoices.'
@@ -1798,7 +1798,7 @@ class Handler(BaseHTTPRequestHandler):
     except RuntimeError:state='provider_unavailable'
    with db() as c:
     ent=subscriptions.entitlement(c,user['id'])
-    pending=c.execute("SELECT count(*) FROM btcpay_orders WHERE user_id=? AND status='pending'",(user['id'],)).fetchone()[0]
+    pending=c.execute("SELECT count(*) FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-test-%'",(user['id'],)).fetchone()[0]
    with db() as c:
     prod_pending=c.execute("SELECT count(*) FROM btcpay_orders WHERE user_id=? AND status='pending' AND order_id LIKE 'vx-prod-%'",(user['id'],)).fetchone()[0]
    payload=json.dumps({'production_provider_check':prod_state,'pending_production_invoices':prod_pending,'production_enabled':btcpay_production.configured(),'plan':ent['plan'],'status':ent['status'],
