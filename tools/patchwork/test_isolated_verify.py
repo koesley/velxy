@@ -42,7 +42,7 @@ class VerifyTests(unittest.TestCase):
                 self.assertIn('no-new-privileges', command)
                 self.assertIn('--cap-drop', command)
                 self.assertIn('readonly', next(x for x in command if x.startswith('type=bind')))
-                return subprocess.CompletedProcess(command, 0, 'OK', '')
+                return subprocess.CompletedProcess(command, 0, '', 'Ran 2 tests in 0.01s\\nOK')
             result = verify(repo, archive, approve=True, runner=fake)
             self.assertEqual(result['status'], 'passed')
             self.assertEqual((repo/'app.py').read_text(), 'x=1\n')
