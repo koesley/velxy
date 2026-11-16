@@ -49,3 +49,17 @@ browser. The CLI bundle contains the complete original and proposed source:
 keep it private and delete it when no longer needed. Existing output paths
 are never overwritten. This feature does not execute tests, apply patches,
 create GitHub pull requests, or make AI calls from the website.
+
+## V0.7 authenticated website AI repair requests
+
+The signed-in PATCHWORK page now offers a direct AI repair form. Disabled by
+default: set `VELXTRIA_PATCHWORK_AI_ENABLED=1` and configure `OPENAI_API_KEY`
+on the server to enable it. Optional `PATCHWORK_MODEL` selects the model.
+Requests explicitly upload one UTF-8 Python file (40 KB maximum) to OpenAI.
+Do not upload secrets, credentials, or customer data. API charges may apply.
+The endpoint requires an authenticated session and CSRF token, throttles to
+one request per account per hour in each server process, and returns a JSON
+report with a unified diff. It never applies changes or runs project code.
+The in-memory throttle is not distributed or durable; use a shared database
+limiter before public/multi-instance rollout. The feature is experimental
+and should remain disabled in production until security review and tests.
