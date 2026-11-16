@@ -9,6 +9,7 @@ import urllib.request
 from decimal import Decimal, ROUND_CEILING, InvalidOperation
 
 import subscriptions
+import direct_bitcoin
 
 PRICE_USD = Decimal("49.00")
 QUOTE_SECONDS = 900
@@ -76,8 +77,8 @@ def quote_order(conn, order_id, user_id, *, rate=None, now=None):
 
 
 def settle_verified_output(conn, order_id, user_id, txid, vout, *,
-                           amount_sats, confirmed_block_time, verified_at=None):
-    """Atomically grant 30 days after independently confirmed on-chain proof.
+                           verified_at=None, fetch=direct_bitcoin.fetch_json):
+    """Atomically grant 30 days after independently checking on-chain proof.
 
     Requires caller-owned transaction and database-level write serialization.
     Transaction/output/address/confirmation verification MUST be done externally.
@@ -89,10 +90,18 @@ def settle_verified_output(conn, order_id, user_id, txid, vout, *,
     row = conn.execute("""SELECT o.status,q.expected_sats,q.issued_at,q.expires_at
         FROM direct_btc_orders o JOIN direct_btc_quotes q ON q.order_id=o.order_id
         WHERE o.order_id=? AND o.user_id=?""", (order_id, user_id)).fetchone()
-    if (not row or row[0] != "pending" or type(amount_sats) is not int
-            or amount_sats < row[1] or type(confirmed_block_time) is not int
-            or not row[2] <= confirmed_block_time <= row[3]):
+    if not row or row[0] != "pending":
         return False
+    address_row = conn.execute("SELECT address FROM direct_btc_orders WHERE order_id=?", (order_id,)).fetchone()
+    if not address_row:
+        return False
+    outputs = direct_bitcoin.verify_transaction(txid, address_row[0], row[1], row[2], fetch=fetch)
+    if not any(output[1] == vout for output in outputs):
+        return False
+    # A block timestamp is NOT reliable evidence of the time of broadcast.
+    # We cannot safely enforce quote expiry from confirmation data alone.
+    # Until first-seen-time tracking is implemented, fail closed.
+    return False
     if not direct_btc_orders.claim_output(conn, order_id, txid, vout, now=now):
         return False
     changed = conn.execute("""UPDATE direct_btc_orders SET status='settled'
