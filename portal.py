@@ -385,6 +385,9 @@ body:not(:has(.v8)) table td{vertical-align:middle}
 
 class Handler(BaseHTTPRequestHandler):
  def preview_guard(self):
+  # The separate HTTP Basic Auth preview gate is disabled.
+  # Customer sessions, workspace permissions, and founder roles remain enforced.
+  return False
   if os.getenv('VELXTRIA_DEPLOYMENT_MODE','local') != 'render-preview':
    return False
   path = urllib.parse.urlsplit(self.path).path
