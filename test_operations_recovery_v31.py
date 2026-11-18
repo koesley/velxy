@@ -7,10 +7,14 @@ class RecoveryTests(unittest.TestCase):
     def setUp(self):
         self.c=sqlite3.connect(":memory:")
         self.c.execute("""CREATE TABLE vx_revenue_tasks29
-            (id TEXT,workspace_id TEXT,owner_id INTEGER,status TEXT)""")
-        self.c.executemany("INSERT INTO vx_revenue_tasks29 VALUES (?,?,?,?)",[
-            ("task1","one",7,"blocked"),("task2","two",7,"blocked"),
-            ("task3","one",8,"blocked"),("task4","one",7,"done")])
+            (id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,lead_id TEXT NOT NULL,
+            title TEXT NOT NULL,owner_id INTEGER NOT NULL,due_date TEXT NOT NULL,
+            status TEXT NOT NULL,created INTEGER NOT NULL,updated INTEGER NOT NULL)""")
+        self.c.executemany("INSERT INTO vx_revenue_tasks29 VALUES (?,?,?,?,?,?,?,?,?)",[
+            ("task1","one","lead1","Task one",7,"2026-12-01","blocked",0,0),
+            ("task2","two","lead2","Task two",7,"2026-12-01","blocked",0,0),
+            ("task3","one","lead3","Task three",8,"2026-12-01","blocked",0,0),
+            ("task4","one","lead4","Task four",7,"2026-12-01","done",0,0)])
         setup(self.c)
     def tearDown(self):self.c.close()
 
