@@ -191,10 +191,10 @@ def landing_page():
  <section class="v8-hero">
   <div class="v8-copy">
    <div class="v8-status"><span class="v8-live"></span> VELXTRIA / INTELLIGENT REPORTING <span class="v8-status-right">PRIVATE PREVIEW</span></div>
-   <h1>DATA IS CHAOS.<br><span>MAKE IT</span><br><i>CLARITY.</i></h1>
-   <p>From raw sales exports to clean, organized intelligence. Upload a supported CSV, isolate problem rows, and download your reporting package in minutes.</p>
-   <div class="v8-actions"><a class="v8-primary" href="/register">ENTER THE DEMO <span>↗</span></a><a class="v8-ghost" href="bitcoin:bc1qxdjxk3kzke0shnlqupkndyel7mf9v6fahfkgx4">PAY WITH BITCOIN <span>↗</span></a><a class="v8-ghost" href="#v8-process">EXPLORE THE SYSTEM <span>↓</span></a></div>
-   <div class="v8-disclaimer">DEMO ENVIRONMENT <span>•</span> SAMPLE OR NON-SENSITIVE DATA ONLY <span>•</span> BITCOIN PAYMENTS REQUIRE MANUAL CONFIRMATION · $149 USD PRICE; REQUEST CURRENT BTC AMOUNT BEFORE SENDING · PAYMENT DOES NOT AUTOMATICALLY UNLOCK ACCESS</div>
+   <h1>RUN YOUR BUSINESS.<br><span>WITH MORE</span><br><i>CLARITY.</i></h1>
+   <p>VELXTRIA helps small businesses turn supported sales exports into organized reports, spot data problems, and explore the business tools already available in one workspace. Start with a demo using sample data.</p>
+   <div class="v8-actions"><a class="v8-primary" href="/register">TRY VELXTRIA <span>↗</span></a><a class="v8-ghost" href="/login">SIGN IN <span>↗</span></a><a class="v8-ghost" href="#v8-process">EXPLORE THE SYSTEM <span>↓</span></a></div>
+   <div class="v8-disclaimer">PRIVATE PREVIEW <span>•</span> SAMPLE OR NON-SENSITIVE DATA ONLY <span>•</span> PAID ACCESS REQUIRES VERIFIED PAYMENT; DO NOT SEND FUNDS WITHOUT CONFIRMING THE CURRENT CHECKOUT PROCESS</div>
   </div>
   <div class="v8-stage" aria-label="Illustrative reporting command center">
    <div class="v8-ring ring-1"></div><div class="v8-ring ring-2"></div><div class="v8-ring ring-3"></div>
