@@ -43,6 +43,11 @@ def init(c):
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, quote_id TEXT NOT NULL,
         lead_id TEXT NOT NULL, task_id TEXT NOT NULL, status TEXT NOT NULL,
         created INTEGER NOT NULL, completed INTEGER, UNIQUE(workspace_id,quote_id))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS bos59_events (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, event_type TEXT NOT NULL,
+        object_id TEXT NOT NULL, actor_id INTEGER NOT NULL, created INTEGER NOT NULL,
+        schema_version INTEGER NOT NULL DEFAULT 1)""")
+    c.execute("CREATE INDEX IF NOT EXISTS bos59_events_recent ON bos59_events(workspace_id,created DESC)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_fulfillment_lead ON bos59_fulfillment(workspace_id,lead_id,status)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_services_scope ON bos59_services(workspace_id,active)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_quotes_lead ON bos59_quotes(workspace_id,lead_id,created)")
@@ -50,6 +55,19 @@ def init(c):
     c.execute("CREATE INDEX IF NOT EXISTS bos59_notes_lead ON bos59_lead_notes(workspace_id,lead_id,created)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_leads_scope ON bos59_leads(workspace_id,status)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_actions_scope ON bos59_actions(workspace_id,decision)")
+
+def record_event(c,uid,wid,event_type,object_id):
+    """Append an immutable workspace-scoped business event in the caller transaction."""
+    if not event_type or not object_id:
+        raise ValueError("Invalid business event")
+    c.execute("INSERT INTO bos59_events(id,workspace_id,event_type,object_id,actor_id,created,schema_version) VALUES(?,?,?,?,?,?,1)",
+              (secrets.token_hex(16),wid,event_type,str(object_id),uid,int(time.time())))
+
+def recent_events(c,uid,wid,limit=25):
+    core.access(c,uid,wid)
+    init(c)
+    limit=max(1,min(int(limit),50))
+    return c.execute("SELECT event_type,object_id,created FROM bos59_events WHERE workspace_id=? ORDER BY created DESC,id DESC LIMIT ?",(wid,limit)).fetchall()
 
 def _text(value, limit):
     if not isinstance(value,str) or not value.strip() or len(value.strip()) > limit:
@@ -146,6 +164,7 @@ def edit_lead(c,uid,wid,lid,name,contact,source,value):
     c.execute("UPDATE bos59_leads SET name=?,contact=?,source=?,value=?,updated=? WHERE workspace_id=? AND id=?",
               (name,contact,source,amount,int(time.time()),wid,lid))
     core.audit(c,uid,wid,"bos_lead_edited",lid)
+    record_event(c,uid,wid,"customer.updated",lid)
 
 def update_lead(c,uid,wid,lid,status):
     core.access(c,uid,wid,write=True)
@@ -216,6 +235,7 @@ def add_task(c,uid,wid,lid,title,due_date):
     c.execute("INSERT INTO bos59_tasks VALUES(?,?,?,?,?,?,?,?,?)",
               (tid,wid,lid,title,due_date,"open",uid,int(time.time()),None))
     core.audit(c,uid,wid,"bos_task_created",tid)
+    record_event(c,uid,wid,"task.created",tid)
     return tid
 
 def complete_task(c,uid,wid,tid):
@@ -227,10 +247,12 @@ def complete_task(c,uid,wid,tid):
     c.execute("UPDATE bos59_tasks SET status='done',completed=? WHERE workspace_id=? AND id=? AND status='open'",
               (int(time.time()),wid,tid))
     core.audit(c,uid,wid,"bos_task_completed",tid)
+    record_event(c,uid,wid,"task.completed",tid)
     related=c.execute("SELECT id FROM bos59_fulfillment WHERE workspace_id=? AND task_id=? AND status='open'",(wid,tid)).fetchone()
     if related:
         c.execute("UPDATE bos59_fulfillment SET status='ready_for_review' WHERE workspace_id=? AND id=? AND status='open'",(wid,related[0]))
         core.audit(c,uid,wid,"bos_fulfillment_ready_for_review",related[0])
+            record_event(c,uid,wid,"fulfillment.ready_for_review",related[0])
 
 def create_quote(c,uid,wid,lid,description,quantity,unit_price):
     """Create a draft estimate. No invoice, charge or outbound delivery."""
@@ -251,6 +273,7 @@ def create_quote(c,uid,wid,lid,description,quantity,unit_price):
     c.execute("INSERT INTO bos59_quotes VALUES(?,?,?,?,?,?,?,?,?)",
               (qid,wid,lid,description,qty,round(price,2),"draft",uid,int(time.time())))
     core.audit(c,uid,wid,"bos_quote_created",qid)
+    record_event(c,uid,wid,"quote.created",qid)
     return qid
 
 def add_service(c,uid,wid,name,description,unit_price):
@@ -306,6 +329,7 @@ def update_quote(c,uid,wid,qid,new_status):
         raise ValueError("Quote status transition not allowed")
     c.execute("UPDATE bos59_quotes SET status=? WHERE id=? AND workspace_id=?",(new_status,qid,wid))
     core.audit(c,uid,wid,"bos_quote_"+new_status,qid)
+    record_event(c,uid,wid,"quote.status_changed",qid)
     if new_status=="accepted":
         existing=c.execute("SELECT id FROM bos59_fulfillment WHERE workspace_id=? AND quote_id=?",(wid,qid)).fetchone()
         if not existing:
@@ -318,6 +342,7 @@ def update_quote(c,uid,wid,qid,new_status):
             c.execute("INSERT INTO bos59_fulfillment VALUES(?,?,?,?,?,?,?,?)",
                       (project_id,wid,qid,lid,task_id,"open",now,None))
             core.audit(c,uid,wid,"bos_fulfillment_created",project_id)
+            record_event(c,uid,wid,"fulfillment.created",project_id)
     return new_status
 
 def confirm_fulfillment(c,uid,wid,project_id):
@@ -336,6 +361,7 @@ def confirm_fulfillment(c,uid,wid,project_id):
     c.execute("UPDATE bos59_fulfillment SET status='delivered',completed=? WHERE workspace_id=? AND id=? AND status='ready_for_review'",
               (int(time.time()),wid,project_id))
     core.audit(c,uid,wid,"bos_fulfillment_delivered",project_id)
+    record_event(c,uid,wid,"fulfillment.delivered",project_id)
 
 def quote_workflow_summary(c,uid,wid):
     core.access(c,uid,wid)
@@ -515,6 +541,11 @@ def render(c,uid,wid,csrf,search="",status_filter="all",page=1):
     d["leads"]=results["leads"]
 
     out=['<section class="ov-hero"><span>VELXTRIA · BUSINESS OS V59</span><h1>Revenue recovery command center</h1><p>Manage leads, prepare follow-ups and require human approval. No automatic messages are sent.</p></section>']
+    events=recent_events(c,uid,wid,15)
+    out.append('<details class="ov-panel"><summary>Business event journal ('+h(len(events))+' recent)</summary><p>Recorded changes in this workspace. Entries describe internal actions, not external delivery or payment.</p>')
+    for event_type,object_id,created in events:
+        out.append('<article class="ov-job"><strong>'+h(event_type.replace("."," · ").replace("_"," ").title())+'</strong><p>'+h(time.strftime("%Y-%m-%d %H:%M UTC",time.gmtime(created)))+' · Reference '+h(object_id[:12])+'</p></article>')
+    out.append('</details>')
     out.append('<section class="ov-metrics">'+''.join('<article class="ov-card"><strong>'+h(k.replace("_"," ").title())+'</strong><span>'+h(v)+'</span></article>' for k,v in d["metrics"].items())+'</section>')
     insights=pipeline_insights(c,uid,wid)
     conversion=("Not enough closed leads" if insights["closed_conversion_pct"] is None else str(insights["closed_conversion_pct"])+"%")
