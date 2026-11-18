@@ -74,7 +74,7 @@ def import_gmail_notices(c, owner, raw):
         raise ValueError("Maximum 100 notices")
     parsed=[]
     for notice in notices:
-        match=re.search(r"(?:message (?:to|wasn't delivered to)|message couldn't be delivered to|delivering your message to)\\s+([A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,})",notice,re.I)
+        match=re.search(r"(?:message (?:to|wasn't delivered to)|message couldn't be delivered to|delivering your message to)\s+([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})",notice,re.I)
         if not match:
             raise ValueError("Missing recognizable Gmail recipient; use email | error import instead")
         email=match.group(1).lower()
