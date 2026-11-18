@@ -1,0 +1,21 @@
+name: Lead attention board validation
+on:
+  pull_request:
+    paths:
+      - 'lead_attention_board.py'
+      - 'test_lead_attention_board.py'
+      - 'portal.py'
+      - 'sales_pipeline.py'
+      - '.github/workflows/lead-attention-board.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - run: python -m compileall -q lead_attention_board.py portal.py
+      - run: python -m unittest -v test_lead_attention_board test_sales_pipeline
