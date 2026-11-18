@@ -450,11 +450,41 @@ def export_csv(c,uid,wid):
         w.writerow([x[k] for k in ("id","name","contact","source","value","status","created")])
     return f.getvalue()
 
-def render(c,uid,wid,csrf):
+def customer_search(c,uid,wid,query="",status="all",page=1):
+    """Bounded, server-side CRM search with tenant scoping and pagination."""
+    core.access(c,uid,wid)
+    init(c)
+    query=(query or "").strip()[:100]
+    if status not in ("all",)+STATES:
+        raise ValueError("Invalid customer filter")
+    try:
+        page=int(page)
+    except (ValueError,TypeError):
+        page=1
+    page=max(1,min(page,10000))
+    conditions=["workspace_id=?"]
+    args=[wid]
+    if query:
+        escaped=query.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")
+        conditions.append("(name LIKE ? ESCAPE '\\' OR contact LIKE ? ESCAPE '\\' OR source LIKE ? ESCAPE '\\')")
+        args.extend(["%"+escaped+"%"]*3)
+    if status!="all":
+        conditions.append("status=?")
+        args.append(status)
+    where=" AND ".join(conditions)
+    total=c.execute("SELECT count(*) FROM bos59_leads WHERE "+where,args).fetchone()[0]
+    rows=c.execute("SELECT id,name,contact,source,value,status,created,updated FROM bos59_leads WHERE "+where+" ORDER BY updated DESC,id DESC LIMIT 30 OFFSET ?",args+[(page-1)*30]).fetchall()
+    keys=("id","name","contact","source","value","status","created","updated")
+    return {"leads":[dict(zip(keys,row)) for row in rows],"total":total,"page":page,"has_next":page*30<total,"query":query,"status":status}
+
+def render(c,uid,wid,csrf,search="",status_filter="all",page=1):
     d=overview(c,uid,wid)
     h=lambda x:html.escape(str(x),quote=True)
     hidden='<input type="hidden" name="csrf" value="'+h(csrf)+'"><input type="hidden" name="workspace" value="'+h(wid)+'">'
     url="/business-os-v59"
+    results=customer_search(c,uid,wid,search,status_filter,page)
+    d["leads"]=results["leads"]
+
     out=['<section class="ov-hero"><span>VELXTRIA · BUSINESS OS V59</span><h1>Revenue recovery command center</h1><p>Manage leads, prepare follow-ups and require human approval. No automatic messages are sent.</p></section>']
     out.append('<section class="ov-metrics">'+''.join('<article class="ov-card"><strong>'+h(k.replace("_"," ").title())+'</strong><span>'+h(v)+'</span></article>' for k,v in d["metrics"].items())+'</section>')
     insights=pipeline_insights(c,uid,wid)
@@ -529,6 +559,13 @@ def render(c,uid,wid,csrf):
     for state,summary in quote_totals.items():
         out.append('<article class="ov-card"><strong>'+h(state.title())+' quotes</strong><span>'+h(summary["count"])+'</span><small>Estimated value '+h(format(summary["value"],".2f"))+'</small></article>')
     out.append('</div><small>All statuses are manually recorded. Accepted quotes do not prove payment. No messages or charges are sent.</small></section>')
+    out.append('<section class="ov-panel"><h2>Find customers</h2><form method="get" action="'+url+'"><input type="hidden" name="w" value="'+h(wid)+'"><label>Search name, contact or source<input name="search" maxlength="100" value="'+h(results["query"])+'" placeholder="Search customer records"></label><label>Status<select name="status">'+''.join('<option value="'+h(st)+'"'+(' selected' if st==results["status"] else '')+'>'+h(st.title())+'</option>' for st in ("all",)+STATES)+'</select></label><button type="submit">Search customers</button></form><p>'+h(results["total"])+' matching customers · page '+h(results["page"])+'</p>')
+    base=url+"?w="+urllib.parse.quote(wid,safe="")+"&search="+urllib.parse.quote(results["query"],safe="")+"&status="+urllib.parse.quote(results["status"],safe="")
+    if results["page"]>1:
+        out.append('<a href="'+h(base+"&page="+str(results["page"]-1))+'">Previous page</a> ')
+    if results["has_next"]:
+        out.append('<a href="'+h(base+"&page="+str(results["page"]+1))+'">Next page</a>')
+    out.append('</section>')
     for lead in d["leads"]:
         out.append('<section class="ov-panel"><h2>'+h(lead["name"])+'</h2><p>'+h(lead["source"])+' · '+h(lead["status"])+' · potential value '+h(lead["value"])+'</p>')
         if services and d["role"] in ("owner","editor"):
