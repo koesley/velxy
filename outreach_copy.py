@@ -79,3 +79,30 @@ def classify_reply(message: str) -> str:
     if any(x in msg for x in ("tell me more", "interested", "send details", "schedule a call")):
         return "potential_interest"
     return "needs_review"
+
+def reply_guidance(message: str) -> dict:
+    """Suggest a respectful response strategy without sending any email."""
+    classification = classify_reply(message)
+    guidance = {
+        "do_not_contact": ("Do not send another marketing message.", ""),
+        "declined": ("Mark as declined and do not continue pitching.", ""),
+        "potential_interest": ("Respond personally with a concrete next step.", "Thanks for your interest. What part of your business would you most like to improve? I can share a focused VELXTRIA walkthrough."),
+        "needs_review": ("Read the full reply and decide manually.", ""),
+    }
+    action, suggestion = guidance[classification]
+    return {"classification": classification, "recommended_action": action, "suggested_reply": suggestion, "automatic_send": False}
+
+def quality_check(prospect: Prospect, result: dict) -> dict:
+    """Identify missing personalization and unverifiable sales claims."""
+    warnings = []
+    if not prospect.first_name.strip():
+        warnings.append("Contact name missing; greeting is generic.")
+    if not prospect.verified_observation.strip():
+        warnings.append("No verified business-specific observation supplied.")
+    if prospect.verified_observation.strip() and not prospect.observation_source.strip():
+        warnings.append("Observation needs a source.")
+    body = result.get("body", "").lower()
+    for claim in ("guaranteed revenue", "double your sales", "your competitors already use"):
+        if claim in body:
+            warnings.append("Potentially unsubstantiated claim: " + claim)
+    return {"ready_for_review": True, "warnings": warnings, "send_automatically": False}
