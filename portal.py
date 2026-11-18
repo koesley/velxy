@@ -212,7 +212,90 @@ def shell(title,body,user=None,csrf=''):
  return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} · VELXTRIA</title><link rel="stylesheet" href="/style.css"><script defer src="/checkout-feedback.js"></script><link rel="stylesheet" href="/site-studio.css"></head><body class="{'workspace-page' if title == 'Business Workspace' else ''}"><header><div class="brand">✦ VELXTRIA <span>BUSINESS PLATFORM</span></div><nav class="velx-nav"><a class="velx-primary" href="/business-os-v59">Business OS</a><a class="velx-primary" href="/revenue-priority">Revenue Priority</a><a class="velx-primary" href="/revenue-priority/live">Live Priorities</a><a class="velx-primary" href="/revenue-followups">Follow-ups</a><a class="velx-primary" href="/revenue-conversion">Conversion</a><a class="velx-primary" href="/revenue-command">Revenue Command</a><a class="velx-primary" href="/revenue-brief">Daily Brief</a><a class="velx-primary" href="/revenue-goals">Goals</a><a class="velx-primary" href="/revenue-gap">Gap Plan</a><a class="velx-primary" href="/revenue-execution">Execution</a><a class="velx-primary" href="/revenue-operations">Operations</a><a class="velx-primary" href="/revenue-recovery">Recovery</a><a class="velx-primary" href="/operations-recovery">Recovery</a><a class="velx-primary" href="/operations-performance">Performance</a><a class="velx-primary" href="/customer-outcomes">Outcomes</a><a class="velx-primary" href="/revenue-sources">Sources</a><a class="velx-primary" href="/revenue-attribution">Sources</a><a class="velx-primary" href="/acquisition-intelligence">Acquisition</a><a class="velx-primary" href="/marketing-budget">Budget Studio</a><a class="velx-primary" href="/campaign-experiments">Campaign Lab</a><a class="velx-primary" href="/experiment-decisions">Decisions</a><a class="velx-primary" href="/campaign-optimization">Optimize</a><a class="velx-primary" href="/optimization-impact">Impact</a><a class="velx-primary" href="/growth-intelligence">Growth Center</a><a class="velx-primary" href="/growth-strategy">Growth Strategy</a><a class="velx-primary" href="/business-agents-v59">Agents</a><a class="velx-primary" href="/sovereign-omniverse-v57">Omniverse</a><a class="velx-primary" href="/sovereign-business-graph-v57">Business Graph</a><a class="velx-primary" href="/sovereign-opportunities-v57">Opportunity Radar</a><a class="velx-primary" href="/sovereign-council-v57">Council</a><a class="velx-primary" href="/sovereign-lab-v57">Decision Lab</a><a class="velx-primary" href="/sovereign-unified-v56">Command</a><a class="velx-primary" href="/sovereign-workflows-v56">Workflow Studio</a><a class="velx-primary" href="/sovereign-nexus-v56">Nexus</a><a class="velx-primary" href="/sovereign-workflow-runs-v56">Operations</a><a class="velx-primary" href="/">Reports</a><a class="velx-primary" href="/sovereign-genesis-v56">Genesis</a><a class="velx-primary" href="/sovereign-command-v56">Ask VELXTRIA</a><a class="velx-primary" href="/sovereign-guardian-v56">Guardian</a><a class="velx-primary" href="/sovereign-executive-v56">Intelligence</a><a class="velx-primary" href="/sovereign-strategies-v56">Strategies</a><a class="velx-primary" href="/sovereign-execution-v56">Execution</a><details class="velx-more"><summary>Explore platform ▾</summary><div class="velx-more-panel">{nav}</div></details></nav></header><main>{body}</main><footer>VELXTRIA private preview · {btc_note} · Never upload sensitive data</footer></body></html>"""
 
 
-def landing_page():
+def safe_next(value):
+ """Return a safe post-login redirect path, or '/'.
+
+ Only same-site absolute paths are accepted, so a login link can never
+ bounce the user to another site.
+ """
+ if isinstance(value,str) and value.startswith('/') and not value.startswith('//'):return value
+ return '/'
+
+# Small built-in sample dataset for the public sample report. Clearly sample
+# data, never a real customer's data. Three rows are intentionally messy
+# (a duplicate order, an invalid date, a zero quantity) so the sample shows
+# both accepted and flagged rows, as the real engine does.
+SAMPLE_SALES_CSV="""Order ID,Order Date,Customer,Product,Quantity,Unit Price,Status,Region
+S-1001,2026-10-03,Sample Customer A,Window Cleaning,2,85.00,Paid,Louisville
+S-1002,2026-10-05,Sample Customer B,Deep Cleaning,1,180.00,Paid,Louisville
+S-1003,2026-10-12,Sample Customer A,Gutter Cleaning,1,120.00,Paid,Jeffersonville
+S-1004,2026-10-20,Sample Customer C,Window Cleaning,3,85.00,Pending,Louisville
+S-1005,2026-11-02,Sample Customer B,Deep Cleaning,1,180.00,Paid,Louisville
+S-1006,2026-11-09,Sample Customer D,Pressure Washing,1,150.00,Paid,New Albany
+S-1001,2026-11-10,Sample Customer E,Window Cleaning,1,85.00,Paid,Louisville
+S-1007,not-a-date,Sample Customer F,Deep Cleaning,1,180.00,Paid,Louisville
+S-1008,2026-11-15,Sample Customer G,Gutter Cleaning,0,120.00,Paid,Louisville
+"""
+
+_SAMPLE_REPORT_HTML=None
+
+def _csv_table_html(path):
+ with path.open(encoding='utf-8-sig',newline='') as f:rows=list(csv.reader(f))
+ if not rows:return ''
+ head,body=rows[0],rows[1:]
+ out=['<table><thead><tr>'+''.join('<th>'+escape(c)+'</th>' for c in head)+'</tr></thead><tbody>']
+ for r in body:out.append('<tr>'+''.join('<td>'+escape(c)+'</td>' for c in r)+'</tr>')
+ out.append('</tbody></table>')
+ return ''.join(out)
+
+def sample_report_html():
+ """Render the public sample report with the real report engine.
+
+ Runs automate.py on the small built-in sample dataset and renders the
+ monthly and product summaries it produces. Cached per process; any failure
+ returns '' so the landing page still renders.
+ """
+ global _SAMPLE_REPORT_HTML
+ if _SAMPLE_REPORT_HTML is not None:return _SAMPLE_REPORT_HTML
+ _SAMPLE_REPORT_HTML=''
+ try:
+  with tempfile.TemporaryDirectory() as t:
+   work=Path(t);shutil.copy2(ROOT/'automate.py',work/'automate.py');(work/'messy_sales_input.csv').write_text(SAMPLE_SALES_CSV,encoding='utf-8')
+   result=subprocess.run([sys.executable,'-I',str(work/'automate.py')],cwd=work,timeout=30,capture_output=True,text=True)
+   if result.returncode:return ''
+   out=work/'output'
+   summary=(out/'run_summary.txt').read_text(encoding='utf-8')
+   stats=[l for l in summary.splitlines() if l.startswith(('Source rows:','Accepted rows:','Rejected rows:','Paid revenue'))]
+   _SAMPLE_REPORT_HTML=('<div class="v8-sample-tables"><div><h4>Monthly summary</h4>'+_csv_table_html(out/'monthly_summary.csv')+'</div><div><h4>Product summary</h4>'+_csv_table_html(out/'product_summary.csv')+'</div></div><p class="v8-sample-stats">'+' · '.join(escape(l) for l in stats)+'</p>')
+ except Exception:
+  _SAMPLE_REPORT_HTML=''
+ return _SAMPLE_REPORT_HTML
+
+def landing_buy_html(user,csrf):
+ """Buy block for the landing page.
+
+ Logged-in users get the real BTCPay checkout form (same route and CSRF as
+ the dashboard; checkout-feedback.js already guards that form against
+ double submits). Logged-out visitors are sent to sign in and then back to
+ the landing page. When checkout is disabled the button is shown as coming
+ soon, never posted to a dead route.
+ """
+ if user:
+  if btcpay_mainnet.checkout_enabled():
+   return '<form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="v8-primary" type="submit">Get PRO — $49 with Bitcoin</button></form><p class="v8-buy-note">BTCPay creates a secure invoice and PRO activates automatically once the payment settles. Nothing is charged until you pay.</p>'
+  return '<button class="v8-primary" type="button" disabled>Get PRO — $49 with Bitcoin</button><p class="v8-buy-note">Bitcoin checkout is coming soon. Create a demo account to try the free reports meanwhile.</p>'
+ nxt=urllib.parse.quote('/about',safe='')
+ return '<a class="v8-primary" href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a><p class="v8-buy-note">Sign in to continue to secure Bitcoin checkout. New here? <a href="/register?next='+nxt+'">Create a demo account</a> first.</p>'
+
+def landing_pricing_html(user,csrf):
+ return '''<section id="v8-pricing" class="v8-pricing"><div class="v8-sectiontop"><span>02 / PRICING</span><span>SIMPLE, NO SURPRISES.</span></div><h2>START FREE.<br><em>GO PRO WHEN IT PAYS.</em></h2><div class="v8-plans"><article class="v8-plan"><h3>FREE</h3><p class="v8-price">$0</p><ul><li>3 reports, lifetime</li><li>Upload a sales CSV, get cleaned data and summaries</li><li>No card, no purchase required</li></ul><a class="v8-ghost" href="/register">Create demo account ↗</a></article><article class="v8-plan v8-plan-pro"><h3>PRO</h3><p class="v8-price">$49 <span>/ 30 days</span></p><ul><li>50 reports per billing cycle</li><li>Pay with Bitcoin — verified automatically via BTCPay</li><li>PRO activates once the payment settles</li></ul>'''+landing_buy_html(user,csrf)+'''</article></div><p class="v8-pricing-note">Prices in USD. Bitcoin payment only — no card, no Stripe.</p></section>'''
+
+def landing_sample_html():
+ sample=sample_report_html()
+ body=sample if sample else '<p>Sample report is being prepared — please try again shortly.</p>'
+ return '''<section id="v8-sample" class="v8-sample"><div class="v8-sectiontop"><span>03 / SAMPLE REPORT</span><span>SEE WHAT YOU GET.</span></div><h2>A REAL REPORT.<br><em>FROM SAMPLE DATA.</em></h2><p>This sample was built by the same report engine that processes your uploads, from a small sample sales file — not a real business. It accepted the clean rows, flagged the messy ones, and summarized the rest.</p>'''+body+'''</section>'''
+
+def landing_page(user=None,csrf=''):
  return """<div class="v8">
  <div class="v8-orbit v8-orbit-a"></div><div class="v8-orbit v8-orbit-b"></div>
  <section class="v8-hero">
@@ -238,7 +321,7 @@ def landing_page():
   <article><div class="v8-stephead"><span>02</span><span>↗</span></div><div class="v8-stepicon">⌁</div><h3>REFINE</h3><p>Separate accepted records from flagged rows and create structured summaries.</p><small>VALIDATE / ORGANIZE</small></article>
   <article><div class="v8-stephead"><span>03</span><span>↗</span></div><div class="v8-stepicon">⇩</div><h3>DEPLOY</h3><p>Download cleaned sales data, rejected rows, and summaries in one ZIP.</p><small>REPORT PACKAGE / ZIP</small></article>
  </div></section>
- <section class="v8-bottom"><div><span>02 / YOUR NEXT MOVE</span><h2>LESS MESS.<br><em>MORE MOMENTUM.</em></h2><p>Try the private reporting demo with sample or non-sensitive data. No purchase required.</p></div><a class="v8-primary" href="/register">LAUNCH DEMO <span>↗</span></a></section>
+ """+landing_pricing_html(user,csrf)+landing_sample_html()+"""<section class="v8-bottom"><div><span>04 / YOUR NEXT MOVE</span><h2>LESS MESS.<br><em>MORE MOMENTUM.</em></h2><p>Try the private reporting demo with sample or non-sensitive data. No purchase required.</p></div><a class="v8-primary" href="/register">LAUNCH DEMO <span>↗</span></a></section>
  <div class="v8-footnote">✦ VELXTRIA <span>BUILT FOR CLEARER WORKFLOWS · PREVIEW EDITION</span></div>
  </div>"""
 
@@ -261,7 +344,7 @@ body:has(.v8) header{position:relative;z-index:10;background:#0a0a15;border-bott
 .v8-live{height:7px;width:7px;border-radius:50%;background:#c2a4ff;box-shadow:0 0 14px #c2a4ff}
 .v8 h1{font-size:clamp(3.7rem,6.7vw,7.8rem);line-height:.99;letter-spacing:-.075em;font-weight:900;margin:2.2rem 0;white-space:nowrap}
 .v8 h1 span{color:#aaa1c2}
-.v8 h1 i,.v8-process h2 em,.v8-bottom h2 em{font-style:normal;background:linear-gradient(110deg,#a888ff,#d0a7ff 45%,#ffb7f1);color:transparent;background-clip:text;-webkit-background-clip:text}
+.v8 h1 i,.v8-process h2 em,.v8-bottom h2 em,.v8-pricing h2 em,.v8-sample h2 em{font-style:normal;background:linear-gradient(110deg,#a888ff,#d0a7ff 45%,#ffb7f1);color:transparent;background-clip:text;-webkit-background-clip:text}
 .v8-copy>p{max-width:560px;color:#bbb6cd;line-height:1.8;font-size:1.05rem}
 .v8-actions{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:2.3rem}
 .v8-primary{display:inline-flex;align-items:center;justify-content:space-between;gap:2rem;padding:1.2rem 1.5rem;background:#c5a7ff;color:#110c1c!important;font-size:.75rem;letter-spacing:.1em;font-weight:900;border:1px solid #d9c5ff;clip-path:polygon(0 0,calc(100% - 15px) 0,100% 15px,100% 100%,0 100%);transition:transform .25s,background .25s}
@@ -296,7 +379,7 @@ body:has(.v8) header{position:relative;z-index:10;background:#0a0a15;border-bott
 .v8-ticker span{color:#9c70e5;padding:0 2.5rem}
 .v8-process{max-width:1500px;margin:auto;padding:7rem clamp(1.5rem,5vw,6rem)}
 .v8-sectiontop{display:flex;justify-content:space-between;gap:1rem;border-top:1px solid #443755;padding-top:1rem;font-size:.65rem;letter-spacing:.16em;color:#a991d6;font-weight:800}
-.v8-process h2,.v8-bottom h2{font-size:clamp(2.5rem,5vw,5.7rem);line-height:1.06;letter-spacing:-.065em;margin:2.4rem 0 3.5rem;font-weight:900}
+.v8-process h2,.v8-bottom h2,.v8-pricing h2,.v8-sample h2{font-size:clamp(2.5rem,5vw,5.7rem);line-height:1.06;letter-spacing:-.065em;margin:2.4rem 0 3.5rem;font-weight:900}
 .v8-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
 .v8-steps article{position:relative;min-height:340px;padding:2rem;background:linear-gradient(145deg,#201b32,#10121d);border:1px solid #423553;transition:transform .3s,border-color .3s,box-shadow .3s}
 .v8-steps article:hover{transform:translateY(-9px);border-color:#ac80ff;box-shadow:0 20px 50px #0007}
@@ -321,6 +404,28 @@ body:has(.v8) header{position:relative;z-index:10;background:#0a0a15;border-bott
 @media(max-width:700px){.v8 h1{font-size:clamp(3.1rem,11vw,5rem)}.v8-stage{height:420px}.v8-ring.ring-1{width:330px;height:330px}.v8-ring.ring-2{width:260px;height:260px}.v8-ring.ring-3{width:190px;height:190px}.v8-core{width:145px;height:145px;border-radius:28px}.v8-core strong{font-size:3.6rem}.v8-float{width:145px;padding:.7rem}.v8-float>b{font-size:.65rem}.v8-float-a{top:3%;left:0}.v8-float-b{top:14%;right:0}.v8-float-c{bottom:0;left:0}.v8-steps{grid-template-columns:1fr}.v8-steps article{min-height:290px}.v8-bottom{flex-direction:column;align-items:flex-start}.v8-sectiontop{flex-wrap:wrap}.v8-disclaimer{font-size:.52rem}}
 @media(max-width:390px){.v8 h1{font-size:2.8rem}.v8-stage{height:360px}.v8-float{width:130px}.v8-status-right{display:none}.v8-core{width:125px;height:125px}.v8-core strong{font-size:3rem}}
 @media(prefers-reduced-motion:reduce){.v8 *,.v8:before{animation:none!important;transition:none!important;translate:none!important}}
+/* Landing pricing + sample report (public, sells PRO). */
+.v8-pricing{max-width:1500px;margin:auto;padding:7rem clamp(1.5rem,5vw,6rem)}
+.v8-plans{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.v8-plan{padding:2rem;background:linear-gradient(145deg,#201b32,#10121d);border:1px solid #423553}
+.v8-plan-pro{border-color:#ac80ff;box-shadow:0 20px 50px #0007}
+.v8-plan h3{font-size:1rem;letter-spacing:.2em;color:#c4a2ff}
+.v8-price{font-size:3rem;font-weight:900;margin:1rem 0}
+.v8-price span{font-size:1rem;color:#b1acc3}
+.v8-plan ul{list-style:none;padding:0;color:#b1acc3;line-height:2}
+.v8-plan ul li:before{content:"✓ ";color:#c4a2ff}
+.v8-plan .v8-primary{margin-top:1.5rem}
+.v8-buy-note{color:#b1acc3;line-height:1.7;margin-top:1rem;font-size:.9rem}
+.v8-pricing-note{color:#806eaa;font-size:.7rem;letter-spacing:.1em;margin-top:2rem}
+.v8-sample{max-width:1500px;margin:auto;padding:7rem clamp(1.5rem,5vw,6rem)}
+.v8-sample>p{color:#b1acc3;line-height:1.7;max-width:720px}
+.v8-sample-tables{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:2rem}
+.v8-sample-tables table{width:100%;border-collapse:collapse;background:#141226;border:1px solid #423553}
+.v8-sample-tables th,.v8-sample-tables td{padding:.7rem 1rem;text-align:left;border-bottom:1px solid #2c2540;color:#e6e0f5;font-size:.9rem}
+.v8-sample-tables th{color:#c4a2ff;letter-spacing:.1em;font-size:.7rem}
+.v8-sample-tables h4{color:#c4a2ff;letter-spacing:.15em;font-size:.75rem;margin-bottom:.8rem}
+.v8-sample-stats{color:#c4a2ff;margin-top:1.5rem;font-size:.95rem}
+@media(max-width:700px){.v8-plans,.v8-sample-tables{grid-template-columns:1fr}}
 """
 
 # V4 workspace visual refinement: native controls retain their existing form behavior.
@@ -527,7 +632,8 @@ class Handler(BaseHTTPRequestHandler):
    body+='</section>'
    return self.respond(200,shell('Outreach Studio',body,user,csrf))
   if p=='/about':
-   return self.respond(200,shell('Meet VELXTRIA',landing_page()))
+   user,csrf,_=self.identity()
+   return self.respond(200,shell('Meet VELXTRIA',landing_page(user,csrf)))
   if p=='/checkout-feedback.js':
    js="""document.addEventListener('submit',function(e){var f=e.target;if(!f || !f.action || !f.action.includes('/btcpay/mainnet/checkout'))return;var b=f.querySelector('button[type="submit"],button:not([type])');if(!b)return;if(b.disabled){e.preventDefault();return;}b.disabled=true;b.textContent='Preparing secure Bitcoin checkout…';b.setAttribute('aria-busy','true');var note=document.createElement('span');note.setAttribute('role','status');note.textContent=' Creating your invoice; please wait.';f.appendChild(note);});"""
    return self.respond(200,js,'application/javascript')
@@ -549,9 +655,13 @@ class Handler(BaseHTTPRequestHandler):
    if body is None:return self.respond(404,'FAQ not available','text/plain')
    return self.respond(200,body,'text/html; charset=utf-8',headers=[('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors *"),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff')])
   user,csrf,_=self.identity()
-  if p=='/login':return self.respond(200,shell('Sign in','<section class="panel narrow"><h1>Welcome back</h1><form method="post" action="/login"><label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" required></label><button>Sign in</button></form></section>'))
-  if p=='/register':return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form></section>'))
-  if p=='/' and not user:return self.respond(200,shell('Sales reporting made simple',landing_page()))
+  if p=='/login':
+   nxt=safe_next(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('next',[''])[0])
+   return self.respond(200,shell('Sign in','<section class="panel narrow"><h1>Welcome back</h1><form method="post" action="/login"><input type="hidden" name="next" value="'+escape(nxt)+'"><label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" required></label><button>Sign in</button></form></section>'))
+  if p=='/register':
+   nxt=safe_next(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('next',[''])[0])
+   return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><input type="hidden" name="next" value="'+escape(nxt)+'"><label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form></section>'))
+  if p=='/' and not user:return self.respond(200,shell('Sales reporting made simple',landing_page(user,csrf)))
   if not user:return self.redirect('/login')
   if p=='/growth-strategy':
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
@@ -2374,7 +2484,8 @@ class Handler(BaseHTTPRequestHandler):
    try:
     with db() as c:c.execute('INSERT INTO users(email,salt,pw_hash,role,access,created) VALUES (?,?,?,?,?,?)',(email,salt,pw_hash(password,salt),'customer','demo',now()))
    except (sqlite3.IntegrityError, persistent_integrity_error()):return self.fail(409,'Account already exists.')
-   return self.redirect('/login')
+   nxt=safe_next(fields.get('next',''))
+   return self.redirect('/login'+('?next='+urllib.parse.quote(nxt,safe='') if nxt!='/' else ''))
   if p=='/login':
    email=fields.get('email','').strip().lower();password=fields.get('password','')
    with db() as c:row=c.execute('SELECT id,salt,pw_hash FROM users WHERE email=?',(email,)).fetchone()
@@ -2382,7 +2493,7 @@ class Handler(BaseHTTPRequestHandler):
    token=secrets.token_urlsafe(32);csrf=secrets.token_urlsafe(32)
    with db() as c:c.execute('INSERT INTO sessions VALUES (?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),row[0],now()+86400,csrf))
    secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
-   return self.redirect('/',[('Set-Cookie','velxtria_session='+token+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400'+secure)])
+   return self.redirect(safe_next(fields.get('next','')),[('Set-Cookie','velxtria_session='+token+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400'+secure)])
   ident=self.require()
   if not ident:return
   user,csrf,token=ident
