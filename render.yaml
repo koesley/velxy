@@ -13,3 +13,17 @@ services:
         value: render-preview
       - key: VELXTRIA_PREVIEW_PASSWORD
         sync: false
+      # Production BTCPay (mainnet) — values are entered in the Render
+      # dashboard and never committed. See BTCPAY_MAINNET_SETUP.md.
+      # Keep VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT at '0' until the
+      # production server, store, and webhook are verified.
+      - key: VELXTRIA_BTCPAY_MAINNET_URL
+        sync: false
+      - key: VELXTRIA_BTCPAY_MAINNET_STORE_ID
+        sync: false
+      - key: VELXTRIA_BTCPAY_MAINNET_API_KEY
+        sync: false
+      - key: VELXTRIA_BTCPAY_MAINNET_WEBHOOK_SECRET
+        sync: false
+      - key: VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT
+        value: '0'
