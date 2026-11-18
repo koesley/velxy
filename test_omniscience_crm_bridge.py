@@ -22,6 +22,8 @@ class CRMBridgeTests(unittest.TestCase):
         self.assertEqual(items[0]["reliability"],"inference")
         rid=bridge.save_for_review(self.c,1,items[0])
         self.assertEqual(ledger.history(self.c,1,rid)["evidence"]["reliability"],"inference")
+        self.assertEqual(bridge.save_for_review(self.c,1,items[0]),rid)
+        self.assertEqual(self.c.execute("SELECT COUNT(*) FROM omnis_recommendations").fetchone()[0],1)
         with self.assertRaises(ValueError):
             bridge.save_for_review(self.c,2,items[0])
     def test_reject_forged_or_stale_candidate(self):
