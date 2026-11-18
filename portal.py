@@ -1371,6 +1371,7 @@ class Handler(BaseHTTPRequestHandler):
      if p=='/business-os-v59':
       if action=='add':business_os_v59.add_lead(c,user['id'],wid,fields.get('name',''),fields.get('contact',''),fields.get('source',''),fields.get('value',''))
       elif action=='import_csv':business_os_v59.import_leads_csv(c,user['id'],wid,fields.get('csv_text',''))
+      elif action=='edit_lead':business_os_v59.edit_lead(c,user['id'],wid,fields.get('lead',''),fields.get('name',''),fields.get('contact',''),fields.get('source',''),fields.get('value',''))
       elif action=='status':business_os_v59.update_lead(c,user['id'],wid,fields.get('lead',''),fields.get('status',''))
       elif action=='note':business_os_v59.add_note(c,user['id'],wid,fields.get('lead',''),fields.get('note',''))
       elif action=='add_task':business_os_v59.add_task(c,user['id'],wid,fields.get('lead',''),fields.get('task_title',''),fields.get('due_date',''))
