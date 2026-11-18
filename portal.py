@@ -287,6 +287,10 @@ def sample_report_html():
 # The five files the report engine produces for every report.
 REPORT_FILES=['cleaned_sales.csv','rejected_rows.csv','monthly_summary.csv','product_summary.csv','run_summary.txt']
 
+# Headline lines from run_summary.txt shown on screen (same lines the demo
+# and the report view render, so the numbers always match the ZIP).
+_SUMMARY_STAT_PREFIXES=('Source rows:','Accepted rows:','Rejected rows:','Paid revenue')
+
 def validate_csv_upload(filename,data,columns_hint='Expand the required headers on the dashboard.'):
  """Shared upload validation for the dashboard upload and the anonymous demo.
 
@@ -320,7 +324,7 @@ def run_report_engine(data):
    with path.open(encoding='utf-8-sig',newline='') as f:return max(0,sum(1 for _ in csv.reader(f))-1)
   accepted=rowcount(out/'cleaned_sales.csv');rejected=rowcount(out/'rejected_rows.csv')
   summary=(out/'run_summary.txt').read_text(encoding='utf-8')
-  stats=[l for l in summary.splitlines() if l.startswith(('Source rows:','Accepted rows:','Rejected rows:','Paid revenue'))]
+  stats=[l for l in summary.splitlines() if l.startswith(_SUMMARY_STAT_PREFIXES)]
   archive=io.BytesIO()
   with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as z:
    for f in REPORT_FILES:z.write(out/f,arcname=f)
@@ -390,6 +394,33 @@ def demo_result_html(result,token):
   +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
   +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>'
   +'<p class="v8-demo-note">Want to keep your reports? <a href="/register">Create a free account</a> — 3 reports, lifetime. Ready for more? <a href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a>.</p></section></div>')
+
+def report_view_html(row,monthly_rows,product_rows,stats):
+ """A saved report, viewed on screen: the same monthly + product summaries
+ the demo shows, read back from the stored ZIP so the numbers always match
+ the download. row is (id, filename, created, status, accepted, rejected)."""
+ ident,filename,created,status,accepted,rejected=row
+ when=datetime.fromtimestamp(created,timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+ return ('<section class="panel"><h2>Report: '+escape(filename)+'</h2><p>Processed '+escape(when)+' · Status '+escape(status)+' · Accepted '+str(accepted)+' rows · flagged '+str(rejected)+' rows</p>'
+  +report_summaries_html(monthly_rows,product_rows,stats)
+  +'<p><a href="/download?id='+escape(ident)+'">Download ZIP</a> · <a href="/">Back to dashboard</a></p></section>')
+
+def read_report_summaries(zip_bytes):
+ """Parse the monthly + product summary tables and headline stats out of a
+ stored report ZIP. Raises ValueError on a missing or unreadable file so
+ the caller can answer 503, the same as a missing report file."""
+ try:
+  with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+   names=z.namelist()
+   if not all(f in names for f in ('monthly_summary.csv','product_summary.csv','run_summary.txt')):
+    raise ValueError('incomplete report package')
+   monthly_rows=list(csv.reader(io.StringIO(z.read('monthly_summary.csv').decode('utf-8-sig'))))
+   product_rows=list(csv.reader(io.StringIO(z.read('product_summary.csv').decode('utf-8-sig'))))
+   summary=z.read('run_summary.txt').decode('utf-8')
+ except (ValueError,KeyError,zipfile.BadZipFile,UnicodeError) as e:
+  raise ValueError('unreadable report package') from e
+ stats=[l for l in summary.splitlines() if l.startswith(_SUMMARY_STAT_PREFIXES)]
+ return monthly_rows,product_rows,stats
 
 def landing_sample_html():
  sample=sample_report_html()
@@ -684,7 +715,10 @@ class Handler(BaseHTTPRequestHandler):
   if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview': self.send_header('Strict-Transport-Security','max-age=31536000')
   self.send_header('X-Frame-Options','DENY')
   self.send_header('Referrer-Policy','no-referrer')
-  self.send_header('Cache-Control','no-store')
+  # Static assets pass their own Cache-Control so browsers cache them;
+  # everything else defaults to no-store. The extra headers are sent
+  # after this block, so a duplicate would go out if we sent both.
+  if not any(k.lower()=='cache-control' for k,v in headers):self.send_header('Cache-Control','no-store')
   self.send_header('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
   for k,v in headers:self.send_header(k,v)
   self.end_headers();self.wfile.write(b)
@@ -803,8 +837,8 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,shell('Meet VELXTRIA',landing_page(user,csrf)))
   if p=='/checkout-feedback.js':
    js="""document.addEventListener('submit',function(e){var f=e.target;if(!f || !f.action || !f.action.includes('/btcpay/mainnet/checkout'))return;var b=f.querySelector('button[type="submit"],button:not([type])');if(!b)return;if(b.disabled){e.preventDefault();return;}b.disabled=true;b.textContent='Preparing secure Bitcoin checkout…';b.setAttribute('aria-busy','true');var note=document.createElement('span');note.setAttribute('role','status');note.textContent=' Creating your invoice; please wait.';f.appendChild(note);});"""
-   return self.respond(200,js,'application/javascript')
-  if p=='/style.css':return self.respond(200,(ROOT/'style.css').read_bytes()+(LANDING_CSS+WORKSPACE_CSS+V51_CSS+sovereign_v56.CSS+omega_intelligence_v55.CSS+aegis_v54.CSS+sentinel_v53.CSS+titan_intelligence_v52.CSS+ascendancy_v51.CSS+singularity_v6.CSS+omni_v7.CSS+sovereign_v8.CSS+constellation_v9.CSS+trinity_v10.CSS+omnipotence_v12.CSS+singularity_x_v13.CSS+prometheus_v14.CSS+omega_v15.CSS+evolution_v16.CSS+phoenix_v17.CSS+infinity_v18.CSS+ascension_v28.CSS+integration_v29.CSS+atlas_v38.CSS+nexus_reforged_v41.CSS).encode('utf-8'),'text/css; charset=utf-8')
+   return self.respond(200,js,'application/javascript',headers=[('Cache-Control','public, max-age=3600')])
+  if p=='/style.css':return self.respond(200,(ROOT/'style.css').read_bytes()+(LANDING_CSS+WORKSPACE_CSS+V51_CSS+sovereign_v56.CSS+omega_intelligence_v55.CSS+aegis_v54.CSS+sentinel_v53.CSS+titan_intelligence_v52.CSS+ascendancy_v51.CSS+singularity_v6.CSS+omni_v7.CSS+sovereign_v8.CSS+constellation_v9.CSS+trinity_v10.CSS+omnipotence_v12.CSS+singularity_x_v13.CSS+prometheus_v14.CSS+omega_v15.CSS+evolution_v16.CSS+phoenix_v17.CSS+infinity_v18.CSS+ascension_v28.CSS+integration_v29.CSS+atlas_v38.CSS+nexus_reforged_v41.CSS).encode('utf-8'),'text/css; charset=utf-8',headers=[('Cache-Control','public, max-age=3600')])
   if p in ('/site-studio.css','/site-preview.css') and os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE:
    return self.respond(200,(ROOT/p.lstrip('/')).read_bytes(),'text/css; charset=utf-8')
   if p.startswith('/assistant-v64/'):
@@ -1150,7 +1184,7 @@ class Handler(BaseHTTPRequestHandler):
     reports=c.execute('SELECT id,filename,created,status,accepted,rejected,email_status FROM reports WHERE user_id=? ORDER BY created DESC LIMIT 30',(user['id'],)).fetchall()
     ent,count,remaining=subscriptions.usage(c,user['id'])
     pending_mainnet=btcpay_mainnet.pending_order(c,user['id']) if ent['plan']!='pro' else None
-   rows=''.join('<tr><td>'+escape(r[1])+'</td><td>'+escape(datetime.fromtimestamp(r[2],timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))+'</td><td>'+escape(r[3])+'</td><td>'+str(r[4])+' / '+str(r[5])+'</td><td><a href="/download?id='+escape(r[0])+'">Download ZIP</a></td><td>'+escape(r[6])+'</td></tr>' for r in reports)
+   rows=''.join('<tr><td>'+escape(r[1])+'</td><td>'+escape(datetime.fromtimestamp(r[2],timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))+'</td><td>'+escape(r[3])+'</td><td>'+str(r[4])+' / '+str(r[5])+'</td><td><a href="/report?id='+escape(r[0])+'">View</a> · <a href="/download?id='+escape(r[0])+'">Download ZIP</a></td><td>'+escape(r[6])+'</td></tr>' for r in reports)
    access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 3 reports total · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
    limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '3 free reports total'
@@ -2611,6 +2645,15 @@ class Handler(BaseHTTPRequestHandler):
     billing+='<tr><td>'+escape(oid)+'</td><td>'+escape(datefmt(created))+'</td><td>'+escape(status)+'</td><td>'+escape(datefmt(settled))+'</td></tr>'
    billing+='</tbody></table></div></section>'
    return self.respond(200,shell('Account',body+billing,user,csrf))
+  if p=='/report':
+   ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
+   with db() as c:row=c.execute("SELECT id,filename,created,status,accepted,rejected FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
+   if not row:return self.fail(404,'Report not found.',user,csrf)
+   try: report_bytes=persistent.retrieve(user['id'],ident,REPORTS)
+   except (OSError,RuntimeError):return self.fail(503,'Report file temporarily unavailable.',user,csrf)
+   try:monthly_rows,product_rows,stats=read_report_summaries(report_bytes)
+   except ValueError:return self.fail(503,'Report file temporarily unavailable.',user,csrf)
+   return self.respond(200,shell('Report',report_view_html(row,monthly_rows,product_rows,stats),user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
    with db() as c:row=c.execute("SELECT id FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
@@ -3191,7 +3234,7 @@ class Handler(BaseHTTPRequestHandler):
    except Exception as e:
     if 'ident' in locals(): persistent.remove(user['id'],ident)
     return self.fail(422,'Could not process this file: '+str(e)[:240],user,csrf)
-  return self.redirect('/?done=1')
+  return self.redirect('/report?id='+ident)
 
 def delivery_worker():
  """Local background queue; SMTP only when explicitly configured and user opted in."""
