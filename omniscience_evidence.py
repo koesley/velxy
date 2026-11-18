@@ -80,9 +80,13 @@ def decide(c, owner, recommendation_id, choice, rationale):
     if not row: raise ValueError("Recommendation unavailable for this account")
     now=int(time.time())
     if row[0] is not None and row[0]<=now: raise ValueError("Recommendation expired")
+    # Ensure consecutive decisions have deterministic ordering even within one second.
+    previous=c.execute("""SELECT MAX(created_at) FROM omnis_decision_events
+        WHERE owner_id=? AND recommendation_id=?""",(owner,recommendation_id)).fetchone()[0]
+    event_at=max(now,previous+1) if previous is not None else now
     eid=secrets.token_hex(16)
     c.execute("INSERT INTO omnis_decision_events VALUES (?,?,?,?,?,?)",
-              (eid,owner,recommendation_id,choice,rationale,now))
+              (eid,owner,recommendation_id,choice,rationale,event_at))
     return eid
 
 def history(c, owner, recommendation_id):
