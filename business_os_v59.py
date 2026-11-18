@@ -173,6 +173,30 @@ def followup_queue(c,uid,wid):
     result.sort(key=lambda x:(-x["days"],-x["value"],x["name"].lower()))
     return result[:20]
 
+def pipeline_velocity(c,uid,wid):
+    """Lead aging and stage movement visibility using existing timestamps."""
+    core.access(c,uid,wid)
+    init(c)
+    now=int(time.time())
+    rows=c.execute("SELECT status,created,updated,value FROM bos59_leads WHERE workspace_id=? ORDER BY created DESC LIMIT 300",(wid,)).fetchall()
+    buckets={"0-7 days":0,"8-30 days":0,"31-90 days":0,"90+ days":0}
+    open_total=0
+    open_days=0
+    idle_value=0.0
+    for status,created,updated,value in rows:
+        if status not in ("new","contacted"):
+            continue
+        age=max(0,(now-int(created))//86400)
+        idle=max(0,(now-int(updated))//86400)
+        label="0-7 days" if age<=7 else "8-30 days" if age<=30 else "31-90 days" if age<=90 else "90+ days"
+        buckets[label]+=1
+        open_total+=1
+        open_days+=age
+        if idle>=14:
+            idle_value+=float(value)
+    return {"buckets":buckets,"average_open_age":round(open_days/open_total,1) if open_total else None,
+            "idle_value":round(idle_value,2),"open_count":open_total}
+
 def export_csv(c,uid,wid):
     data=overview(c,uid,wid)
     f=io.StringIO()
@@ -224,6 +248,11 @@ def render(c,uid,wid,csrf):
     else:
         out.append('<p>No leads currently need follow-up under the three-day rule.</p>')
     out.append('<small>Based on up to 300 open leads. High: 14+ days idle; Medium: 7–13; Normal: 3–6. No emails or calls are sent automatically.</small></section>')
+    velocity=pipeline_velocity(c,uid,wid)
+    out.append('<section class="ov-panel"><h2>Pipeline aging intelligence</h2><p>New: understand how long opportunities stay open and where deals may be stalling.</p><div class="ov-metrics"><article class="ov-card"><strong>Average open lead age</strong><span>'+h(str(velocity["average_open_age"])+" days" if velocity["average_open_age"] is not None else "No open leads")+'</span></article><article class="ov-card"><strong>Potential value idle 14+ days</strong><span>'+h(velocity["idle_value"])+'</span></article></div><div class="scroll"><table><thead><tr><th>Age of open lead</th><th>Count</th></tr></thead><tbody>')
+    for bucket,count in velocity["buckets"].items():
+        out.append('<tr><td>'+h(bucket)+'</td><td>'+h(count)+'</td></tr>')
+    out.append('</tbody></table></div><small>Uses existing lead creation and update timestamps. Up to 300 recent leads; potential values are estimates, not collected revenue.</small></section>')
     if d["role"] in ("owner","editor"):
         out.append('<section class="ov-panel"><h2>Add a lead</h2><form method="post" action="'+url+'">'+hidden+'<label>Name<input name="name" required maxlength="120"></label><label>Contact<input name="contact" required maxlength="200"></label><label>Source<input name="source" required maxlength="100"></label><label>Potential value<input name="value" type="number" min="0" max="1000000000" step="0.01" required></label><button name="action" value="add">Add lead</button></form></section>')
     for lead in d["leads"]:
