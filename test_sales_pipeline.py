@@ -42,6 +42,25 @@ class SalesPipelineTests(unittest.TestCase):
         sales_pipeline.set_suppression(self.c,1,"info@example.com","verified_clear")
         sales_pipeline.set_suppression(self.c,1,"info@example.com","do_not_contact")
         self.assertFalse(sales_pipeline.outreach_eligibility(self.c,1,"info@example.com"))
+    def test_bulk_bounce_import(self):
+        count=sales_pipeline.import_bounce_lines(self.c,1,
+            "bad@example.com | 550 5.1.1 User does not exist\\nslow@example.com | timed out")
+        self.assertEqual(count,2)
+        statuses=dict(self.c.execute("SELECT email,status FROM outreach_suppression WHERE owner_id=1").fetchall())
+        self.assertEqual(statuses["bad@example.com"],"suppress_permanent")
+        self.assertEqual(statuses["slow@example.com"],"hold_for_verification")
+
+    def test_import_preserves_opt_out(self):
+        sales_pipeline.set_suppression(self.c,1,"stop@example.com","do_not_contact")
+        sales_pipeline.import_bounce_lines(self.c,1,"stop@example.com | timed out")
+        self.assertFalse(sales_pipeline.outreach_eligibility(self.c,1,"stop@example.com"))
+        status=self.c.execute("SELECT status FROM outreach_suppression WHERE email='stop@example.com'").fetchone()[0]
+        self.assertEqual(status,"do_not_contact")
+
+    def test_import_rejects_bad_lines(self):
+        with self.assertRaises(ValueError):
+            sales_pipeline.import_bounce_lines(self.c,1,"bad format")
+
     def test_bad_stage(self):
         with self.assertRaises(ValueError):
             sales_pipeline.save(self.c,1,{"business":"Example Cafe","stage":"invented"})
