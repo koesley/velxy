@@ -1372,6 +1372,8 @@ class Handler(BaseHTTPRequestHandler):
       if action=='add':business_os_v59.add_lead(c,user['id'],wid,fields.get('name',''),fields.get('contact',''),fields.get('source',''),fields.get('value',''))
       elif action=='status':business_os_v59.update_lead(c,user['id'],wid,fields.get('lead',''),fields.get('status',''))
       elif action=='note':business_os_v59.add_note(c,user['id'],wid,fields.get('lead',''),fields.get('note',''))
+      elif action=='add_task':business_os_v59.add_task(c,user['id'],wid,fields.get('lead',''),fields.get('task_title',''),fields.get('due_date',''))
+      elif action=='complete_task':business_os_v59.complete_task(c,user['id'],wid,fields.get('task',''))
       elif action=='propose':business_os_v59.propose(c,user['id'],wid,fields.get('lead',''),fields.get('message',''))
       elif action=='review':business_os_v59.review(c,user['id'],wid,fields.get('draft',''),fields.get('decision',''),fields.get('reason',''))
       else:raise ValueError('Unknown action')
