@@ -10,6 +10,11 @@ import ascension_workflows
 
 class WorkflowHardeningTests(unittest.TestCase):
     def setUp(self):
+        if os.getenv("VELXTRIA_TEST_POSTGRES")=="1":
+            from urllib.parse import urlparse
+            dbname=urlparse(os.getenv("VELXTRIA_DATABASE_URL","")).path.lstrip("/")
+            if dbname != "velxtria_test":
+                raise RuntimeError("PostgreSQL tests require the dedicated velxtria_test database")
         self.c=persistent.connect(":memory:") if os.getenv("VELXTRIA_TEST_POSTGRES")=="1" else sqlite3.connect(":memory:")
         # PostgreSQL service is shared across tests; clean only these test-owned tables.
         if os.getenv("VELXTRIA_TEST_POSTGRES")=="1":
