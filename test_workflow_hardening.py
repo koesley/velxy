@@ -11,6 +11,14 @@ import ascension_workflows
 class WorkflowHardeningTests(unittest.TestCase):
     def setUp(self):
         self.c=persistent.connect(":memory:") if os.getenv("VELXTRIA_TEST_POSTGRES")=="1" else sqlite3.connect(":memory:")
+        # PostgreSQL service is shared across tests; clean only these test-owned tables.
+        if os.getenv("VELXTRIA_TEST_POSTGRES")=="1":
+            for table in ("ascension_workflow_events","ascension_workflows",
+                          "ascension_recovery_outcomes","ascension_actions",
+                          "outreach_suppression_events","outreach_suppression",
+                          "sales_pipeline_leads"):
+                self.c.execute("DROP TABLE IF EXISTS "+table)
+            self.c.commit()
         self.lead=sales_pipeline.save(self.c,1,{"business":"Example Studio","stage":"proposal","value":"2000"})
         self.c.execute("UPDATE sales_pipeline_leads SET updated_at=? WHERE id=?",
                        (int(time.time())-16*86400,self.lead))
