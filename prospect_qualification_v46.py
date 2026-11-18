@@ -50,7 +50,7 @@ def change(c,uid,wid,identifier,stage,note):
  c.execute("INSERT INTO vx_prospect_events46 VALUES (?,?,?,?,?,?,?,?)",
            (secrets.token_hex(12),wid,identifier,uid,row[1],stage,note,now))
 def handoff(c,uid,wid,identifier,plan_id,kind,summary,due):
- bos.core.access(c,uid,wid,write=True);setup(c)
+ bos.core.access(c,uid,wid,write=True);setup(c);sales.setup(c)
  row=c.execute("SELECT owner_id,label,stage FROM vx_prospects46 WHERE workspace_id=? AND id=?",(wid,identifier)).fetchone()
  if not row or row[0]!=uid:raise ValueError("Only the prospect owner can create a handoff.")
  if row[2]!="qualified":raise ValueError("Only qualified prospects can be handed off.")
@@ -75,6 +75,8 @@ def snapshot(c,uid,wid):
  return {"items":items,"counts":counts,"total":sum(counts.values())}
 def render(c,uid,wid,csrf):
  bos.core.access(c,uid,wid);setup(c)
+ import growth_strategy_v42 as strategy
+ strategy.setup(c)
  e=lambda v:html.escape(str(v),quote=True)
  data=snapshot(c,uid,wid)
  members=c.execute("SELECT user_id FROM empire_members WHERE workspace_id=? ORDER BY user_id",(wid,)).fetchall()
