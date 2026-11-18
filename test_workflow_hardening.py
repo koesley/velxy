@@ -111,6 +111,18 @@ class WorkflowHardeningTests(unittest.TestCase):
         self.assertIn("user-reported payments",page)
         self.assertIn("NOT verified payment receipts",page)
 
+    def test_completed_action_cannot_be_completed_again(self):
+        completed=sovereign_ascension.action(
+            self.c,1,self.lead,"stalled_deal","completed","Manual task finished")
+        self.assertEqual(completed,self.action)
+        with self.assertRaises(ValueError):
+            sovereign_ascension.action(
+                self.c,1,self.lead,"stalled_deal","completed","Stale duplicate")
+        row=self.c.execute(
+            "SELECT status,note FROM ascension_actions WHERE id=? AND owner_id=?",
+            (self.action,1)).fetchone()
+        self.assertEqual(tuple(row),("completed","Manual task finished"))
+
     def test_stalled_proposal_signal_is_evidence_based(self):
         # A separate, unapproved CRM record must appear in the discovery queue.
         other=sales_pipeline.save(self.c,1,{"business":"Second Prospect","stage":"proposal","value":"2000"})
