@@ -28,6 +28,19 @@ class WorkflowHardeningTests(unittest.TestCase):
         self.assertEqual(ascension_workflows.transition(self.c,1,self.wid,"cancel","Stop"),"cancelled")
         with self.assertRaises(ValueError):
             ascension_workflows.transition(self.c,1,self.wid,"advance","Too late")
+    def test_stalled_proposal_signal_is_evidence_based(self):
+        # A separate, unapproved CRM record must appear in the discovery queue.
+        other=sales_pipeline.save(self.c,1,{"business":"Second Prospect","stage":"proposal","value":"2000"})
+        self.c.execute("UPDATE sales_pipeline_leads SET updated_at=? WHERE id=?",
+                       (int(time.time())-16*86400,other))
+        items=sovereign_ascension.discover(self.c,1)
+        item=next(x for x in items if x["lead_id"]==other)
+        self.assertEqual(item["kind"],"stalled_deal")
+        self.assertEqual(item["estimated_value"],2000)
+        self.assertEqual(item["days"],16)
+        self.assertIn("CRM stage: proposal",item["evidence"])
+        self.assertFalse(any(x["lead_id"]==other for x in sovereign_ascension.discover(self.c,2)))
+
     def test_complete_customer_recovery_lifecycle(self):
         import ascension_recovery
         # Explicitly clear the test contact; no messages are sent.
