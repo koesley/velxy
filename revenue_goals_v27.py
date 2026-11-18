@@ -1,7 +1,7 @@
 """Workspace-scoped cumulative pipeline goals, not verified revenue targets."""
 import html
 import urllib.parse
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import business_os_v59 as bos
 
 def setup(c):
@@ -36,8 +36,15 @@ def snapshot(c,uid,wid):
     won=sums.get("won",(Decimal(0),0))[0]
     open_value=sum((sums.get(s,(Decimal(0),0))[0] for s in ("new","contacted")),Decimal(0))
     target_value=Decimal(target)/100 if target is not None else None
+    gap=None
+    if target_value is not None:
+        # Exact integer cents: won comes from a REAL sum, so subtracting it
+        # directly leaves float residue (750.0 instead of 750). The target
+        # is already stored in cents; keep the gap in cents too.
+        won_cents=int((won*100).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
+        gap=Decimal(max(0,target-won_cents))/100
     return {"target":target_value,"won_marked":won,"open_potential":open_value,
-            "gap":max(Decimal(0),target_value-won) if target_value is not None else None,
+            "gap":gap,
             "progress_pct":min(100,round(float(won/target_value*100),1)) if target_value else None}
 
 def render(c,uid,wid,csrf):
