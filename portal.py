@@ -141,6 +141,7 @@ import optimization_impact_v40
 import growth_intelligence_v41
 import growth_strategy_v42
 import sales_execution_v44
+import report_insights
 
 ROOT=Path(__file__).resolve().parent
 DELIVERY_ENABLED=os.getenv("VELXTRIA_SMTP_HOST","") != ""
@@ -390,6 +391,7 @@ def demo_result_html(result,token):
  nxt=urllib.parse.quote('/about',safe='')
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
+  +report_insights.render(result['monthly_rows'],result['product_rows'],result['accepted'],result['rejected'])
   +'<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
   +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
   +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>'
@@ -403,6 +405,7 @@ def report_view_html(row,monthly_rows,product_rows,stats):
  when=datetime.fromtimestamp(created,timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
  return ('<section class="panel"><h2>Report: '+escape(filename)+'</h2><p>Processed '+escape(when)+' · Status '+escape(status)+' · Accepted '+str(accepted)+' rows · flagged '+str(rejected)+' rows</p>'
   +report_summaries_html(monthly_rows,product_rows,stats)
+  +report_insights.render(monthly_rows,product_rows,accepted,rejected)
   +'<p><a href="/download?id='+escape(ident)+'">Download ZIP</a> · <a href="/">Back to dashboard</a></p></section>')
 
 def read_report_summaries(zip_bytes):
