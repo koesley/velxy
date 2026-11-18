@@ -120,6 +120,28 @@ def import_leads_csv(c,uid,wid,csv_text):
     core.audit(c,uid,wid,"bos_leads_csv_imported",str(len(unique)))
     return {"imported":len(unique),"duplicates_skipped":len(parsed)-len(unique)}
 
+def edit_lead(c,uid,wid,lid,name,contact,source,value):
+    """Update customer details without replacing its notes, tasks, or quotes."""
+    core.access(c,uid,wid,write=True)
+    init(c)
+    name,contact,source=(_text(name,120),_text(contact,200),_text(source,100))
+    import math
+    try:
+        amount=float(value)
+    except (TypeError,ValueError,OverflowError):
+        raise ValueError("Invalid value")
+    if not math.isfinite(amount) or not 0<=amount<=1000000000:
+        raise ValueError("Invalid value")
+    row=c.execute("SELECT 1 FROM bos59_leads WHERE id=? AND workspace_id=?",(lid,wid)).fetchone()
+    if not row:
+        raise ValueError("Lead not found")
+    duplicate=c.execute("SELECT 1 FROM bos59_leads WHERE workspace_id=? AND id<>? AND lower(name)=lower(?) AND lower(contact)=lower(?)",(wid,lid,name,contact)).fetchone()
+    if duplicate:
+        raise ValueError("Another customer already has this name and contact")
+    c.execute("UPDATE bos59_leads SET name=?,contact=?,source=?,value=?,updated=? WHERE workspace_id=? AND id=?",
+              (name,contact,source,amount,int(time.time()),wid,lid))
+    core.audit(c,uid,wid,"bos_lead_edited",lid)
+
 def update_lead(c,uid,wid,lid,status):
     core.access(c,uid,wid,write=True)
     init(c)
@@ -302,8 +324,8 @@ def quote_workflow_summary(c,uid,wid):
 def overview(c,uid,wid):
     role=core.access(c,uid,wid)
     init(c)
-    leads=[dict(zip(("id","name","contact","source","value","status","created"),
-                    row)) for row in c.execute("SELECT id,name,contact,source,value,status,created FROM bos59_leads WHERE workspace_id=? ORDER BY created DESC,id DESC LIMIT 300",(wid,))]
+    leads=[dict(zip(("id","name","contact","source","value","status","created","updated"),
+                    row)) for row in c.execute("SELECT id,name,contact,source,value,status,created,updated FROM bos59_leads WHERE workspace_id=? ORDER BY created DESC,id DESC LIMIT 300",(wid,))]
     actions=[dict(zip(("id","lead_id","message","decision","reason","created"),
                       row)) for row in c.execute("SELECT id,lead_id,message,decision,reason,created FROM bos59_actions WHERE workspace_id=? ORDER BY created DESC,id DESC LIMIT 300",(wid,))]
     return {"role":role,"workspace_id":wid,"leads":leads,"actions":actions,
@@ -520,6 +542,25 @@ def render(c,uid,wid,csrf):
             out.append('</article>')
         if d["role"] in ("owner","editor"):
             out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Quote item / service<input name="quote_description" maxlength="300" required placeholder="Website setup"></label><label>Quantity<input name="quote_quantity" type="number" min="1" max="100000" value="1" required></label><label>Unit price<input name="quote_price" type="number" min="0" max="1000000" step="0.01" required></label><button name="action" value="create_quote">Save draft estimate</button></form>')
+        out.append('<details><summary>Edit customer details</summary>')
+        if d["role"] in ("owner","editor"):
+            out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Customer name<input name="name" maxlength="120" required value="'+h(lead["name"])+'"></label><label>Contact<input name="contact" maxlength="200" required value="'+h(lead["contact"])+'"></label><label>Source<input name="source" maxlength="100" required value="'+h(lead["source"])+'"></label><label>Potential value<input name="value" type="number" min="0" max="1000000000" step="0.01" required value="'+h(lead["value"])+'"></label><button name="action" value="edit_lead">Save customer changes</button></form>')
+        else:
+            out.append('<p>Contact: '+h(lead["contact"])+'</p>')
+        out.append('</details>')
+        timeline=[]
+        for body,created in notes_by_lead.get(lead["id"],[]):
+            timeline.append((created,"Interaction",body))
+        for tid,task_title,due,status in tasks_by_lead.get(lead["id"],[]):
+            timeline.append((int(time.mktime(datetime.date.fromisoformat(due).timetuple())),"Task "+status,task_title+" (due "+due+")"))
+        for action in d["actions"]:
+            if action["lead_id"]==lead["id"]:
+                timeline.append((action["created"],"Message draft "+action["decision"],action["message"]))
+        timeline.sort(key=lambda x:x[0],reverse=True)
+        out.append('<details><summary>Unified customer activity ('+h(len(timeline))+')</summary>')
+        for when,kind,detail in timeline[:30]:
+            out.append('<article class="ov-job"><small>'+h(time.strftime("%Y-%m-%d",time.gmtime(when)))+' · '+h(kind)+'</small><p>'+h(detail)+'</p></article>')
+        out.append('</details>')
         out.append('<h3>Customer tasks</h3>')
         for tid,task_title,due,status in tasks_by_lead.get(lead["id"],[])[:15]:
             label="Overdue" if status=="open" and due<today else "Due today" if status=="open" and due==today else status.title()
@@ -538,7 +579,7 @@ def render(c,uid,wid,csrf):
             out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Add private interaction note<textarea name="note" maxlength="2000" required placeholder="What happened on the call? What did the customer ask for?"></textarea></label><button name="action" value="note">Save interaction note</button></form>')
         if d["role"] in ("owner","editor"):
             out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Status<select name="status">'+''.join('<option value="'+s+'"'+(' selected' if lead["status"]==s else '')+'>'+s+'</option>' for s in STATES)+'</select></label><button name="action" value="status">Update</button></form>')
-            days_idle=max(0,(int(time.time())-int(next((row[0] for row in c.execute("SELECT updated FROM bos59_leads WHERE id=? AND workspace_id=?",(lead["id"],wid))),int(time.time())))//86400))
+            days_idle=max(0,(int(time.time())-int(lead["updated"]))//86400)
             draft=suggested_followup(lead["name"],lead["status"],days_idle)
             out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Suggested follow-up — edit before approval<textarea name="message" required maxlength="2000" rows="6">'+h(draft)+'</textarea></label><small>New: a personalized starting draft. Nothing is sent automatically.</small><button name="action" value="propose">Request approval</button></form>')
         for action in (x for x in d["actions"] if x["lead_id"]==lead["id"]):
