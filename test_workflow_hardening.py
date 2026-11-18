@@ -1,5 +1,7 @@
 """Regression checks for owner isolation and stale workflow transitions."""
 import sqlite3
+import os
+import persistent
 import time
 import unittest
 import sales_pipeline
@@ -8,7 +10,7 @@ import ascension_workflows
 
 class WorkflowHardeningTests(unittest.TestCase):
     def setUp(self):
-        self.c=sqlite3.connect(":memory:")
+        self.c=persistent.connect(":memory:") if os.getenv("VELXTRIA_TEST_POSTGRES")=="1" else sqlite3.connect(":memory:")
         self.lead=sales_pipeline.save(self.c,1,{"business":"Example Studio","stage":"proposal","value":"2000"})
         self.c.execute("UPDATE sales_pipeline_leads SET updated_at=? WHERE id=?",
                        (int(time.time())-16*86400,self.lead))
@@ -67,9 +69,9 @@ class WorkflowHardeningTests(unittest.TestCase):
             ascension_recovery.record(self.c,2,self.action,"responded","0","Other owner")
         ascension_recovery.record(self.c,1,self.action,"responded","0","Customer responded manually")
         self.assertEqual(ascension_workflows.transition(self.c,1,self.wid,"advance","Recorded outcome"),"completed")
-        self.assertEqual(self.c.execute(
+        self.assertEqual(tuple(self.c.execute(
             "SELECT outcome,amount_cents FROM ascension_recovery_outcomes WHERE owner_id=? AND action_id=?",
-            (1,self.action)).fetchone(),("responded",0))
+            (1,self.action)).fetchone()),("responded",0))
         self.assertEqual(self.c.execute(
             "SELECT COUNT(*) FROM ascension_workflow_events WHERE owner_id=? AND workflow_id=?",
             (1,self.wid)).fetchone()[0],5)
