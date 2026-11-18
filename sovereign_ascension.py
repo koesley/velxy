@@ -6,6 +6,7 @@ Uses existing sales_pipeline_leads as its source of truth.
 import html
 import secrets
 import time
+import sales_pipeline
 
 def esc(value):
     return html.escape(str(value),quote=True)
@@ -19,6 +20,7 @@ def setup(c):
 
 def discover(c, owner, at=None):
     """Only report opportunities supported by the owner's existing CRM records."""
+    sales_pipeline.setup(c)
     setup(c)
     now=int(time.time() if at is None else at)
     leads=c.execute("""SELECT id,business,email,stage,estimated_value,updated_at
@@ -59,6 +61,7 @@ def discover(c, owner, at=None):
 
 def action(c, owner, lead_id, kind, decision, note=""):
     """Records internal approval only. Never executes an external action."""
+    sales_pipeline.setup(c)
     setup(c)
     if decision not in ('approved','dismissed','completed'):
         raise ValueError("Invalid decision")
