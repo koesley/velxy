@@ -2387,6 +2387,12 @@ class Handler(BaseHTTPRequestHandler):
   if not ident:return
   user,csrf,token=ident
   if not hmac.compare_digest(fields.get('csrf',''),csrf):return self.fail(403,'Session verification failed.',user,csrf)
+  if p=='/outreach-suppression':
+   try:
+    with db() as c:
+     sales_pipeline.set_suppression(c,user['id'],fields.get('email',''),fields.get('status',''),fields.get('reason',''))
+    return self.redirect('/sales-pipeline')
+   except ValueError as exc:return self.fail(400,str(exc),user,csrf)
   if p=='/sales-pipeline':
    try:
     with db() as c:sales_pipeline.save(c,user['id'],fields)
