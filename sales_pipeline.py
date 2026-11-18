@@ -134,7 +134,7 @@ def save(c, owner, data):
     email=data.get("email","").strip()[:254]
     industry=data.get("industry","").strip()[:80]
     notes=data.get("notes","").strip()[:1000]
-    if email and ("@" not in email or "\n" in email):
+    if email and not outreach_deliverability.valid_email(email):
         raise ValueError("Invalid email")
     lead_id=data.get("lead_id","").strip()
     if lead_id:
@@ -198,7 +198,7 @@ def dashboard(c, owner, csrf):
     held=summary.get("hold_for_verification",0)
     blocked=sum(summary.get(x,0) for x in ("suppress_permanent","suppress_rejected","do_not_contact"))
     cleared=summary.get("verified_clear",0)
-    parts.append('<section class="panel"><h2>Outreach safety command center</h2><p>'+str(blocked)+' suppressed · '+str(held)+' held for verification · '+str(cleared)+' manually verified</p><p>Verified means contact evidence recorded, not guaranteed inbox delivery. No automatic campaign sender is enabled.</p></section>')
+    parts.append('<section class="panel"><h2>Outreach safety command center</h2><p>'+str(blocked)+' suppressed · '+str(held)+' held for verification · '+str(cleared)+' manually verified</p><p>Permanent suppressions and opt-outs cannot be cleared from this interface. Verified means contact evidence recorded, not guaranteed inbox delivery. No automatic campaign sender is enabled.</p></section>')
     statuses=c.execute("SELECT email,status FROM outreach_suppression WHERE owner_id=? ORDER BY updated_at DESC LIMIT 100",(owner,)).fetchall()
     parts.append('<section class="panel"><h2>Delivery status register</h2>'+''.join('<p>'+esc(email)+' — '+esc(status)+'</p>' for email,status in statuses)+'</section>')
 
