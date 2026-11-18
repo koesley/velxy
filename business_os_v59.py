@@ -197,6 +197,18 @@ def pipeline_velocity(c,uid,wid):
     return {"buckets":buckets,"average_open_age":round(open_days/open_total,1) if open_total else None,
             "idle_value":round(idle_value,2),"open_count":open_total}
 
+def suggested_followup(name,status,days):
+    """Create an editable, non-sending outreach draft from an existing lead."""
+    first=(name.strip().split() or ["there"])[0]
+    greeting="Hi "+first+","
+    if status=="new":
+        body="Thanks for your interest. I'd love to learn more about what your business needs and see whether we can help. Would a quick conversation this week work for you?"
+    elif days>=14:
+        body="I wanted to reconnect about our earlier conversation. If this is still a priority for you, I'd be happy to discuss the next steps. Would you like to find a time to talk?"
+    else:
+        body="Following up on our conversation. Do you have any questions I can help answer, or would you like to discuss the next steps?"
+    return greeting+"\\n\\n"+body+"\\n\\nBest regards"
+
 def export_csv(c,uid,wid):
     data=overview(c,uid,wid)
     f=io.StringIO()
@@ -259,7 +271,9 @@ def render(c,uid,wid,csrf):
         out.append('<section class="ov-panel"><h2>'+h(lead["name"])+'</h2><p>'+h(lead["source"])+' · '+h(lead["status"])+' · potential value '+h(lead["value"])+'</p>')
         if d["role"] in ("owner","editor"):
             out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Status<select name="status">'+''.join('<option value="'+s+'"'+(' selected' if lead["status"]==s else '')+'>'+s+'</option>' for s in STATES)+'</select></label><button name="action" value="status">Update</button></form>')
-            out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Follow-up draft<textarea name="message" required maxlength="2000"></textarea></label><button name="action" value="propose">Request approval</button></form>')
+            days_idle=max(0,(int(time.time())-int(next((row[0] for row in c.execute("SELECT updated FROM bos59_leads WHERE id=? AND workspace_id=?",(lead["id"],wid))),int(time.time())))//86400))
+            draft=suggested_followup(lead["name"],lead["status"],days_idle)
+            out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Suggested follow-up — edit before approval<textarea name="message" required maxlength="2000" rows="6">'+h(draft)+'</textarea></label><small>New: a personalized starting draft. Nothing is sent automatically.</small><button name="action" value="propose">Request approval</button></form>')
         for action in (x for x in d["actions"] if x["lead_id"]==lead["id"]):
             out.append('<article class="ov-job"><strong>Draft · '+h(action["decision"])+'</strong><p>'+h(action["message"])+'</p><small>'+h(action["reason"])+'</small>')
             if action["decision"]=="pending" and d["role"]=="owner":
