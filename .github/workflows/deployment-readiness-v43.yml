@@ -1,0 +1,28 @@
+name: Deployment readiness V43
+on:
+  pull_request:
+    paths:
+      - 'portal.py'
+      - 'requirements.txt'
+      - 'render.yaml'
+      - 'deployment_readiness_v43.py'
+      - 'test_deployment_readiness_v43.py'
+      - '.github/workflows/deployment-readiness-v43.yml'
+  workflow_dispatch:
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install runtime dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile application
+        run: python -m compileall -q .
+      - name: Run readiness tests
+        run: python -m unittest -v test_deployment_readiness_v43
+      - name: Run deployment preflight
+        run: python deployment_readiness_v43.py
