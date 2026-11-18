@@ -54,6 +54,13 @@ def init(c):
         workspace_id TEXT NOT NULL, event_type TEXT NOT NULL, event_day TEXT NOT NULL,
         event_count INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY(workspace_id,event_type,event_day))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS bos59_workflow_jobs (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, event_id TEXT NOT NULL,
+        workflow_key TEXT NOT NULL, object_id TEXT NOT NULL,
+        status TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL,
+        result TEXT NOT NULL DEFAULT '',
+        UNIQUE(workspace_id,event_id,workflow_key))""")
+    c.execute("CREATE INDEX IF NOT EXISTS bos59_workflow_jobs_scope ON bos59_workflow_jobs(workspace_id,status,created)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_events_recent ON bos59_events(workspace_id,created DESC)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_fulfillment_lead ON bos59_fulfillment(workspace_id,lead_id,status)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_services_scope ON bos59_services(workspace_id,active)")
@@ -108,6 +115,66 @@ def process_business_events(c,uid,wid,limit=100):
         AND NOT EXISTS(SELECT 1 FROM bos59_event_consumption p
         WHERE p.workspace_id=e.workspace_id AND p.consumer='daily_metrics_v1' AND p.event_id=e.id)""",(wid,)).fetchone()[0]
     return {"processed":processed,"remaining":remaining}
+
+
+def plan_fulfillment_review_jobs(c,uid,wid,limit=100):
+    """Queue a bounded, idempotent internal review for fulfillment-ready events."""
+    core.access(c,uid,wid,write=True)
+    init(c)
+    limit=max(1,min(int(limit),200))
+    events=c.execute("""SELECT e.id,e.object_id FROM bos59_events e
+        WHERE e.workspace_id=? AND e.event_type='fulfillment.ready_for_review'
+        AND NOT EXISTS(SELECT 1 FROM bos59_workflow_jobs j
+            WHERE j.workspace_id=e.workspace_id AND j.event_id=e.id
+            AND j.workflow_key='fulfillment_review_v1')
+        ORDER BY e.created,e.id LIMIT ?""",(wid,limit)).fetchall()
+    count=0
+    for eid,obj in events:
+        now=int(time.time())
+        cur=c.execute("""INSERT OR IGNORE INTO bos59_workflow_jobs
+            (id,workspace_id,event_id,workflow_key,object_id,status,created,updated,result)
+            VALUES(?,?,?,?,?,'queued',?,?,'')""",
+            (secrets.token_hex(16),wid,eid,"fulfillment_review_v1",obj,now,now))
+        count+=int(cur.rowcount==1)
+    if count:
+        core.audit(c,uid,wid,"bos_workflow_jobs_planned",str(count))
+    return count
+
+
+def run_fulfillment_review_jobs(c,uid,wid,limit=25):
+    """Process queued review jobs without automatically marking work delivered."""
+    core.access(c,uid,wid,write=True)
+    init(c)
+    limit=max(1,min(int(limit),50))
+    rows=c.execute("""SELECT id,object_id FROM bos59_workflow_jobs
+        WHERE workspace_id=? AND workflow_key='fulfillment_review_v1'
+        AND status='queued' ORDER BY created,id LIMIT ?""",(wid,limit)).fetchall()
+    completed=0
+    for jid,obj in rows:
+        project=c.execute("""SELECT f.status,t.status FROM bos59_fulfillment f
+            JOIN bos59_tasks t ON t.workspace_id=f.workspace_id AND t.id=f.task_id
+            WHERE f.workspace_id=? AND f.id=?""",(wid,obj)).fetchone()
+        if project and project[0]=="ready_for_review" and project[1]=="done":
+            state,result="completed","Delivery confirmation remains pending human review"
+        elif project and project[0]=="delivered":
+            state,result="completed","Delivery was already confirmed by an authorized user"
+        else:
+            state,result="needs_review","Fulfillment record is missing or no longer ready for review"
+        c.execute("""UPDATE bos59_workflow_jobs SET status=?,result=?,updated=?
+            WHERE workspace_id=? AND id=? AND status='queued'""",
+            (state,result,int(time.time()),wid,jid))
+        completed+=1
+    if completed:
+        core.audit(c,uid,wid,"bos_workflow_jobs_processed",str(completed))
+    return completed
+
+
+def fulfillment_review_jobs(c,uid,wid,limit=15):
+    core.access(c,uid,wid)
+    init(c)
+    return c.execute("""SELECT object_id,status,result,created FROM bos59_workflow_jobs
+        WHERE workspace_id=? ORDER BY created DESC,id DESC LIMIT ?""",
+        (wid,max(1,min(int(limit),50)))).fetchall()
 
 
 def event_activity(c,uid,wid,limit=12):
@@ -589,6 +656,13 @@ def render(c,uid,wid,csrf,search="",status_filter="all",page=1):
     d["leads"]=results["leads"]
 
     out=['<section class="ov-hero"><span>VELXTRIA · BUSINESS OS V59</span><h1>Revenue recovery command center</h1><p>Manage leads, prepare follow-ups and require human approval. No automatic messages are sent.</p></section>']
+    jobs=fulfillment_review_jobs(c,uid,wid,12)
+    out.append('<details class="ov-panel"><summary>Fulfillment review workflow jobs</summary><p>Prepare and process persistent internal review jobs from fulfillment events. Delivery always requires separate human confirmation.</p>')
+    if d["role"] in ("owner","editor"):
+        out.append('<form method="post" action="'+url+'">'+hidden+'<button name="action" value="plan_review_jobs">Queue review jobs</button> <button name="action" value="run_review_jobs">Process queued reviews</button></form>')
+    for object_id,state,result,created in jobs:
+        out.append('<article class="ov-job"><strong>'+h(state.replace("_"," ").title())+' · '+h(object_id[:12])+'</strong><p>'+h(result or "Awaiting processing")+'</p></article>')
+    out.append('</details>')
     activity=event_activity(c,uid,wid,12)
     out.append('<details class="ov-panel"><summary>Event processing and daily activity</summary><p>Build a durable daily activity summary from stored business events. Processing is bounded and repeat-safe; no customer messages or payments are sent.</p>')
     if d["role"] in ("owner","editor"):
