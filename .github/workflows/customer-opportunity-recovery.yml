@@ -1,0 +1,55 @@
+name: Customer Opportunity Recovery Regression
+on:
+  push:
+    branches:
+      - fix/workflow-postgres-outcome-check
+  pull_request:
+    paths:
+      - 'ascension_workflows.py'
+      - 'test_workflow_hardening.py'
+      - 'sales_pipeline.py'
+      - 'sovereign_ascension.py'
+      - 'ascension_recovery.py'
+      - '.github/workflows/customer-opportunity-recovery.yml'
+  workflow_dispatch:
+jobs:
+  sqlite-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate Python syntax
+        run: python -m py_compile ascension_workflows.py test_workflow_hardening.py sales_pipeline.py sovereign_ascension.py ascension_recovery.py
+      - name: Execute workflow regression tests
+        run: python -m unittest -v test_workflow_hardening
+  postgres-regression:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: velxtria_test
+          POSTGRES_PASSWORD: test_password_only
+          POSTGRES_DB: velxtria_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U velxtria_test -d velxtria_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      VELXTRIA_TEST_POSTGRES: '1'
+      VELXTRIA_DATABASE_URL: postgresql://velxtria_test:test_password_only@localhost:5432/velxtria_test
+      VELXTRIA_REQUIRE_PERSISTENCE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PostgreSQL driver
+        run: python -m pip install 'psycopg[binary]>=3,<4'
+      - name: Run real PostgreSQL integration tests
+        run: python -m unittest -v test_workflow_hardening

@@ -57,8 +57,12 @@ def transition(c,owner,wid,decision,note=""):
     step,status,action_id,email=row
     if status!="active":raise ValueError("Workflow is no longer active")
     if decision=="cancel":
-        c.execute("UPDATE ascension_workflows SET status='cancelled',updated_at=? WHERE id=? AND owner_id=?",
-                  (int(time.time()),wid,owner))
+        changed=c.execute("""UPDATE ascension_workflows SET status='cancelled',updated_at=?
+            WHERE id=? AND owner_id=? AND status='active' AND current_step=?""",
+            (int(time.time()),wid,owner,step))
+        updated_rows=changed.cursor.rowcount if hasattr(changed,"cursor") else changed.rowcount
+        if updated_rows != 1:
+            raise ValueError("Workflow changed concurrently; reload before continuing")
         log(c,owner,wid,"cancelled",note)
         return "cancelled"
     if not note.strip():raise ValueError("Human confirmation note is required")
@@ -68,17 +72,20 @@ def transition(c,owner,wid,decision,note=""):
         completed=c.execute("SELECT 1 FROM ascension_actions WHERE id=? AND owner_id=? AND status='completed'",(action_id,owner)).fetchone()
         if not completed:raise ValueError("Complete the approved action in Ascension before proceeding")
     if step==3:
-        outcome=c.execute("SELECT 1 FROM ascension_recovery_outcomes WHERE owner_id=? AND action_id=?",(owner,action_id)).fetchone() if _outcomes_ready(c) else None
+        import ascension_recovery
+        ascension_recovery.setup(c)
+        outcome=c.execute("SELECT 1 FROM ascension_recovery_outcomes WHERE owner_id=? AND action_id=?",(owner,action_id)).fetchone()
         if not outcome:raise ValueError("Record the outcome in Revenue Recovery before closing")
     next_step=step+1
     state="completed" if next_step==len(STEPS) else "active"
-    c.execute("UPDATE ascension_workflows SET current_step=?,status=?,updated_at=? WHERE id=? AND owner_id=?",
-              (next_step,state,int(time.time()),wid,owner))
+    changed=c.execute("""UPDATE ascension_workflows SET current_step=?,status=?,updated_at=?
+        WHERE id=? AND owner_id=? AND status='active' AND current_step=?""",
+        (next_step,state,int(time.time()),wid,owner,step))
+    updated_rows = changed.cursor.rowcount if hasattr(changed,"cursor") else changed.rowcount
+    if updated_rows != 1:
+        raise ValueError("Workflow changed concurrently; reload before continuing")
     log(c,owner,wid,"completed" if state=="completed" else "advanced",note)
     return state
-
-def _outcomes_ready(c):
-    return c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ascension_recovery_outcomes'").fetchone() is not None
 
 def dashboard(c,owner,csrf):
     setup(c)
