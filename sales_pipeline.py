@@ -15,17 +15,26 @@ def setup(c):
         notes TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""")
     c.execute("CREATE INDEX IF NOT EXISTS sales_pipeline_owner ON sales_pipeline_leads(owner_id, updated_at)")
     c.execute("CREATE TABLE IF NOT EXISTS outreach_suppression (owner_id INTEGER NOT NULL,email TEXT NOT NULL,status TEXT NOT NULL,reason TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(owner_id,email))")
+    c.execute("CREATE TABLE IF NOT EXISTS outreach_suppression_events (owner_id INTEGER NOT NULL,email TEXT NOT NULL,status TEXT NOT NULL,reason TEXT NOT NULL,created_at INTEGER NOT NULL)")
 def set_suppression(c, owner, email, status, reason=""):
     setup(c)
     email=email.strip().lower()
-    if not email or "@" not in email or len(email)>254:
+    if not outreach_deliverability.valid_email(email):
         raise ValueError("Valid email required")
-    if status not in ("suppress_permanent","suppress_rejected","hold_for_verification","verified_clear","do_not_contact"):
+    allowed=("suppress_permanent","suppress_rejected","hold_for_verification","verified_clear","do_not_contact")
+    if status not in allowed:
         raise ValueError("Invalid status")
+    current=c.execute("SELECT status FROM outreach_suppression WHERE owner_id=? AND email=?",(owner,email)).fetchone()
+    if current and current[0]=="do_not_contact" and status!="do_not_contact":
+        raise ValueError("Opted-out contact cannot be reactivated")
+    if status=="verified_clear" and (not reason.strip() or len(reason.strip())<12):
+        raise ValueError("Verification requires evidence of the current public business email source")
     c.execute("""INSERT INTO outreach_suppression(owner_id,email,status,reason,updated_at)
     VALUES (?,?,?,?,?) ON CONFLICT(owner_id,email) DO UPDATE SET
     status=excluded.status,reason=excluded.reason,updated_at=excluded.updated_at""",
     (owner,email,status,reason[:500],int(time.time())))
+    c.execute("""INSERT INTO outreach_suppression_events(owner_id,email,status,reason,created_at)
+                 VALUES (?,?,?,?,?)""",(owner,email,status,reason[:500],int(time.time())))
 
 def import_bounce_lines(c, owner, raw):
     """Import pasted recipient|bounce-error lines, no automatic clearance.
@@ -45,7 +54,7 @@ def import_bounce_lines(c, owner, raw):
             raise ValueError("Each line must be email | bounce error")
         email, diagnostic=line.split("|",1)
         email=email.strip().lower()
-        if not email or "@" not in email or len(email)>254 or not diagnostic.strip():
+        if not outreach_deliverability.valid_email(email) or not diagnostic.strip():
             raise ValueError("Invalid recipient or missing bounce error")
         status=outreach_deliverability.classify_bounce(diagnostic)
         if status=="needs_manual_review":
@@ -56,6 +65,8 @@ def import_bounce_lines(c, owner, raw):
     for email,status,reason in parsed:
         existing=c.execute("SELECT status FROM outreach_suppression WHERE owner_id=? AND email=?",(owner,email)).fetchone()
         if existing and existing[0] in protected:
+            continue
+        if existing and existing[0]=="verified_clear" and status=="hold_for_verification":
             continue
         set_suppression(c,owner,email,status,reason)
     return len(parsed)
@@ -174,6 +185,11 @@ def dashboard(c, owner, csrf):
     parts.append('<section class="panel"><h2>Contact delivery safety</h2><p>All addresses are held by default until independently verified. This page never sends email.</p><form method="post" action="/outreach-suppression"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><label>Email<input name="email" required></label><label>Status<select name="status">'+''.join('<option value="'+x+'">'+esc(x.replace('_',' ').title())+'</option>' for x in ("hold_for_verification","suppress_permanent","suppress_rejected","do_not_contact","verified_clear"))+'</select></label><label>Evidence<input name="reason" maxlength="500"></label><button type="submit">Save status</button></form></section>')
     parts.append('<section class="panel"><h2>Import Gmail bounce reports</h2><p>Paste one recipient and its exact error per line, separated by |. Example: info@example.com | 550 5.1.1 User does not exist. No emails are sent.</p><form method="post" action="/outreach-bounce-import"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><textarea name="bounce_lines" rows="7" maxlength="30000" required></textarea><button type="submit">Import bounce statuses</button></form></section>')
     parts.append('<section class="panel"><h2>Paste Gmail delivery notices</h2><p>Paste the full text of each Gmail bounce notice, separated by a line containing ===. No Gmail access or email sending occurs here.</p><form method="post" action="/outreach-gmail-import"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><textarea name="notices" rows="8" maxlength="60000" required></textarea><button type="submit">Review and import failures</button></form></section>')
+    summary=dict(c.execute("SELECT status,COUNT(*) FROM outreach_suppression WHERE owner_id=? GROUP BY status",(owner,)).fetchall())
+    held=summary.get("hold_for_verification",0)
+    blocked=sum(summary.get(x,0) for x in ("suppress_permanent","suppress_rejected","do_not_contact"))
+    cleared=summary.get("verified_clear",0)
+    parts.append('<section class="panel"><h2>Outreach safety command center</h2><p>'+str(blocked)+' suppressed · '+str(held)+' held for verification · '+str(cleared)+' manually verified</p><p>Verified means contact evidence recorded, not guaranteed inbox delivery. No automatic campaign sender is enabled.</p></section>')
     statuses=c.execute("SELECT email,status FROM outreach_suppression WHERE owner_id=? ORDER BY updated_at DESC LIMIT 100",(owner,)).fetchall()
     parts.append('<section class="panel"><h2>Delivery status register</h2>'+''.join('<p>'+esc(email)+' — '+esc(status)+'</p>' for email,status in statuses)+'</section>')
 
