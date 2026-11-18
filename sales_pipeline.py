@@ -53,8 +53,31 @@ def dashboard(c, owner, csrf):
     won=sum(r[6] for r in rows if r[5]=="won")
     potential=sum(r[6] for r in rows if r[5] not in ("won","lost"))
     counts={stage:sum(r[5]==stage for r in rows) for stage in STAGES}
+    # Only independently verified mainnet settlement records count as received
+    # payments. These are account-level payments, NOT attributed to leads.
+    # Do not use the manually selected "won" stage as payment evidence.
+    verified_count=0
+    verified_cents=0
+    try:
+        payments=c.execute("""SELECT o.order_id FROM btcpay_orders o
+            JOIN subscriptions s ON s.user_id=o.user_id
+            WHERE o.user_id=? AND o.network='mainnet' AND o.status='settled'
+              AND o.settled_at>0 AND o.invoice_id IS NOT NULL
+              AND s.verification_source='btcpay_mainnet_verified'
+            ORDER BY o.settled_at DESC""",(owner,)).fetchall()
+        # Current subscription verification can only attest to its latest
+        # source invoice. Older orders may have been settled but should not
+        # be represented as individually verified by this join alone.
+        source=c.execute("""SELECT source_reference FROM subscriptions
+            WHERE user_id=? AND verification_source='btcpay_mainnet_verified'
+            AND verified_at>0""",(owner,)).fetchone()
+        verified_count=sum(1 for p in payments if source and p[0] == source[0])
+        verified_cents=verified_count*4900
+    except Exception:
+        pass  # No payment schema yet, or inaccessible: show no verified evidence.
     parts=['<section class="hero"><h1>Sales Pipeline</h1><p>Track outreach, conversations, meetings and deals. Values are manual estimates, not verified revenue.</p></section>',
            '<section class="panel"><h2>Pipeline overview</h2><p>'+str(len(rows))+' recent leads · '+str(counts["replied"])+' replied · '+str(counts["meeting"])+' meetings · '+str(counts["won"])+' won</p><p>Estimated open opportunities: $'+str(potential)+' · Self-reported won deals: $'+str(won)+'</p></section>']
+    parts.append('<section class="panel"><h2>Payment evidence</h2><p>Currently evidenced mainnet PRO payments: '+str(verified_count)+' · $'+format(verified_cents/100,'.2f')+' USD</p><p>This conservative count includes only the current subscription invoice linked to a settled order. It is not total lifetime revenue, a bank balance, or attribution to any lead. Earlier payments and refunds require separate reconciliation.</p></section>')
     def form(lead=None):
         lead=lead or ("","","","","","new",0,"")
         fields=[("business","Business",lead[1]),("contact","Contact",lead[2]),("email","Email",lead[3]),("industry","Industry",lead[4]),("value","Estimated deal value (USD)",lead[6])]
