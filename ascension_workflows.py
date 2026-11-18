@@ -77,7 +77,8 @@ def transition(c,owner,wid,decision,note=""):
     changed=c.execute("""UPDATE ascension_workflows SET current_step=?,status=?,updated_at=?
         WHERE id=? AND owner_id=? AND status='active' AND current_step=?""",
         (next_step,state,int(time.time()),wid,owner,step))
-    if changed.cursor.rowcount != 1 if hasattr(changed,"cursor") else changed.rowcount != 1:
+    updated_rows = changed.cursor.rowcount if hasattr(changed,"cursor") else changed.rowcount
+    if updated_rows != 1:
         raise ValueError("Workflow changed concurrently; reload before continuing")
     log(c,owner,wid,"completed" if state=="completed" else "advanced",note)
     return state
