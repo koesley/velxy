@@ -31,6 +31,11 @@ def init(c):
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, lead_id TEXT NOT NULL,
         title TEXT NOT NULL, due_date TEXT NOT NULL, status TEXT NOT NULL,
         created_by INTEGER NOT NULL, created INTEGER NOT NULL, completed INTEGER)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS bos59_quotes (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, lead_id TEXT NOT NULL,
+        description TEXT NOT NULL, quantity INTEGER NOT NULL, unit_price REAL NOT NULL,
+        status TEXT NOT NULL, created_by INTEGER NOT NULL, created INTEGER NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS bos59_quotes_lead ON bos59_quotes(workspace_id,lead_id,created)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_tasks_due ON bos59_tasks(workspace_id,status,due_date)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_notes_lead ON bos59_lead_notes(workspace_id,lead_id,created)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_leads_scope ON bos59_leads(workspace_id,status)")
@@ -190,6 +195,27 @@ def complete_task(c,uid,wid,tid):
     c.execute("UPDATE bos59_tasks SET status='done',completed=? WHERE workspace_id=? AND id=? AND status='open'",
               (int(time.time()),wid,tid))
     core.audit(c,uid,wid,"bos_task_completed",tid)
+
+def create_quote(c,uid,wid,lid,description,quantity,unit_price):
+    """Create a draft estimate. No invoice, charge or outbound delivery."""
+    core.access(c,uid,wid,write=True)
+    init(c)
+    description=_text(description,300)
+    try:
+        qty=int(quantity)
+        price=float(unit_price)
+    except (TypeError,ValueError,OverflowError):
+        raise ValueError("Invalid quote quantity or price")
+    import math
+    if not 1<=qty<=100000 or not math.isfinite(price) or not 0<=price<=1000000 or qty*price>1000000000:
+        raise ValueError("Quote exceeds allowed limits")
+    if not c.execute("SELECT 1 FROM bos59_leads WHERE workspace_id=? AND id=?",(wid,lid)).fetchone():
+        raise ValueError("Lead not found")
+    qid=secrets.token_hex(12)
+    c.execute("INSERT INTO bos59_quotes VALUES(?,?,?,?,?,?,?,?,?)",
+              (qid,wid,lid,description,qty,round(price,2),"draft",uid,int(time.time())))
+    core.audit(c,uid,wid,"bos_quote_created",qid)
+    return qid
 
 def overview(c,uid,wid):
     role=core.access(c,uid,wid)
@@ -381,8 +407,16 @@ def render(c,uid,wid,csrf):
     open_tasks=[(lid,tid,title,due) for lid,items in tasks_by_lead.items() for tid,title,due,status in items if status=="open"]
     due_now=sum(due<=today for lid,tid,title,due in open_tasks)
     out.append('<section class="ov-panel"><h2>Customer task manager</h2><p>New: schedule follow-up work, see upcoming deadlines, and mark tasks completed.</p><p><strong>'+h(due_now)+'</strong> tasks due or overdue · <strong>'+h(len(open_tasks))+'</strong> open tasks</p></section>')
+    quotes_by_lead={}
+    for qid,lid,description,qty,price,status in c.execute("SELECT id,lead_id,description,quantity,unit_price,status FROM bos59_quotes WHERE workspace_id=? ORDER BY created DESC LIMIT 500",(wid,)):
+        quotes_by_lead.setdefault(lid,[]).append((qid,description,qty,price,status))
     for lead in d["leads"]:
         out.append('<section class="ov-panel"><h2>'+h(lead["name"])+'</h2><p>'+h(lead["source"])+' · '+h(lead["status"])+' · potential value '+h(lead["value"])+'</p>')
+        out.append('<h3>Estimates &amp; quotes</h3>')
+        for qid,description,qty,price,status in quotes_by_lead.get(lead["id"],[])[:10]:
+            out.append('<article class="ov-job"><strong>'+h(description)+'</strong><p>'+h(qty)+' × '+h(format(price,".2f"))+' = '+h(format(qty*price,".2f"))+' · '+h(status)+'</p></article>')
+        if d["role"] in ("owner","editor"):
+            out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Quote item / service<input name="quote_description" maxlength="300" required placeholder="Website setup"></label><label>Quantity<input name="quote_quantity" type="number" min="1" max="100000" value="1" required></label><label>Unit price<input name="quote_price" type="number" min="0" max="1000000" step="0.01" required></label><button name="action" value="create_quote">Save draft estimate</button></form>')
         out.append('<h3>Customer tasks</h3>')
         for tid,task_title,due,status in tasks_by_lead.get(lead["id"],[])[:15]:
             label="Overdue" if status=="open" and due<today else "Due today" if status=="open" and due==today else status.title()
