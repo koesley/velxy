@@ -55,7 +55,7 @@ def accept_event(conn, raw):
     if not isinstance(signature, str) or not hmac.compare_digest(signature, expected):
         return 401, 'Invalid signature'
     kind = data.get('type')
-    if kind not in EVENTS:
+    if not isinstance(kind, str) or kind not in EVENTS:
         return 400, 'Unsupported event'
     if kind.startswith('subscription.'):
         reference = data.get('subscription_id', '')
@@ -71,9 +71,9 @@ def accept_event(conn, raw):
         product_key = PRODUCT_KEY if matches else ''
     if not isinstance(reference, str) or not reference or len(reference) > 128:
         return 400, 'Missing reference'
-    if not isinstance(email, str) or '@' not in email or len(email) > 254:
+    if not isinstance(email, str) or '@' not in email or len(email) > 254 or not email.strip():
         return 400, 'Invalid email'
-    if product_key != PRODUCT_KEY:
+    if not isinstance(product_key, str) or product_key != PRODUCT_KEY:
         # Acknowledge unrelated Payhip products without adding them to VELXTRIA records.
         return 200, 'Ignored unrelated product'
     # Same transaction and event type are idempotent even if Payhip retries with
@@ -82,10 +82,10 @@ def accept_event(conn, raw):
     # Avoid storing signature, IP address, or unrelated buyer details.
     safe = {'type': kind, 'reference_id': reference, 'email': email.lower().strip(), 'product_key': PRODUCT_KEY}
     if kind == 'paid':
-        safe['currency'] = data.get('currency')
-        safe['price'] = data.get('price')
+        safe['currency'] = str(data.get('currency', ''))[:16]
+        safe['price'] = str(data.get('price', ''))[:64]
     if kind == 'refunded':
-        safe['amount_refunded'] = data.get('amount_refunded')
+        safe['amount_refunded'] = str(data.get('amount_refunded', ''))[:64]
     setup(conn)
     try:
         conn.execute('''INSERT INTO payhip_events
