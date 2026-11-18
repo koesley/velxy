@@ -18,15 +18,20 @@ def setup(c):
     c.execute("CREATE TABLE IF NOT EXISTS outreach_suppression_events (owner_id INTEGER NOT NULL,email TEXT NOT NULL,status TEXT NOT NULL,reason TEXT NOT NULL,created_at INTEGER NOT NULL)")
 def set_suppression(c, owner, email, status, reason=""):
     setup(c)
+    if not isinstance(email,str) or not isinstance(reason,str):
+        raise ValueError("Email and evidence must be text")
     email=email.strip().lower()
+    if len(reason)>500:
+        raise ValueError("Evidence exceeds 500 characters")
     if not outreach_deliverability.valid_email(email):
         raise ValueError("Valid email required")
     allowed=("suppress_permanent","suppress_rejected","hold_for_verification","verified_clear","do_not_contact")
     if status not in allowed:
         raise ValueError("Invalid status")
     current=c.execute("SELECT status FROM outreach_suppression WHERE owner_id=? AND email=?",(owner,email)).fetchone()
-    if current and current[0]=="do_not_contact" and status!="do_not_contact":
-        raise ValueError("Opted-out contact cannot be reactivated")
+    protected=("do_not_contact","suppress_permanent","suppress_rejected")
+    if current and current[0] in protected and status!=current[0]:
+        raise ValueError("Suppressed contact cannot be reactivated or downgraded")
     if status=="verified_clear" and (not reason.strip() or len(reason.strip())<12):
         raise ValueError("Verification requires evidence of the current public business email source")
     c.execute("""INSERT INTO outreach_suppression(owner_id,email,status,reason,updated_at)
@@ -60,6 +65,10 @@ def import_bounce_lines(c, owner, raw):
         if status=="needs_manual_review":
             status="hold_for_verification"
         parsed.append((email,status,diagnostic.strip()[:500]))
+    # Validate all existing states before any write, so an invalid batch is atomic.
+    for email,status,reason in parsed:
+        if len(reason)>500:
+            raise ValueError("Bounce diagnostic exceeds 500 characters")
     # Never weaken existing permanent suppressions or opt-outs on import.
     protected={"do_not_contact","suppress_permanent","suppress_rejected"}
     for email,status,reason in parsed:
