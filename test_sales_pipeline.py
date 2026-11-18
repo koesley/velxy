@@ -32,6 +32,16 @@ class SalesPipelineTests(unittest.TestCase):
         self.c.execute("INSERT INTO subscriptions VALUES (1,'btcpay_mainnet_verified',100,'invoice-1')")
         self.assertIn('Currently evidenced mainnet PRO payments: 1',sales_pipeline.dashboard(self.c,1,'csrf'))
 
+    def test_outreach_default_hold(self):
+        self.assertFalse(sales_pipeline.outreach_eligibility(self.c,1,"info@example.com"))
+    def test_owner_scoped_suppression(self):
+        sales_pipeline.set_suppression(self.c,1,"info@example.com","verified_clear","Public business contact confirmed")
+        self.assertTrue(sales_pipeline.outreach_eligibility(self.c,1,"info@example.com"))
+        self.assertFalse(sales_pipeline.outreach_eligibility(self.c,2,"info@example.com"))
+    def test_opt_out_blocks(self):
+        sales_pipeline.set_suppression(self.c,1,"info@example.com","verified_clear")
+        sales_pipeline.set_suppression(self.c,1,"info@example.com","do_not_contact")
+        self.assertFalse(sales_pipeline.outreach_eligibility(self.c,1,"info@example.com"))
     def test_bad_stage(self):
         with self.assertRaises(ValueError):
             sales_pipeline.save(self.c,1,{"business":"Example Cafe","stage":"invented"})
