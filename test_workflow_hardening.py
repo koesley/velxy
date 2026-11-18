@@ -68,6 +68,49 @@ class WorkflowHardeningTests(unittest.TestCase):
             "SELECT COUNT(*) FROM ascension_workflow_events WHERE owner_id=? AND workflow_id=? AND event='cancelled'",
             (1,self.wid)).fetchone()[0],1)
 
+    def test_unverified_contact_blocks_draft_progression(self):
+        self.assertEqual(ascension_workflows.transition(
+            self.c,1,self.wid,"advance","Reviewed proposal"),"active")
+        with self.assertRaisesRegex(ValueError,"suppressed or not verified"):
+            ascension_workflows.transition(
+                self.c,1,self.wid,"advance","Attempt without clearance")
+        self.assertEqual(self.c.execute(
+            "SELECT current_step FROM ascension_workflows WHERE id=?",
+            (self.wid,)).fetchone()[0],1)
+
+    def test_do_not_contact_blocks_progress_after_prior_clearance(self):
+        self.c.execute("UPDATE sales_pipeline_leads SET email=? WHERE id=?",
+                       ("blocked@example.com",self.lead))
+        sales_pipeline.set_suppression(
+            self.c,1,"blocked@example.com","verified_clear",
+            "Verified on current publicly available business contact page")
+        self.assertEqual(ascension_workflows.transition(
+            self.c,1,self.wid,"advance","Reviewed proposal"),"active")
+        sales_pipeline.set_suppression(
+            self.c,1,"blocked@example.com","do_not_contact","Recipient opted out")
+        with self.assertRaisesRegex(ValueError,"suppressed or not verified"):
+            ascension_workflows.transition(
+                self.c,1,self.wid,"advance","Attempt after opt out")
+        with self.assertRaises(ValueError):
+            sales_pipeline.set_suppression(
+                self.c,1,"blocked@example.com","verified_clear",
+                "Trying to override previously recorded opt out")
+
+    def test_unverified_payment_is_not_counted_as_received_revenue(self):
+        import ascension_recovery
+        sovereign_ascension.action(
+            self.c,1,self.lead,"stalled_deal","completed","Manual follow-up")
+        ascension_recovery.record(
+            self.c,1,self.action,"payment_reported","2000.00",
+            "Customer reported payment verbally; no settlement verification")
+        outcome=self.c.execute(
+            "SELECT outcome,amount_cents FROM ascension_recovery_outcomes WHERE owner_id=? AND action_id=?",
+            (1,self.action)).fetchone()
+        self.assertEqual(tuple(outcome),("payment_reported",200000))
+        page=ascension_recovery.dashboard(self.c,1,"csrf-test")
+        self.assertIn("user-reported payments",page)
+        self.assertIn("NOT verified payment receipts",page)
+
     def test_stalled_proposal_signal_is_evidence_based(self):
         # A separate, unapproved CRM record must appear in the discovery queue.
         other=sales_pipeline.save(self.c,1,{"business":"Second Prospect","stage":"proposal","value":"2000"})
