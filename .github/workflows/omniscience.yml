@@ -1,0 +1,30 @@
+name: OMNISCIENCE integration checks
+on:
+  pull_request:
+    paths:
+      - 'omniscience_*.py'
+      - 'test_omniscience_*.py'
+      - 'portal.py'
+      - 'sales_pipeline.py'
+      - 'ascension_next_actions.py'
+      - '.github/workflows/omniscience.yml'
+  workflow_dispatch:
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Syntax-check portal and OMNISCIENCE
+        run: python -m py_compile portal.py omniscience_evidence.py omniscience_crm_bridge.py omniscience_workspace.py
+      - name: Run focused integration tests
+        env:
+          VELXTRIA_DATABASE_URL: ''
+          VELXTRIA_REQUIRE_PERSISTENCE: '0'
+        run: python -m unittest -v test_omniscience_evidence test_omniscience_crm_bridge test_omniscience_workspace
