@@ -38,6 +38,14 @@ in chat, never print them in logs.
 | `VELXTRIA_BTCPAY_MAINNET_WEBHOOK_SECRET` | Secret you invent for the webhook (see below) |
 | `VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT` | `0` until verified, then `1` |
 
+> The flag is dashboard-controlled: `render.yaml` declares it with
+> `sync: false` and no value. Never declare a value for it in
+> `render.yaml` — a declared `value: '0'` is re-applied on every
+> blueprint sync and silently turns checkout back off, even after it
+> was switched on in the dashboard and verified live (this happened
+> on 2026-11-18: the flag was set to `1` and a real invoice created,
+> then a later deploy reset it to `0`).
+
 The testnet variables (`VELXTRIA_BTCPAY_URL`, `VELXTRIA_BTCPAY_STORE_ID`,
 `VELXTRIA_BTCPAY_API_KEY`, `VELXTRIA_ENABLE_BTCPAY_TEST_CHECKOUT`) are
 separate and are for local development only.
