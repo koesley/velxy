@@ -23,6 +23,10 @@ def init(c):
         message TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL,
         created_by INTEGER NOT NULL, reviewed_by INTEGER, created INTEGER NOT NULL,
         reviewed INTEGER)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS bos59_lead_notes (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, lead_id TEXT NOT NULL,
+        author_id INTEGER NOT NULL, body TEXT NOT NULL, created INTEGER NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS bos59_notes_lead ON bos59_lead_notes(workspace_id,lead_id,created)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_leads_scope ON bos59_leads(workspace_id,status)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_actions_scope ON bos59_actions(workspace_id,decision)")
 
@@ -88,6 +92,19 @@ def review(c,uid,wid,aid,decision,reason):
         c.execute("UPDATE bos59_actions SET decision=?,reason=?,reviewed_by=?,reviewed=? WHERE id=? AND workspace_id=?",
                   (decision,reason,uid,int(time.time()),aid,wid))
         core.audit(c,uid,wid,"bos_message_"+decision,aid)
+
+def add_note(c,uid,wid,lid,body):
+    """Persist a dated internal note on an existing lead; no external messaging."""
+    core.access(c,uid,wid,write=True)
+    init(c)
+    body=_text(body,2000)
+    if not c.execute("SELECT 1 FROM bos59_leads WHERE workspace_id=? AND id=?",(wid,lid)).fetchone():
+        raise ValueError("Lead not found")
+    nid=secrets.token_hex(12)
+    c.execute("INSERT INTO bos59_lead_notes(id,workspace_id,lead_id,author_id,body,created) VALUES(?,?,?,?,?,?)",
+              (nid,wid,lid,uid,body,int(time.time())))
+    core.audit(c,uid,wid,"bos_lead_note_created",lid)
+    return nid
 
 def overview(c,uid,wid):
     role=core.access(c,uid,wid)
@@ -267,8 +284,18 @@ def render(c,uid,wid,csrf):
     out.append('</tbody></table></div><small>Uses existing lead creation and update timestamps. Up to 300 recent leads; potential values are estimates, not collected revenue.</small></section>')
     if d["role"] in ("owner","editor"):
         out.append('<section class="ov-panel"><h2>Add a lead</h2><form method="post" action="'+url+'">'+hidden+'<label>Name<input name="name" required maxlength="120"></label><label>Contact<input name="contact" required maxlength="200"></label><label>Source<input name="source" required maxlength="100"></label><label>Potential value<input name="value" type="number" min="0" max="1000000000" step="0.01" required></label><button name="action" value="add">Add lead</button></form></section>')
+    notes_by_lead={}
+    for lid,body,created in c.execute("SELECT lead_id,body,created FROM bos59_lead_notes WHERE workspace_id=? ORDER BY created DESC LIMIT 500",(wid,)):
+        notes_by_lead.setdefault(lid,[]).append((body,created))
     for lead in d["leads"]:
         out.append('<section class="ov-panel"><h2>'+h(lead["name"])+'</h2><p>'+h(lead["source"])+' · '+h(lead["status"])+' · potential value '+h(lead["value"])+'</p>')
+        out.append('<h3>Customer interaction history</h3>')
+        for note_body,note_created in notes_by_lead.get(lead["id"],[])[:20]:
+            out.append('<article class="ov-job"><small>'+h(time.strftime("%Y-%m-%d %H:%M UTC",time.gmtime(note_created)))+'</small><p>'+h(note_body)+'</p></article>')
+        if not notes_by_lead.get(lead["id"]):
+            out.append('<p><small>No interaction notes yet.</small></p>')
+        if d["role"] in ("owner","editor"):
+            out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Add private interaction note<textarea name="note" maxlength="2000" required placeholder="What happened on the call? What did the customer ask for?"></textarea></label><button name="action" value="note">Save interaction note</button></form>')
         if d["role"] in ("owner","editor"):
             out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Status<select name="status">'+''.join('<option value="'+s+'"'+(' selected' if lead["status"]==s else '')+'>'+s+'</option>' for s in STATES)+'</select></label><button name="action" value="status">Update</button></form>')
             days_idle=max(0,(int(time.time())-int(next((row[0] for row in c.execute("SELECT updated FROM bos59_leads WHERE id=? AND workspace_id=?",(lead["id"],wid))),int(time.time())))//86400))
