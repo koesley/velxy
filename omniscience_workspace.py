@@ -10,7 +10,7 @@ import omniscience_evidence as ledger
 def esc(value):
     return html.escape(str(value),quote=True)
 
-def dashboard(c,owner):
+def dashboard(c,owner,csrf=''):
     if type(owner) is not int or owner<1:
         raise ValueError("Authenticated account required")
     ledger.setup(c)
@@ -35,6 +35,11 @@ def dashboard(c,owner):
                     esc(item["target"]),'">Review in existing workspace</a></p></article>'))
     if not items:
         out.append('<p>No actionable aging CRM records for this account.</p>')
+    if csrf:
+        for item in items:
+            out.extend(('<form method="post" action="/omniscience-save"><input type="hidden" name="csrf" value="',
+                        esc(csrf),'"><input type="hidden" name="source_id" value="',
+                        esc(item["source_id"]),'"><button type="submit">Save for review</button></form>'))
     out.append('</section><section class="panel"><h2>Recorded decisions</h2>')
     for rid,objective,condition,intervention,reliability,source_type,source_id,created,expires in saved:
         events=c.execute("""SELECT choice,rationale,created_at
@@ -49,6 +54,16 @@ def dashboard(c,owner):
                         ' · ',esc(at),'</p>'))
         if not events:
             out.append('<p>Awaiting human decision</p>')
+        if csrf and (expires is None or expires > __import__('time').time()):
+            out.extend(('<form method="post" action="/omniscience-decision">',
+                        '<input type="hidden" name="csrf" value="',esc(csrf),
+                        '"><input type="hidden" name="recommendation_id" value="',esc(rid),
+                        '"><label>Decision<select name="choice">',
+                        '<option value="accept">Accept for manual follow-up</option>',
+                        '<option value="defer">Defer</option>',
+                        '<option value="dismiss">Dismiss</option></select></label>',
+                        '<label>Reason<input name="rationale" required maxlength="1000"></label>',
+                        '<button type="submit">Record decision</button></form>'))
         out.append('</article>')
     if not saved:
         out.append('<p>No recorded recommendations yet.</p>')
