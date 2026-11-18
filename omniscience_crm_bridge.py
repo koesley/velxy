@@ -55,10 +55,13 @@ def save_for_review(c, owner, candidate):
     if not c.execute("SELECT 1 FROM sales_pipeline_leads WHERE id=? AND owner_id=?",
                      (source_id,owner)).fetchone():
         raise ValueError("Source unavailable for this account")
+    current=next((item for item in candidates(c,owner) if item["source_id"]==source_id),None)
+    if current is None or any(candidate.get(key)!=current[key] for key in ("payload","observed_at","objective","condition","intervention","reliability")):
+        raise ValueError("Recommendation is stale or does not match current account evidence")
     if candidate.get("reliability")!="inference":
         raise ValueError("Derived CRM recommendation must remain an inference")
     evidence_id=ledger.record_evidence(
         c,owner,"sales_pipeline_leads",source_id,"inference",
-        candidate["payload"],observed_at=candidate["observed_at"])
-    return ledger.recommend(c,owner,candidate["objective"],
-                            candidate["condition"],candidate["intervention"],evidence_id)
+        current["payload"],observed_at=current["observed_at"])
+    return ledger.recommend(c,owner,current["objective"],
+                            current["condition"],current["intervention"],evidence_id)
