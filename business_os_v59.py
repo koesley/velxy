@@ -126,6 +126,25 @@ def pipeline_insights(c, uid, wid):
     return {"counts":counts,"values":values,"closed_conversion_pct":round(100*counts["won"]/closed,1) if closed else None,
             "stale":stale[:10],"stale_count":len(stale),"sample_limit":300}
 
+def source_performance(c, uid, wid):
+    """Compare lead sources without treating pipeline values as collected revenue."""
+    core.access(c,uid,wid)
+    init(c)
+    rows=c.execute("SELECT source,status,value FROM bos59_leads WHERE workspace_id=? ORDER BY created DESC LIMIT 300",(wid,)).fetchall()
+    groups={}
+    for source,status,value in rows:
+        key=(source or "Unknown").strip()[:100] or "Unknown"
+        item=groups.setdefault(key,{"source":key,"leads":0,"won":0,"lost":0,"open_value":0.0})
+        item["leads"]+=1
+        if status=="won": item["won"]+=1
+        elif status=="lost": item["lost"]+=1
+        elif status in ("new","contacted"): item["open_value"]+=float(value)
+    for item in groups.values():
+        closed=item["won"]+item["lost"]
+        item["win_rate"]=round(item["won"]*100/closed,1) if closed else None
+        item["open_value"]=round(item["open_value"],2)
+    return sorted(groups.values(),key=lambda x:(-x["won"],-x["leads"],x["source"].lower()))[:12]
+
 def export_csv(c,uid,wid):
     data=overview(c,uid,wid)
     f=io.StringIO()
@@ -150,6 +169,17 @@ def render(c,uid,wid,csrf):
     else:
         out.append('<p>No open leads overdue for follow-up in the displayed records.</p>')
     out.append('<small>Based on up to 300 user-entered leads. Win rate is won / (won + lost), not verified revenue. No messages are sent.</small></section>')
+    sources=source_performance(c,uid,wid)
+    out.append('<section class="ov-panel"><h2>Lead source performance</h2><p>New: compare which channels produce won leads and where open opportunities originate.</p>')
+    if sources:
+        out.append('<div class="scroll"><table><thead><tr><th>Source</th><th>Leads</th><th>Won</th><th>Win rate (closed)</th><th>Open potential</th></tr></thead><tbody>')
+        for item in sources:
+            rate="—" if item["win_rate"] is None else str(item["win_rate"])+"%"
+            out.append('<tr><td>'+h(item["source"])+'</td><td>'+h(item["leads"])+'</td><td>'+h(item["won"])+'</td><td>'+h(rate)+'</td><td>'+h(item["open_value"])+'</td></tr>')
+        out.append('</tbody></table></div>')
+    else:
+        out.append('<p>Add leads with a source to see comparisons here.</p>')
+    out.append('<small>Shows up to 12 sources from the latest 300 leads. Values are user-entered estimates, not verified revenue.</small></section>')
     if d["role"] in ("owner","editor"):
         out.append('<section class="ov-panel"><h2>Add a lead</h2><form method="post" action="'+url+'">'+hidden+'<label>Name<input name="name" required maxlength="120"></label><label>Contact<input name="contact" required maxlength="200"></label><label>Source<input name="source" required maxlength="100"></label><label>Potential value<input name="value" type="number" min="0" max="1000000000" step="0.01" required></label><button name="action" value="add">Add lead</button></form></section>')
     for lead in d["leads"]:
