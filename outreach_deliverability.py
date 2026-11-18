@@ -4,6 +4,24 @@ Manual-only classification. Never sends messages or bypasses recipient filters.
 """
 import re
 
+def valid_email(address):
+    """Conservative syntax check, not proof that a mailbox exists."""
+    if not isinstance(address,str) or len(address)>254 or any(c.isspace() for c in address):
+        return False
+    if address.count("@")!=1:
+        return False
+    local,domain=address.rsplit("@",1)
+    if not local or len(local)>64 or not domain or len(domain)>253:
+        return False
+    if local.startswith(".") or local.endswith(".") or ".." in local:
+        return False
+    labels=domain.split(".")
+    return len(labels)>=2 and all(
+        1<=len(label)<=63 and label[0].isalnum() and label[-1].isalnum()
+        and all(ch.isalnum() or ch=="-" for ch in label)
+        for label in labels
+    )
+
 def classify_bounce(body):
     text=(body or "").lower()
     if any(x in text for x in ("550 5.1.1","550 5.1.0","user does not exist","address does not exist","recipient not found","account that you tried to reach does not exist","address locked or deactivated")):
