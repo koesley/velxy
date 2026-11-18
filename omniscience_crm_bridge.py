@@ -43,6 +43,14 @@ def candidates(c, owner, now=None):
         })
     return result
 
+def _ledger_ready(c):
+    # Read-only metadata probe compatible with SQLite and PostgreSQL.
+    try:
+        c.execute("SELECT 1 FROM omnis_recommendations LIMIT 0")
+        return True
+    except Exception:
+        return False
+
 def save_for_review(c, owner, candidate):
     """Persist a candidate after the caller's authenticated human review.
 
@@ -60,6 +68,15 @@ def save_for_review(c, owner, candidate):
         raise ValueError("Recommendation is stale or does not match current account evidence")
     if candidate.get("reliability")!="inference":
         raise ValueError("Derived CRM recommendation must remain an inference")
+    existing=c.execute("""SELECT r.id FROM omnis_recommendations r
+        JOIN omnis_evidence e ON e.id=r.evidence_id AND e.owner_id=r.owner_id
+        WHERE r.owner_id=? AND e.source_type='sales_pipeline_leads'
+          AND e.source_id=? AND e.observed_at=? AND r.condition=?
+          AND r.intervention=? ORDER BY r.created_at DESC LIMIT 1""",
+        (owner,source_id,current["observed_at"],current["condition"],
+         current["intervention"])).fetchone() if _ledger_ready(c) else None
+    if existing:
+        return existing[0]
     evidence_id=ledger.record_evidence(
         c,owner,"sales_pipeline_leads",source_id,"inference",
         current["payload"],observed_at=current["observed_at"])
