@@ -35,6 +35,11 @@ def init(c):
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, lead_id TEXT NOT NULL,
         description TEXT NOT NULL, quantity INTEGER NOT NULL, unit_price REAL NOT NULL,
         status TEXT NOT NULL, created_by INTEGER NOT NULL, created INTEGER NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS bos59_services (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL,
+        description TEXT NOT NULL, unit_price REAL NOT NULL, active INTEGER NOT NULL,
+        created INTEGER NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS bos59_services_scope ON bos59_services(workspace_id,active)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_quotes_lead ON bos59_quotes(workspace_id,lead_id,created)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_tasks_due ON bos59_tasks(workspace_id,status,due_date)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_notes_lead ON bos59_lead_notes(workspace_id,lead_id,created)")
@@ -217,6 +222,41 @@ def create_quote(c,uid,wid,lid,description,quantity,unit_price):
     core.audit(c,uid,wid,"bos_quote_created",qid)
     return qid
 
+def add_service(c,uid,wid,name,description,unit_price):
+    """Store a reusable price-list entry for the workspace."""
+    core.access(c,uid,wid,write=True)
+    init(c)
+    name=_text(name,120)
+    description=_text(description,300)
+    try:
+        price=float(unit_price)
+    except (ValueError,TypeError,OverflowError):
+        raise ValueError("Invalid price")
+    import math
+    if not math.isfinite(price) or not 0<=price<=1000000:
+        raise ValueError("Invalid price")
+    sid=secrets.token_hex(12)
+    c.execute("INSERT INTO bos59_services VALUES(?,?,?,?,?,?,?)",
+              (sid,wid,name,description,round(price,2),1,int(time.time())))
+    core.audit(c,uid,wid,"bos_service_created",sid)
+    return sid
+
+def archive_service(c,uid,wid,sid):
+    core.access(c,uid,wid,write=True)
+    init(c)
+    result=c.execute("UPDATE bos59_services SET active=0 WHERE workspace_id=? AND id=? AND active=1",(wid,sid))
+    if not result.rowcount:
+        raise ValueError("Active service not found")
+    core.audit(c,uid,wid,"bos_service_archived",sid)
+
+def quote_from_service(c,uid,wid,lid,sid,quantity):
+    core.access(c,uid,wid,write=True)
+    init(c)
+    row=c.execute("SELECT description,unit_price FROM bos59_services WHERE workspace_id=? AND id=? AND active=1",(wid,sid)).fetchone()
+    if not row:
+        raise ValueError("Active service not found")
+    return create_quote(c,uid,wid,lid,row[0],quantity,row[1])
+
 def overview(c,uid,wid):
     role=core.access(c,uid,wid)
     init(c)
@@ -393,6 +433,16 @@ def render(c,uid,wid,csrf):
     for bucket,count in velocity["buckets"].items():
         out.append('<tr><td>'+h(bucket)+'</td><td>'+h(count)+'</td></tr>')
     out.append('</tbody></table></div><small>Uses existing lead creation and update timestamps. Up to 300 recent leads; potential values are estimates, not collected revenue.</small></section>')
+    services=list(c.execute("SELECT id,name,description,unit_price FROM bos59_services WHERE workspace_id=? AND active=1 ORDER BY name LIMIT 100",(wid,)))
+    out.append('<section class="ov-panel"><h2>Reusable service catalog</h2><p>New: maintain a workspace price list and turn services into customer estimates without retyping prices.</p>')
+    for sid,name,description,price in services:
+        out.append('<article class="ov-job"><strong>'+h(name)+'</strong><p>'+h(description)+' · '+h(format(price,".2f"))+'</p>')
+        if d["role"] in ("owner","editor"):
+            out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="service" value="'+h(sid)+'"><button name="action" value="archive_service">Archive service</button></form>')
+        out.append('</article>')
+    if d["role"] in ("owner","editor"):
+        out.append('<form method="post" action="'+url+'">'+hidden+'<label>Service name<input name="service_name" maxlength="120" required></label><label>Description<input name="service_description" maxlength="300" required></label><label>Unit price<input name="service_price" type="number" min="0" max="1000000" step="0.01" required></label><button name="action" value="add_service">Add to catalog</button></form>')
+    out.append('</section>')
     if d["role"] in ("owner","editor"):
         out.append('<section class="ov-panel"><h2>Bulk lead importer</h2><p>New: bring existing customer prospects into VELXTRIA in one operation. Paste CSV with columns name,contact,source,value (up to 100 rows). Existing name + contact matches are skipped.</p><form method="post" action="'+url+'">'+hidden+'<label>Lead CSV<textarea name="csv_text" maxlength="40000" rows="6" required placeholder="name,contact,source,value&#10;Example Business,contact@example.com,Referral,250"></textarea></label><button name="action" value="import_csv">Import leads</button></form><small>Import is manual and workspace-scoped. No outreach is sent.</small></section>')
     if d["role"] in ("owner","editor"):
@@ -412,6 +462,8 @@ def render(c,uid,wid,csrf):
         quotes_by_lead.setdefault(lid,[]).append((qid,description,qty,price,status))
     for lead in d["leads"]:
         out.append('<section class="ov-panel"><h2>'+h(lead["name"])+'</h2><p>'+h(lead["source"])+' · '+h(lead["status"])+' · potential value '+h(lead["value"])+'</p>')
+        if services and d["role"] in ("owner","editor"):
+            out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Quote from service catalog<select name="service">'+''.join('<option value="'+h(sid)+'">'+h(name)+' — '+h(format(price,".2f"))+'</option>' for sid,name,description,price in services)+'</select></label><label>Quantity<input type="number" name="quantity" min="1" max="100000" value="1" required></label><button name="action" value="quote_service">Create catalog quote</button></form>')
         out.append('<h3>Estimates &amp; quotes</h3>')
         for qid,description,qty,price,status in quotes_by_lead.get(lead["id"],[])[:10]:
             out.append('<article class="ov-job"><strong>'+h(description)+'</strong><p>'+h(qty)+' × '+h(format(price,".2f"))+' = '+h(format(qty*price,".2f"))+' · '+h(status)+'</p></article>')
