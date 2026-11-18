@@ -117,62 +117,94 @@ def process_business_events(c,uid,wid,limit=100):
     return {"processed":processed,"remaining":remaining}
 
 
-def plan_fulfillment_review_jobs(c,uid,wid,limit=100):
-    """Queue a bounded, idempotent internal review for fulfillment-ready events."""
+# Fixed, server-owned workflow registry: no arbitrary user-supplied code or actions.
+WORKFLOW_REGISTRY={
+    "fulfillment_review_v1":{"event":"fulfillment.ready_for_review","label":"Delivery readiness review"},
+    "quote_fulfillment_audit_v1":{"event":"quote.status_changed","label":"Accepted quote fulfillment audit"},
+}
+
+def plan_business_workflow_jobs(c,uid,wid,limit=100):
+    """Queue idempotent jobs for supported internal business events."""
     core.access(c,uid,wid,write=True)
     init(c)
     limit=max(1,min(int(limit),200))
-    events=c.execute("""SELECT e.id,e.object_id FROM bos59_events e
-        WHERE e.workspace_id=? AND e.event_type='fulfillment.ready_for_review'
-        AND NOT EXISTS(SELECT 1 FROM bos59_workflow_jobs j
-            WHERE j.workspace_id=e.workspace_id AND j.event_id=e.id
-            AND j.workflow_key='fulfillment_review_v1')
-        ORDER BY e.created,e.id LIMIT ?""",(wid,limit)).fetchall()
-    count=0
-    for eid,obj in events:
-        now=int(time.time())
-        cur=c.execute("""INSERT OR IGNORE INTO bos59_workflow_jobs
-            (id,workspace_id,event_id,workflow_key,object_id,status,created,updated,result)
-            VALUES(?,?,?,?,?,'queued',?,?,'')""",
-            (secrets.token_hex(16),wid,eid,"fulfillment_review_v1",obj,now,now))
-        count+=int(cur.rowcount==1)
-    if count:
-        core.audit(c,uid,wid,"bos_workflow_jobs_planned",str(count))
-    return count
+    queued=0
+    for key,spec in WORKFLOW_REGISTRY.items():
+        events=c.execute("""SELECT e.id,e.object_id FROM bos59_events e
+            WHERE e.workspace_id=? AND e.event_type=?
+            AND NOT EXISTS(SELECT 1 FROM bos59_workflow_jobs j
+                WHERE j.workspace_id=e.workspace_id AND j.event_id=e.id AND j.workflow_key=?)
+            ORDER BY e.created,e.id LIMIT ?""",(wid,spec["event"],key,max(0,limit-queued))).fetchall()
+        for eid,obj in events:
+            now=int(time.time())
+            cur=c.execute("""INSERT OR IGNORE INTO bos59_workflow_jobs
+                (id,workspace_id,event_id,workflow_key,object_id,status,created,updated,result)
+                VALUES(?,?,?,?,?,'queued',?,?,'')""",
+                (secrets.token_hex(16),wid,eid,key,obj,now,now))
+            queued+=int(cur.rowcount==1)
+        if queued>=limit:
+            break
+    if queued:
+        core.audit(c,uid,wid,"bos_workflow_jobs_planned",str(queued))
+    return queued
 
 
-def run_fulfillment_review_jobs(c,uid,wid,limit=25):
-    """Process queued review jobs without automatically marking work delivered."""
+def plan_fulfillment_review_jobs(c,uid,wid,limit=100):
+    """Backward-compatible route, now plans all registered safe workflows."""
+    return plan_business_workflow_jobs(c,uid,wid,limit)
+
+
+def run_business_workflow_jobs(c,uid,wid,limit=25):
+    """Process registered internal checks; never send messages or confirm delivery."""
     core.access(c,uid,wid,write=True)
     init(c)
     limit=max(1,min(int(limit),50))
-    rows=c.execute("""SELECT id,object_id FROM bos59_workflow_jobs
-        WHERE workspace_id=? AND workflow_key='fulfillment_review_v1'
-        AND status='queued' ORDER BY created,id LIMIT ?""",(wid,limit)).fetchall()
-    completed=0
-    for jid,obj in rows:
-        project=c.execute("""SELECT f.status,t.status FROM bos59_fulfillment f
-            JOIN bos59_tasks t ON t.workspace_id=f.workspace_id AND t.id=f.task_id
-            WHERE f.workspace_id=? AND f.id=?""",(wid,obj)).fetchone()
-        if project and project[0]=="ready_for_review" and project[1]=="done":
-            state,result="completed","Delivery confirmation remains pending human review"
-        elif project and project[0]=="delivered":
-            state,result="completed","Delivery was already confirmed by an authorized user"
+    rows=c.execute("""SELECT id,workflow_key,object_id FROM bos59_workflow_jobs
+        WHERE workspace_id=? AND status='queued' ORDER BY created,id LIMIT ?""",(wid,limit)).fetchall()
+    processed=0
+    for jid,key,obj in rows:
+        if key=="fulfillment_review_v1":
+            project=c.execute("""SELECT f.status,t.status FROM bos59_fulfillment f
+                JOIN bos59_tasks t ON t.workspace_id=f.workspace_id AND t.id=f.task_id
+                WHERE f.workspace_id=? AND f.id=?""",(wid,obj)).fetchone()
+            if project and project[0]=="ready_for_review" and project[1]=="done":
+                state,result="completed","Ready for authorized delivery confirmation"
+            elif project and project[0]=="delivered":
+                state,result="completed","Delivery already confirmed by authorized user"
+            else:
+                state,result="needs_review","Fulfillment missing or not ready for delivery"
+        elif key=="quote_fulfillment_audit_v1":
+            quote=c.execute("SELECT status FROM bos59_quotes WHERE workspace_id=? AND id=?",(wid,obj)).fetchone()
+            if not quote:
+                state,result="needs_review","Referenced quote is missing"
+            elif quote[0]!="accepted":
+                state,result="completed","Quote is not currently accepted; no fulfillment action required"
+            else:
+                project=c.execute("SELECT status FROM bos59_fulfillment WHERE workspace_id=? AND quote_id=?",(wid,obj)).fetchone()
+                if project:
+                    state,result="completed","Accepted quote has a linked fulfillment project"
+                else:
+                    state,result="needs_review","Accepted quote has no linked fulfillment project"
         else:
-            state,result="needs_review","Fulfillment record is missing or no longer ready for review"
-        c.execute("""UPDATE bos59_workflow_jobs SET status=?,result=?,updated=?
+            state,result="needs_review","Workflow definition no longer supported"
+        cur=c.execute("""UPDATE bos59_workflow_jobs SET status=?,result=?,updated=?
             WHERE workspace_id=? AND id=? AND status='queued'""",
             (state,result,int(time.time()),wid,jid))
-        completed+=1
-    if completed:
-        core.audit(c,uid,wid,"bos_workflow_jobs_processed",str(completed))
-    return completed
+        processed+=int(cur.rowcount==1)
+    if processed:
+        core.audit(c,uid,wid,"bos_workflow_jobs_processed",str(processed))
+    return processed
+
+
+def run_fulfillment_review_jobs(c,uid,wid,limit=25):
+    """Backward-compatible route, now processes registered workflow jobs."""
+    return run_business_workflow_jobs(c,uid,wid,limit)
 
 
 def fulfillment_review_jobs(c,uid,wid,limit=15):
     core.access(c,uid,wid)
     init(c)
-    return c.execute("""SELECT object_id,status,result,created FROM bos59_workflow_jobs
+    return c.execute("""SELECT object_id,status,result,created,workflow_key FROM bos59_workflow_jobs
         WHERE workspace_id=? ORDER BY created DESC,id DESC LIMIT ?""",
         (wid,max(1,min(int(limit),50)))).fetchall()
 
@@ -657,10 +689,10 @@ def render(c,uid,wid,csrf,search="",status_filter="all",page=1):
 
     out=['<section class="ov-hero"><span>VELXTRIA · BUSINESS OS V59</span><h1>Revenue recovery command center</h1><p>Manage leads, prepare follow-ups and require human approval. No automatic messages are sent.</p></section>']
     jobs=fulfillment_review_jobs(c,uid,wid,12)
-    out.append('<details class="ov-panel"><summary>Fulfillment review workflow jobs</summary><p>Prepare and process persistent internal review jobs from fulfillment events. Delivery always requires separate human confirmation.</p>')
+    out.append('<details class="ov-panel"><summary>Business workflow registry and jobs</summary><p>Queue and process two registered internal workflows: delivery readiness and accepted-quote fulfillment auditing. Delivery always requires separate human confirmation.</p>')
     if d["role"] in ("owner","editor"):
         out.append('<form method="post" action="'+url+'">'+hidden+'<button name="action" value="plan_review_jobs">Queue review jobs</button> <button name="action" value="run_review_jobs">Process queued reviews</button></form>')
-    for object_id,state,result,created in jobs:
+    for object_id,state,result,created,workflow_key in jobs:
         out.append('<article class="ov-job"><strong>'+h(state.replace("_"," ").title())+' · '+h(object_id[:12])+'</strong><p>'+h(result or "Awaiting processing")+'</p></article>')
     out.append('</details>')
     activity=event_activity(c,uid,wid,12)
