@@ -15,4 +15,4 @@ jobs:
       - name: Compile Python
         run: python -m compileall -q .
       - name: Sales and Ascension regression tests
-        run: python -m unittest test_outreach_deliverability test_sales_pipeline test_sovereign_ascension test_ascension_recovery test_ascension_first_visit test_ascension_followups test_ascension_command_center test_ascension_next_actions test_ascension_executive_briefing test_ascension_workflows -v
+        run: python -m unittest test_outreach_deliverability test_sales_pipeline test_sovereign_ascension test_ascension_recovery test_ascension_first_visit test_ascension_followups test_ascension_command_center test_ascension_next_actions test_ascension_executive_briefing test_ascension_workflows test_sovereign_intelligence_core -v
