@@ -1,6 +1,5 @@
 import sqlite3
 import unittest
-from decimal import Decimal
 from unittest.mock import patch
 from revenue_goals_v27 import set_goal,snapshot
 
@@ -18,7 +17,7 @@ class RevenueGoalsTests(unittest.TestCase):
         data=snapshot(self.c,3,"one")
         self.assertEqual(str(data["target"]),"1000")
         self.assertEqual(data["progress_pct"],25.0)
-        self.assertEqual(data["gap"],Decimal("750"))
+        self.assertEqual(str(data["gap"]),"750")
         self.assertEqual(str(data["open_potential"]),"100.0")
         with self.assertRaises(ValueError):set_goal(self.c,3,"one","NaN")
         with self.assertRaises(ValueError):set_goal(self.c,3,"one","10.123")

@@ -9,11 +9,31 @@ import revenue_gap_v28 as gap
 
 STATES=("todo","in_progress","done","blocked")
 
+# Columns the tasks table must have. setup() adds any that are missing so a
+# database created by an older version (or a hand-built table) heals itself
+# instead of failing when the index below is created.
+_COLUMNS=(("workspace_id","TEXT NOT NULL DEFAULT ''"),("lead_id","TEXT NOT NULL DEFAULT ''"),
+ ("title","TEXT NOT NULL DEFAULT ''"),("owner_id","INTEGER NOT NULL DEFAULT 0"),
+ ("due_date","TEXT NOT NULL DEFAULT ''"),("status","TEXT NOT NULL DEFAULT 'todo'"),
+ ("created","INTEGER NOT NULL DEFAULT 0"),("updated","INTEGER NOT NULL DEFAULT 0"))
+
+def _ensure_columns(c):
+    import persistent
+    if persistent.REMOTE:
+        for name,ddl in _COLUMNS:
+            c.execute("ALTER TABLE vx_revenue_tasks29 ADD COLUMN IF NOT EXISTS %s %s"%(name,ddl))
+        return
+    cols={r[1] for r in c.execute("PRAGMA table_info(vx_revenue_tasks29)")}
+    for name,ddl in _COLUMNS:
+        if name not in cols:
+            c.execute("ALTER TABLE vx_revenue_tasks29 ADD COLUMN %s %s"%(name,ddl))
+
 def setup(c):
     c.execute("""CREATE TABLE IF NOT EXISTS vx_revenue_tasks29 (
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, lead_id TEXT NOT NULL,
         title TEXT NOT NULL, owner_id INTEGER NOT NULL, due_date TEXT NOT NULL,
         status TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL)""")
+    _ensure_columns(c)
     c.execute("CREATE INDEX IF NOT EXISTS vx_revenue_tasks29_scope ON vx_revenue_tasks29(workspace_id,status,due_date)")
 
 def create(c,uid,wid,lid,title,due):
