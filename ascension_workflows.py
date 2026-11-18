@@ -68,7 +68,9 @@ def transition(c,owner,wid,decision,note=""):
         completed=c.execute("SELECT 1 FROM ascension_actions WHERE id=? AND owner_id=? AND status='completed'",(action_id,owner)).fetchone()
         if not completed:raise ValueError("Complete the approved action in Ascension before proceeding")
     if step==3:
-        outcome=c.execute("SELECT 1 FROM ascension_recovery_outcomes WHERE owner_id=? AND action_id=?",(owner,action_id)).fetchone() if _outcomes_ready(c) else None
+        import ascension_recovery
+        ascension_recovery.setup(c)
+        outcome=c.execute("SELECT 1 FROM ascension_recovery_outcomes WHERE owner_id=? AND action_id=?",(owner,action_id)).fetchone()
         if not outcome:raise ValueError("Record the outcome in Revenue Recovery before closing")
     next_step=step+1
     state="completed" if next_step==len(STEPS) else "active"
@@ -76,9 +78,6 @@ def transition(c,owner,wid,decision,note=""):
               (next_step,state,int(time.time()),wid,owner))
     log(c,owner,wid,"completed" if state=="completed" else "advanced",note)
     return state
-
-def _outcomes_ready(c):
-    return c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ascension_recovery_outcomes'").fetchone() is not None
 
 def dashboard(c,owner,csrf):
     setup(c)
