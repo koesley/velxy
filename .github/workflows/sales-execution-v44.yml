@@ -1,0 +1,31 @@
+name: Sales execution V44 checks
+on:
+  pull_request:
+    paths:
+      - 'sales_execution_v44.py'
+      - 'test_sales_execution_v44.py'
+      - 'growth_strategy_v42.py'
+      - 'portal.py'
+      - '.github/workflows/sales-execution-v44.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sales_execution_v44.py'
+      - 'test_sales_execution_v44.py'
+      - 'growth_strategy_v42.py'
+      - 'portal.py'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check syntax
+        run: python -m compileall -q portal.py sales_execution_v44.py growth_strategy_v42.py
+      - name: Run sales execution regression tests
+        run: python -m unittest -v test_sales_execution_v44
