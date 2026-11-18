@@ -1636,6 +1636,8 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,body) if body else self.fail(404,'Draft not found',user,csrf)
   if p=='/workspace':
    with db() as c: body=intelligence_v45.render(c,user['id'])+business_v4.render(c,user['id'],csrf)+business_v3.render(c,user['id'],csrf)
+   shortcuts=('''<section class="panel" aria-label="Workspace quick navigation"><h2>Business Workspace</h2><p>Pick up where you left off or jump straight to the tools you already use.</p><nav class="workspace-shortcuts" aria-label="Business tools"><a href="/business-os-v59">Leads &amp; customers</a><a href="/business-agents-v59">Business agents</a><a href="/sovereign-opportunities-v57">Opportunities</a><a href="/sovereign-workflows-v56">Workflows</a><a href="/">Sales reports</a><a href="/account">Account &amp; access</a></nav></section>''')
+   body=shortcuts+body
    return self.respond(200,shell('Business Workspace',body,user,csrf))
   if p=='/agents':
    if user['role']!='admin':return self.fail(403,'Founder access required.',user,csrf)
