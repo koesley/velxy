@@ -39,7 +39,7 @@ class SalesPipelineTests(unittest.TestCase):
         self.assertTrue(sales_pipeline.outreach_eligibility(self.c,1,"info@example.com"))
         self.assertFalse(sales_pipeline.outreach_eligibility(self.c,2,"info@example.com"))
     def test_opt_out_blocks(self):
-        sales_pipeline.set_suppression(self.c,1,"info@example.com","verified_clear")
+        sales_pipeline.set_suppression(self.c,1,"info@example.com","verified_clear","Current public company website contact page")
         sales_pipeline.set_suppression(self.c,1,"info@example.com","do_not_contact")
         self.assertFalse(sales_pipeline.outreach_eligibility(self.c,1,"info@example.com"))
     def test_bulk_bounce_import(self):
@@ -71,6 +71,20 @@ class SalesPipelineTests(unittest.TestCase):
     def test_gmail_notice_invalid(self):
         with self.assertRaises(ValueError):
             sales_pipeline.import_gmail_notices(self.c,1,"Some unrelated message")
+
+    def test_opt_out_cannot_be_reactivated(self):
+        sales_pipeline.set_suppression(self.c,1,"stop@example.com","do_not_contact")
+        with self.assertRaises(ValueError):
+            sales_pipeline.set_suppression(self.c,1,"stop@example.com","verified_clear","Website contact page verified")
+
+    def test_verified_requires_evidence(self):
+        with self.assertRaises(ValueError):
+            sales_pipeline.set_suppression(self.c,1,"hello@example.com","verified_clear","")
+
+    def test_audit_events(self):
+        sales_pipeline.set_suppression(self.c,1,"hello@example.com","hold_for_verification","timeout")
+        sales_pipeline.set_suppression(self.c,1,"hello@example.com","suppress_permanent","550 5.1.1")
+        self.assertEqual(self.c.execute("SELECT COUNT(*) FROM outreach_suppression_events WHERE owner_id=1").fetchone()[0],2)
 
     def test_bad_stage(self):
         with self.assertRaises(ValueError):
