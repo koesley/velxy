@@ -35,16 +35,19 @@ def _text(value, limit, label):
 
 def record_evidence(c, owner, source_type, source_id, reliability, payload, observed_at=None):
     setup(c)
-    if not isinstance(owner,int) or owner<1: raise ValueError("Invalid account")
+    if type(owner) is not int or owner<1: raise ValueError("Invalid account")
     source_type=_text(source_type,80,"Source type")
     source_id=_text(source_id,160,"Source ID")
     if reliability not in RELIABILITY: raise ValueError("Invalid evidence reliability")
     if not isinstance(payload,dict): raise ValueError("Evidence payload must be an object")
-    encoded=json.dumps(payload,sort_keys=True,allow_nan=False)
+    try:
+        encoded=json.dumps(payload,sort_keys=True,allow_nan=False)
+    except (TypeError,ValueError) as exc:
+        raise ValueError("Evidence payload must be valid JSON") from exc
     if len(encoded)>MAX_JSON: raise ValueError("Evidence payload too large")
     now=int(time.time())
     observed_at=now if observed_at is None else observed_at
-    if not isinstance(observed_at,int) or observed_at<0 or observed_at>now+300:
+    if type(observed_at) is not int or observed_at<0 or observed_at>now+300:
         raise ValueError("Invalid observation timestamp")
     eid=secrets.token_hex(16)
     c.execute("INSERT INTO omnis_evidence VALUES (?,?,?,?,?,?,?,?)",
@@ -53,13 +56,14 @@ def record_evidence(c, owner, source_type, source_id, reliability, payload, obse
 
 def recommend(c, owner, objective, condition, intervention, evidence_id, expires_at=None):
     setup(c)
+    if type(owner) is not int or owner<1: raise ValueError("Invalid account")
     objective=_text(objective,240,"Objective")
     condition=_text(condition,1000,"Condition")
     intervention=_text(intervention,1000,"Intervention")
     evidence=c.execute("SELECT 1 FROM omnis_evidence WHERE id=? AND owner_id=?",(evidence_id,owner)).fetchone()
     if not evidence: raise ValueError("Evidence unavailable for this account")
     now=int(time.time())
-    if expires_at is not None and (not isinstance(expires_at,int) or expires_at<=now):
+    if expires_at is not None and (type(expires_at) is not int or expires_at<=now):
         raise ValueError("Expiration must be in the future")
     rid=secrets.token_hex(16)
     c.execute("INSERT INTO omnis_recommendations VALUES (?,?,?,?,?,?,?,?)",
@@ -68,6 +72,7 @@ def recommend(c, owner, objective, condition, intervention, evidence_id, expires
 
 def decide(c, owner, recommendation_id, choice, rationale):
     setup(c)
+    if type(owner) is not int or owner<1: raise ValueError("Invalid account")
     if choice not in DECISIONS: raise ValueError("Invalid decision")
     rationale=_text(rationale,1000,"Rationale")
     row=c.execute("SELECT expires_at FROM omnis_recommendations WHERE id=? AND owner_id=?",
@@ -81,6 +86,7 @@ def decide(c, owner, recommendation_id, choice, rationale):
     return eid
 
 def history(c, owner, recommendation_id):
+    if type(owner) is not int or owner<1: raise ValueError("Invalid account")
     setup(c)
     row=c.execute("""SELECT r.objective,r.condition,r.intervention,e.source_type,
       e.source_id,e.reliability,e.observed_at,e.payload,r.created_at,r.expires_at
