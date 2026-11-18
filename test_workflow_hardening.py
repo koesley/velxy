@@ -28,6 +28,39 @@ class WorkflowHardeningTests(unittest.TestCase):
         self.assertEqual(ascension_workflows.transition(self.c,1,self.wid,"cancel","Stop"),"cancelled")
         with self.assertRaises(ValueError):
             ascension_workflows.transition(self.c,1,self.wid,"advance","Too late")
+    def test_complete_customer_recovery_lifecycle(self):
+        import ascension_recovery
+        # Explicitly clear the test contact; no messages are sent.
+        self.c.execute("UPDATE sales_pipeline_leads SET email=? WHERE id=?",
+                       ("owner@example.com",self.lead))
+        sales_pipeline.set_suppression(
+            self.c,1,"owner@example.com","verified_clear",
+            "Verified from an independently reviewed business contact page")
+        signals=sovereign_ascension.discover(self.c,1)
+        # An already-approved opportunity is intentionally omitted from the new queue.
+        self.assertFalse(any(item["lead_id"]==self.lead for item in signals))
+        self.assertEqual(self.c.execute(
+            "SELECT estimated_value FROM sales_pipeline_leads WHERE id=? AND owner_id=?",
+            (self.lead,1)).fetchone()[0],2000)
+        self.assertEqual(ascension_workflows.transition(self.c,1,self.wid,"advance","Reviewed proposal"),"active")
+        self.assertEqual(ascension_workflows.transition(self.c,1,self.wid,"advance","Prepared manual draft"),"active")
+        with self.assertRaises(ValueError):
+            ascension_workflows.transition(self.c,1,self.wid,"advance","Not yet completed")
+        sovereign_ascension.action(self.c,1,self.lead,"stalled_deal","completed","Follow-up completed manually")
+        self.assertEqual(ascension_workflows.transition(self.c,1,self.wid,"advance","Manual follow-up confirmed"),"active")
+        with self.assertRaises(ValueError):
+            ascension_workflows.transition(self.c,1,self.wid,"advance","Outcome missing")
+        with self.assertRaises(ValueError):
+            ascension_recovery.record(self.c,2,self.action,"responded","0","Other owner")
+        ascension_recovery.record(self.c,1,self.action,"responded","0","Customer responded manually")
+        self.assertEqual(ascension_workflows.transition(self.c,1,self.wid,"advance","Recorded outcome"),"completed")
+        self.assertEqual(self.c.execute(
+            "SELECT outcome,amount_cents FROM ascension_recovery_outcomes WHERE owner_id=? AND action_id=?",
+            (1,self.action)).fetchone(),("responded",0))
+        self.assertEqual(self.c.execute(
+            "SELECT COUNT(*) FROM ascension_workflow_events WHERE owner_id=? AND workflow_id=?",
+            (1,self.wid)).fetchone()[0],5)
+
     def test_final_step_requires_outcome(self):
         self.c.execute("UPDATE ascension_workflows SET current_step=3 WHERE id=?",(self.wid,))
         with self.assertRaises(ValueError) as cm:
