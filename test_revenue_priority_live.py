@@ -1,13 +1,14 @@
 import sqlite3
 import unittest
 from unittest.mock import patch
-from revenue_priority_live import live_rankings
+from revenue_priority_live import live_rankings, propose_followup
 
 
 class LivePrioritiesTests(unittest.TestCase):
     def setUp(self):
         self.db = sqlite3.connect(":memory:")
         self.db.execute("CREATE TABLE bos59_leads (id TEXT, workspace_id TEXT, value REAL, status TEXT, updated INTEGER)")
+        self.db.execute("CREATE TABLE bos59_actions (workspace_id TEXT, lead_id TEXT, decision TEXT)")
         self.db.executemany("INSERT INTO bos59_leads VALUES (?,?,?,?,?)", [
             ("a", "workspace-1", 1200, "new", 1),
             ("b", "workspace-2", 900000, "contacted", 1),
@@ -26,6 +27,18 @@ class LivePrioritiesTests(unittest.TestCase):
         access.assert_called_once_with(self.db, 7, "workspace-1")
         self.assertEqual({x["identifier"] for x in rows}, {"a", "d"})
         self.assertTrue(all(x["requires_approval"] for x in rows))
+
+    def test_proposal_requires_workspace_and_avoids_duplicate(self):
+        with patch("revenue_priority_live.business_os_v59.core.access"), patch(
+            "revenue_priority_live.business_os_v59.init"
+        ), patch("revenue_priority_live.business_os_v59.propose", return_value="draft-1") as propose:
+            self.assertEqual(propose_followup(self.db, 7, "workspace-1", "a"), "draft-1")
+            self.assertEqual(propose.call_count, 1)
+            with self.assertRaises(ValueError):
+                propose_followup(self.db, 7, "workspace-1", "b")
+            self.db.execute("INSERT INTO bos59_actions VALUES (?,?,?)", ("workspace-1", "a", "pending"))
+            with self.assertRaises(ValueError):
+                propose_followup(self.db, 7, "workspace-1", "a")
 
     def test_access_failure_does_not_return_leads(self):
         with patch("revenue_priority_live.business_os_v59.core.access", side_effect=ValueError("Forbidden")):
