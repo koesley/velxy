@@ -2,6 +2,7 @@
 import html
 import secrets
 import time
+import outreach_deliverability
 
 STAGES = ("new", "contacted", "replied", "meeting", "proposal", "won", "lost")
 def esc(v):
@@ -13,6 +14,25 @@ def setup(c):
         stage TEXT NOT NULL, estimated_value INTEGER NOT NULL DEFAULT 0,
         notes TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""")
     c.execute("CREATE INDEX IF NOT EXISTS sales_pipeline_owner ON sales_pipeline_leads(owner_id, updated_at)")
+    c.execute("CREATE TABLE IF NOT EXISTS outreach_suppression (owner_id INTEGER NOT NULL,email TEXT NOT NULL,status TEXT NOT NULL,reason TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(owner_id,email))")
+def set_suppression(c, owner, email, status, reason=""):
+    setup(c)
+    email=email.strip().lower()
+    if not email or "@" not in email or len(email)>254:
+        raise ValueError("Valid email required")
+    if status not in ("suppress_permanent","suppress_rejected","hold_for_verification","verified_clear","do_not_contact"):
+        raise ValueError("Invalid status")
+    c.execute("""INSERT INTO outreach_suppression(owner_id,email,status,reason,updated_at)
+    VALUES (?,?,?,?,?) ON CONFLICT(owner_id,email) DO UPDATE SET
+    status=excluded.status,reason=excluded.reason,updated_at=excluded.updated_at""",
+    (owner,email,status,reason[:500],int(time.time())))
+
+def outreach_eligibility(c, owner, email):
+    setup(c)
+    email=email.strip().lower()
+    row=c.execute("SELECT status FROM outreach_suppression WHERE owner_id=? AND email=?",(owner,email)).fetchone()
+    return bool(row and outreach_deliverability.eligible_for_new_outreach(email,{email:row[0]}))
+
 def save(c, owner, data):
     setup(c)
     business = data.get("business","").strip()
@@ -88,6 +108,10 @@ def dashboard(c, owner, csrf):
         p+='<label>Notes<textarea name="notes" maxlength="1000">'+esc(lead[7])+'</textarea></label><button type="submit">Save lead</button></form>'
         return p
     parts.append('<section class="panel"><h2>Add a lead</h2>'+form()+'</section>')
+    parts.append('<section class="panel"><h2>Contact delivery safety</h2><p>All addresses are held by default until independently verified. This page never sends email.</p><form method="post" action="/outreach-suppression"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><label>Email<input name="email" required></label><label>Status<select name="status">'+''.join('<option value="'+x+'">'+esc(x.replace('_',' ').title())+'</option>' for x in ("hold_for_verification","suppress_permanent","suppress_rejected","do_not_contact","verified_clear"))+'</select></label><label>Evidence<input name="reason" maxlength="500"></label><button type="submit">Save status</button></form></section>')
+    statuses=c.execute("SELECT email,status FROM outreach_suppression WHERE owner_id=? ORDER BY updated_at DESC LIMIT 100",(owner,)).fetchall()
+    parts.append('<section class="panel"><h2>Delivery status register</h2>'+''.join('<p>'+esc(email)+' — '+esc(status)+'</p>' for email,status in statuses)+'</section>')
+
     for lead in rows:
         parts.append('<section class="panel"><h3>'+esc(lead[1])+'</h3><p>'+esc(lead[5].title())+' · $'+str(lead[6])+' estimated · '+esc(lead[2])+'</p><details><summary>Edit lead</summary>'+form(lead)+'</details></section>')
     return ''.join(parts)
