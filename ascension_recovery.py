@@ -5,6 +5,8 @@ Records user-attested evidence, separate from verified payment receipts.
 import html
 import secrets
 import time
+import sales_pipeline
+import sovereign_ascension
 
 def esc(value):
     return html.escape(str(value),quote=True)
@@ -18,6 +20,8 @@ def setup(c):
     c.execute("CREATE INDEX IF NOT EXISTS ascension_recovery_owner ON ascension_recovery_outcomes(owner_id,created_at)")
 
 def record(c,owner,action_id,outcome,amount,evidence):
+    sales_pipeline.setup(c)
+    sovereign_ascension.setup(c)
     setup(c)
     if outcome not in ("no_response","responded","meeting_booked","deal_won_unverified","payment_reported"):
         raise ValueError("Invalid outcome")
@@ -50,6 +54,8 @@ def record(c,owner,action_id,outcome,amount,evidence):
     return ident
 
 def dashboard(c,owner,csrf):
+    sales_pipeline.setup(c)
+    sovereign_ascension.setup(c)
     setup(c)
     rows=c.execute("""SELECT o.outcome,o.amount_cents,o.evidence,l.business
         FROM ascension_recovery_outcomes o
