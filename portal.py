@@ -677,12 +677,19 @@ class Handler(BaseHTTPRequestHandler):
    if body is None:return self.respond(404,'FAQ not available','text/plain')
    return self.respond(200,body,'text/html; charset=utf-8',headers=[('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors *"),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff')])
   user,csrf,_=self.identity()
-  if p=='/login':
+  if p=='/signup':
    nxt=safe_next(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('next',[''])[0])
-   return self.respond(200,shell('Sign in','<section class="panel narrow"><h1>Welcome back</h1><form method="post" action="/login"><input type="hidden" name="next" value="'+escape(nxt)+'"><label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" required></label><button>Sign in</button></form></section>'))
+   return self.redirect('/register'+('?next='+urllib.parse.quote(nxt,safe='') if nxt!='/' else ''))
+  if p=='/login':
+   q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+   nxt=safe_next(q.get('next',[''])[0])
+   banner='<p>Account created — sign in to start your first report.</p>' if q.get('registered',[''])[0]=='1' else ''
+   reg='/register'+('?next='+urllib.parse.quote(nxt,safe='') if nxt!='/' else '')
+   return self.respond(200,shell('Sign in','<section class="panel narrow"><h1>Welcome back</h1>'+banner+'<form method="post" action="/login"><input type="hidden" name="next" value="'+escape(nxt)+'"><label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" required></label><button>Sign in</button></form><p>No account yet? <a href="'+reg+'">Create a demo account</a></p></section>'))
   if p=='/register':
    nxt=safe_next(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('next',[''])[0])
-   return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><input type="hidden" name="next" value="'+escape(nxt)+'"><label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form></section>'))
+   login='/login'+('?next='+urllib.parse.quote(nxt,safe='') if nxt!='/' else '')
+   return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><input type="hidden" name="next" value="'+escape(nxt)+'"><label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form><p>Already have an account? <a href="'+login+'">Sign in</a></p></section>'))
   if p=='/' and not user:return self.respond(200,shell('Sales reporting made simple',landing_page(user,csrf)))
   if not user:return self.redirect('/login')
   if p=='/sales-execution':
@@ -2531,7 +2538,9 @@ class Handler(BaseHTTPRequestHandler):
     with db() as c:c.execute('INSERT INTO users(email,salt,pw_hash,role,access,created) VALUES (?,?,?,?,?,?)',(email,salt,pw_hash(password,salt),'customer','demo',now()))
    except (sqlite3.IntegrityError, persistent_integrity_error()):return self.fail(409,'Account already exists.')
    nxt=safe_next(fields.get('next',''))
-   return self.redirect('/login'+('?next='+urllib.parse.quote(nxt,safe='') if nxt!='/' else ''))
+   dest='/login?registered=1'
+   if nxt!='/':dest+='&next='+urllib.parse.quote(nxt,safe='')
+   return self.redirect(dest)
   if p=='/login':
    email=fields.get('email','').strip().lower();password=fields.get('password','')
    with db() as c:row=c.execute('SELECT id,salt,pw_hash FROM users WHERE email=?',(email,)).fetchone()
