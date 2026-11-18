@@ -145,6 +145,18 @@ def source_performance(c, uid, wid):
         item["open_value"]=round(item["open_value"],2)
     return sorted(groups.values(),key=lambda x:(-x["won"],-x["leads"],x["source"].lower()))[:12]
 
+def pipeline_forecast(c,uid,wid):
+    """Scenario-based potential, not a revenue prediction or collected cash."""
+    core.access(c,uid,wid)
+    init(c)
+    rows=c.execute("SELECT status,value FROM bos59_leads WHERE workspace_id=? ORDER BY created DESC LIMIT 300",(wid,)).fetchall()
+    new_value=sum(float(v) for status,v in rows if status=="new")
+    contacted_value=sum(float(v) for status,v in rows if status=="contacted")
+    scenarios={"conservative":(0.05,0.15),"baseline":(0.15,0.35),"optimistic":(0.30,0.60)}
+    return {"new_value":round(new_value,2),"contacted_value":round(contacted_value,2),
+            "scenarios":{name:round(new_value*a+contacted_value*b,2) for name,(a,b) in scenarios.items()},
+            "assumptions":scenarios,"sample_limit":300}
+
 def export_csv(c,uid,wid):
     data=overview(c,uid,wid)
     f=io.StringIO()
@@ -180,6 +192,12 @@ def render(c,uid,wid,csrf):
     else:
         out.append('<p>Add leads with a source to see comparisons here.</p>')
     out.append('<small>Shows up to 12 sources from the latest 300 leads. Values are user-entered estimates, not verified revenue.</small></section>')
+    forecast=pipeline_forecast(c,uid,wid)
+    out.append('<section class="ov-panel"><h2>Pipeline scenario planner</h2><p>New: explore what your current open leads could be worth under three hypothetical conversion assumptions.</p><div class="ov-metrics">')
+    for scenario,amount in forecast["scenarios"].items():
+        new_rate,contacted_rate=forecast["assumptions"][scenario]
+        out.append('<article class="ov-card"><strong>'+h(scenario.title())+'</strong><span>'+h(amount)+'</span><small>New '+h(round(new_rate*100))+'% · Contacted '+h(round(contacted_rate*100))+'%</small></article>')
+    out.append('</div><small>Illustrative scenarios only, not forecasts of actual sales or guaranteed income. Based on the latest 300 user-entered leads. No payments or messages are triggered.</small></section>')
     if d["role"] in ("owner","editor"):
         out.append('<section class="ov-panel"><h2>Add a lead</h2><form method="post" action="'+url+'">'+hidden+'<label>Name<input name="name" required maxlength="120"></label><label>Contact<input name="contact" required maxlength="200"></label><label>Source<input name="source" required maxlength="100"></label><label>Potential value<input name="value" type="number" min="0" max="1000000000" step="0.01" required></label><button name="action" value="add">Add lead</button></form></section>')
     for lead in d["leads"]:
