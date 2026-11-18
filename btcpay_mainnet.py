@@ -36,8 +36,10 @@ import urllib.parse
 import urllib.request
 from decimal import Decimal, InvalidOperation
 
-# Testnet/demo hosts are never valid production BTCPay servers.
-FORBIDDEN_HOST_MARKERS = ('testnet', 'demo.btcpayserver.org')
+# Testnet hosts are never valid production BTCPay servers. BTCPay's
+# official mainnet demo (mainnet.demo.btcpayserver.org) is a real mainnet
+# instance and is allowed: it is the hosted provider VELXTRIA uses.
+FORBIDDEN_HOST_MARKERS = ('testnet',)
 TESTNET_HOST = 'https://testnet.demo.btcpayserver.org'
 PRICE = '49.00'
 DAYS = 30
