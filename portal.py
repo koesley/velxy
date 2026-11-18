@@ -2387,6 +2387,11 @@ class Handler(BaseHTTPRequestHandler):
   if not ident:return
   user,csrf,token=ident
   if not hmac.compare_digest(fields.get('csrf',''),csrf):return self.fail(403,'Session verification failed.',user,csrf)
+  if p=='/outreach-bounce-import':
+   try:
+    with db() as c:sales_pipeline.import_bounce_lines(c,user['id'],fields.get('bounce_lines',''))
+    return self.redirect('/sales-pipeline')
+   except ValueError as exc:return self.fail(400,str(exc),user,csrf)
   if p=='/outreach-suppression':
    try:
     with db() as c:
