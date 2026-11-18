@@ -1,0 +1,26 @@
+name: Customer Opportunity Recovery Regression
+on:
+  push:
+    branches:
+      - fix/workflow-postgres-outcome-check
+  pull_request:
+    paths:
+      - 'ascension_workflows.py'
+      - 'test_workflow_hardening.py'
+      - 'sales_pipeline.py'
+      - 'sovereign_ascension.py'
+      - 'ascension_recovery.py'
+      - '.github/workflows/customer-opportunity-recovery.yml'
+  workflow_dispatch:
+jobs:
+  sqlite-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate Python syntax
+        run: python -m py_compile ascension_workflows.py test_workflow_hardening.py sales_pipeline.py sovereign_ascension.py ascension_recovery.py
+      - name: Execute workflow regression tests
+        run: python -m unittest -v test_workflow_hardening
