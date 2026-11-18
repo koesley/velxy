@@ -61,6 +61,17 @@ class SalesPipelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sales_pipeline.import_bounce_lines(self.c,1,"bad format")
 
+    def test_gmail_notice_import(self):
+        notice="Delivery incomplete\\nThere was a temporary problem delivering your message to hello@example.com.\\nThe response was: timed out"
+        count=sales_pipeline.import_gmail_notices(self.c,1,notice)
+        self.assertEqual(count,1)
+        status=self.c.execute("SELECT status FROM outreach_suppression WHERE owner_id=1 AND email='hello@example.com'").fetchone()[0]
+        self.assertEqual(status,"hold_for_verification")
+
+    def test_gmail_notice_invalid(self):
+        with self.assertRaises(ValueError):
+            sales_pipeline.import_gmail_notices(self.c,1,"Some unrelated message")
+
     def test_bad_stage(self):
         with self.assertRaises(ValueError):
             sales_pipeline.save(self.c,1,{"business":"Example Cafe","stage":"invented"})
