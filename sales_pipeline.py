@@ -144,9 +144,21 @@ def dashboard(c, owner, csrf):
     setup(c)
     rows=c.execute("""SELECT id,business,contact,email,industry,stage,estimated_value,notes
                       FROM sales_pipeline_leads WHERE owner_id=? ORDER BY updated_at DESC LIMIT 200""",(owner,)).fetchall()
-    won=sum(r[6] for r in rows if r[5]=="won")
-    potential=sum(r[6] for r in rows if r[5] not in ("won","lost"))
-    counts={stage:sum(r[5]==stage for r in rows) for stage in STAGES}
+    # Aggregate over the entire owner's pipeline, not the 200-row display page.
+    # All amounts are user-entered estimates; no stage establishes received revenue.
+    totals=c.execute("""SELECT stage,COUNT(*),COALESCE(SUM(estimated_value),0)
+                       FROM sales_pipeline_leads WHERE owner_id=?
+                       GROUP BY stage""",(owner,)).fetchall()
+    counts={stage:0 for stage in STAGES}
+    amounts={stage:0 for stage in STAGES}
+    for stage,count,amount in totals:
+        if stage in counts:
+            counts[stage]=int(count)
+            amounts[stage]=int(amount)
+    total_leads=sum(counts.values())
+    won=amounts["won"]
+    potential=sum(amounts[stage] for stage in STAGES if stage not in ("won","lost"))
+    displayed=len(rows)
     # Only independently verified mainnet settlement records count as received
     # payments. These are account-level payments, NOT attributed to leads.
     # Do not use the manually selected "won" stage as payment evidence.
@@ -170,7 +182,33 @@ def dashboard(c, owner, csrf):
     except Exception:
         pass  # No payment schema yet, or inaccessible: show no verified evidence.
     parts=['<section class="hero"><h1>Sales Pipeline</h1><p>Track outreach, conversations, meetings and deals. Values are manual estimates, not verified revenue.</p></section>',
-           '<section class="panel"><h2>Pipeline overview</h2><p>'+str(len(rows))+' recent leads · '+str(counts["replied"])+' replied · '+str(counts["meeting"])+' meetings · '+str(counts["won"])+' won</p><p>Estimated open opportunities: $'+str(potential)+' · Self-reported won deals: $'+str(won)+'</p></section>']
+           '<section class="panel"><h2>Pipeline overview</h2><p>'+str(total_leads)+' total leads · '+str(displayed)+' most recently updated displayed · '+str(counts["replied"])+' replied · '+str(counts["meeting"])+' meetings · '+str(counts["won"])+' won</p><p>Estimated open opportunities: $'+str(potential)+' · Self-reported won deals: $'+str(won)+'</p></section>']
+    parts.append('<section class="panel"><h2>Pipeline stages (all leads)</h2><p>'+ ' · '.join(esc(stage.title())+': '+str(counts[stage])+' leads / <p>Currently evidenced mainnet PRO payments: '+str(verified_count)+' · $'+format(verified_cents/100,'.2f')+' USD</p><p>This conservative count includes only the current subscription invoice linked to a settled order. It is not total lifetime revenue, a bank balance, or attribution to any lead. Earlier payments and refunds require separate reconciliation.</p></section>')
+    def form(lead=None):
+        lead=lead or ("","","","","","new",0,"")
+        fields=[("business","Business",lead[1]),("contact","Contact",lead[2]),("email","Email",lead[3]),("industry","Industry",lead[4]),("value","Estimated deal value (USD)",lead[6])]
+        p='<form method="post" action="/sales-pipeline"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><input type="hidden" name="lead_id" value="'+esc(lead[0])+'">'
+        for key,label,value in fields:
+            p+='<label>'+esc(label)+'<input name="'+key+'" maxlength="254" value="'+esc(value)+'"></label>'
+        p+='<label>Stage<select name="stage">'+''.join('<option value="'+stage+'"'+(' selected' if stage==lead[5] else '')+'>'+stage.title()+'</option>' for stage in STAGES)+'</select></label>'
+        p+='<label>Notes<textarea name="notes" maxlength="1000">'+esc(lead[7])+'</textarea></label><button type="submit">Save lead</button></form>'
+        return p
+    parts.append('<section class="panel"><h2>Add a lead</h2>'+form()+'</section>')
+    parts.append('<section class="panel"><h2>Contact delivery safety</h2><p>All addresses are held by default until independently verified. This page never sends email.</p><form method="post" action="/outreach-suppression"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><label>Email<input name="email" required></label><label>Status<select name="status">'+''.join('<option value="'+x+'">'+esc(x.replace('_',' ').title())+'</option>' for x in ("hold_for_verification","suppress_permanent","suppress_rejected","do_not_contact","verified_clear"))+'</select></label><label>Evidence<input name="reason" maxlength="500"></label><button type="submit">Save status</button></form></section>')
+    parts.append('<section class="panel"><h2>Import Gmail bounce reports</h2><p>Paste one recipient and its exact error per line, separated by |. Example: info@example.com | 550 5.1.1 User does not exist. No emails are sent.</p><form method="post" action="/outreach-bounce-import"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><textarea name="bounce_lines" rows="7" maxlength="30000" required></textarea><button type="submit">Import bounce statuses</button></form></section>')
+    parts.append('<section class="panel"><h2>Paste Gmail delivery notices</h2><p>Paste the full text of each Gmail bounce notice, separated by a line containing ===. No Gmail access or email sending occurs here.</p><form method="post" action="/outreach-gmail-import"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><textarea name="notices" rows="8" maxlength="60000" required></textarea><button type="submit">Review and import failures</button></form></section>')
+    summary=dict(c.execute("SELECT status,COUNT(*) FROM outreach_suppression WHERE owner_id=? GROUP BY status",(owner,)).fetchall())
+    held=summary.get("hold_for_verification",0)
+    blocked=sum(summary.get(x,0) for x in ("suppress_permanent","suppress_rejected","do_not_contact"))
+    cleared=summary.get("verified_clear",0)
+    parts.append('<section class="panel"><h2>Outreach safety command center</h2><p>'+str(blocked)+' suppressed · '+str(held)+' held for verification · '+str(cleared)+' manually verified</p><p>Verified means contact evidence recorded, not guaranteed inbox delivery. No automatic campaign sender is enabled.</p></section>')
+    statuses=c.execute("SELECT email,status FROM outreach_suppression WHERE owner_id=? ORDER BY updated_at DESC LIMIT 100",(owner,)).fetchall()
+    parts.append('<section class="panel"><h2>Delivery status register</h2>'+''.join('<p>'+esc(email)+' — '+esc(status)+'</p>' for email,status in statuses)+'</section>')
+
+    for lead in rows:
+        parts.append('<section class="panel"><h3>'+esc(lead[1])+'</h3><p>'+esc(lead[5].title())+' · $'+str(lead[6])+' estimated · '+esc(lead[2])+'</p><details><summary>Edit lead</summary>'+form(lead)+'</details></section>')
+    return ''.join(parts)
++str(amounts[stage])+' estimated' for stage in STAGES)+'</p><p>These are manually entered deal estimates, not confirmed payments. The detailed list is limited to the 200 most recently updated leads.</p></section>')
     parts.append('<section class="panel"><h2>Payment evidence</h2><p>Currently evidenced mainnet PRO payments: '+str(verified_count)+' · $'+format(verified_cents/100,'.2f')+' USD</p><p>This conservative count includes only the current subscription invoice linked to a settled order. It is not total lifetime revenue, a bank balance, or attribution to any lead. Earlier payments and refunds require separate reconciliation.</p></section>')
     def form(lead=None):
         lead=lead or ("","","","","","new",0,"")
