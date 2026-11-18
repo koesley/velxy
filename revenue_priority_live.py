@@ -39,7 +39,20 @@ def live_rankings(c, uid, workspace_id, limit=20):
     return rank_opportunities(candidates)[:max(1, min(int(limit), 50))]
 
 
-def render(c, uid, workspace_id):
+def propose_followup(c, uid, wid, lid):
+    """Create internal review draft only; never send external messages."""
+    business_os_v59.core.access(c,uid,wid,write=True)
+    business_os_v59.init(c)
+    row=c.execute("SELECT status FROM bos59_leads WHERE workspace_id=? AND id=?",(wid,lid)).fetchone()
+    if not row or row[0] not in ("new","contacted"):
+        raise ValueError("Lead is not eligible")
+    if c.execute("SELECT 1 FROM bos59_actions WHERE workspace_id=? AND lead_id=? AND decision='pending' LIMIT 1",(wid,lid)).fetchone():
+        raise ValueError("Pending review already exists")
+    message="Internal draft: review this "+row[0]+" lead, verify consent, and prepare a personalized follow-up for approval. Do not send automatically."
+    return business_os_v59.propose(c,uid,wid,lid,message)
+
+
+def render(c, uid, workspace_id, csrf=''):
     results = live_rankings(c, uid, workspace_id)
     esc = lambda value: html.escape(str(value), quote=True)
     out = ['<section class="panel"><h1>Live Pipeline Priorities</h1>',
@@ -55,5 +68,10 @@ def render(c, uid, workspace_id):
                    esc(item["estimated_value"]) + ' · Heuristic confidence: ' +
                    esc(item["confidence"]) + ' · Estimated effort: ' +
                    esc(item["effort_hours"]) + ' hours</p><p>' +
-                   esc(item["evidence"]) + '</p><p>' + esc(item["explanation"]) + '</p></section>')
+                   esc(item["evidence"]) + '</p><p>' + esc(item["explanation"]) + '</p>' +
+                   '<form method="post" action="/revenue-priority/live">' +
+                   '<input type="hidden" name="csrf" value="' + esc(csrf) + '">' +
+                   '<input type="hidden" name="workspace" value="' + esc(workspace_id) + '">' +
+                   '<input type="hidden" name="lead" value="' + esc(item["identifier"]) + '">' +
+                   '<button>Create review draft</button></form></section>')
     return ''.join(out)
