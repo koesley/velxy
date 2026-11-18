@@ -140,6 +140,49 @@ def save(c, owner, data):
     c.execute("INSERT INTO sales_pipeline_leads VALUES (?,?,?,?,?,?,?,?,?,?,?)",
               (lead_id,owner,business,contact,email,industry,stage,value,notes,now,now))
     return lead_id
+def lead_quality_review(c, owner):
+    """Owner-scoped, read-only data-quality summary; no outreach is initiated."""
+    setup(c)
+    rows = c.execute("""SELECT id, business, contact, email, industry, stage, estimated_value
+        FROM sales_pipeline_leads WHERE owner_id=?""", (owner,)).fetchall()
+    missing_contact = 0
+    missing_industry = 0
+    missing_value = 0
+    duplicate_groups = {}
+    for lead_id, business, contact, email, industry, stage, value in rows:
+        if stage in ("won", "lost"):
+            continue
+        if not contact.strip() and not email.strip():
+            missing_contact += 1
+        if not industry.strip():
+            missing_industry += 1
+        if value == 0:
+            missing_value += 1
+        # Review candidates only; never merge automatically.
+        key = (business.strip().casefold(), email.strip().casefold())
+        if key[0] and key[1]:
+            duplicate_groups[key] = duplicate_groups.get(key, 0) + 1
+    duplicate_extras = sum(n - 1 for n in duplicate_groups.values() if n > 1)
+    return {
+        "open_leads": sum(r[5] not in ("won", "lost") for r in rows),
+        "missing_contact": missing_contact,
+        "missing_industry": missing_industry,
+        "missing_value": missing_value,
+        "potential_duplicates": duplicate_extras,
+    }
+
+def lead_quality_html(c, owner):
+    d = lead_quality_review(c, owner)
+    return ('<section class="panel"><h2>Lead data quality</h2>'
+            '<p>Open leads reviewed: ' + str(d["open_leads"]) +
+            ' · Missing contact details: ' + str(d["missing_contact"]) +
+            ' · Missing industry: ' + str(d["missing_industry"]) +
+            ' · Missing estimated value: ' + str(d["missing_value"]) +
+            ' · Possible duplicate records: ' + str(d["potential_duplicates"]) + '</p>'
+            '<p>Review and correct records using Edit lead below. Duplicates are '
+            'suggestions based on matching business and email, not confirmed matches. '
+            'No contacts are merged or messaged automatically.</p></section>')
+
 def dashboard(c, owner, csrf):
     setup(c)
     rows=c.execute("""SELECT id,business,contact,email,industry,stage,estimated_value,notes
@@ -181,6 +224,7 @@ def dashboard(c, owner, csrf):
         p+='<label>Stage<select name="stage">'+''.join('<option value="'+stage+'"'+(' selected' if stage==lead[5] else '')+'>'+stage.title()+'</option>' for stage in STAGES)+'</select></label>'
         p+='<label>Notes<textarea name="notes" maxlength="1000">'+esc(lead[7])+'</textarea></label><button type="submit">Save lead</button></form>'
         return p
+    parts.append(lead_quality_html(c, owner))
     parts.append('<section class="panel"><h2>Add a lead</h2>'+form()+'</section>')
     parts.append('<section class="panel"><h2>Contact delivery safety</h2><p>All addresses are held by default until independently verified. This page never sends email.</p><form method="post" action="/outreach-suppression"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><label>Email<input name="email" required></label><label>Status<select name="status">'+''.join('<option value="'+x+'">'+esc(x.replace('_',' ').title())+'</option>' for x in ("hold_for_verification","suppress_permanent","suppress_rejected","do_not_contact","verified_clear"))+'</select></label><label>Evidence<input name="reason" maxlength="500"></label><button type="submit">Save status</button></form></section>')
     parts.append('<section class="panel"><h2>Import Gmail bounce reports</h2><p>Paste one recipient and its exact error per line, separated by |. Example: info@example.com | 550 5.1.1 User does not exist. No emails are sent.</p><form method="post" action="/outreach-bounce-import"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><textarea name="bounce_lines" rows="7" maxlength="30000" required></textarea><button type="submit">Import bounce statuses</button></form></section>')
