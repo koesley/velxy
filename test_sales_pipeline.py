@@ -44,7 +44,7 @@ class SalesPipelineTests(unittest.TestCase):
         self.assertFalse(sales_pipeline.outreach_eligibility(self.c,1,"info@example.com"))
     def test_bulk_bounce_import(self):
         count=sales_pipeline.import_bounce_lines(self.c,1,
-            "bad@example.com | 550 5.1.1 User does not exist\\nslow@example.com | timed out")
+            "bad@example.com | 550 5.1.1 User does not exist\nslow@example.com | timed out")
         self.assertEqual(count,2)
         statuses=dict(self.c.execute("SELECT email,status FROM outreach_suppression WHERE owner_id=1").fetchall())
         self.assertEqual(statuses["bad@example.com"],"suppress_permanent")
