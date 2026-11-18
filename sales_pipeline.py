@@ -59,7 +59,7 @@ def dashboard(c, owner, csrf):
     verified_count=0
     verified_cents=0
     try:
-        payments=c.execute("""SELECT o.order_id FROM btcpay_orders o
+        payments=c.execute("""SELECT o.invoice_id FROM btcpay_orders o
             JOIN subscriptions s ON s.user_id=o.user_id
             WHERE o.user_id=? AND o.network='mainnet' AND o.status='settled'
               AND o.settled_at>0 AND o.invoice_id IS NOT NULL
