@@ -157,6 +157,22 @@ def pipeline_forecast(c,uid,wid):
             "scenarios":{name:round(new_value*a+contacted_value*b,2) for name,(a,b) in scenarios.items()},
             "assumptions":scenarios,"sample_limit":300}
 
+def followup_queue(c,uid,wid):
+    """Actionable, human-controlled follow-up queue from existing lead records."""
+    core.access(c,uid,wid)
+    init(c)
+    now=int(time.time())
+    rows=c.execute("SELECT id,name,contact,source,value,status,updated FROM bos59_leads WHERE workspace_id=? AND status IN ('new','contacted') ORDER BY updated ASC LIMIT 300",(wid,)).fetchall()
+    result=[]
+    for lid,name,contact,source,value,status,updated in rows:
+        age=max(0,(now-int(updated))//86400)
+        if age<3:
+            continue
+        priority="High" if age>=14 else "Medium" if age>=7 else "Normal"
+        result.append({"id":lid,"name":name,"contact":contact,"source":source,"value":float(value),"status":status,"days":age,"priority":priority})
+    result.sort(key=lambda x:(-x["days"],-x["value"],x["name"].lower()))
+    return result[:20]
+
 def export_csv(c,uid,wid):
     data=overview(c,uid,wid)
     f=io.StringIO()
@@ -198,6 +214,16 @@ def render(c,uid,wid,csrf):
         new_rate,contacted_rate=forecast["assumptions"][scenario]
         out.append('<article class="ov-card"><strong>'+h(scenario.title())+'</strong><span>'+h(amount)+'</span><small>New '+h(round(new_rate*100))+'% · Contacted '+h(round(contacted_rate*100))+'%</small></article>')
     out.append('</div><small>Illustrative scenarios only, not forecasts of actual sales or guaranteed income. Based on the latest 300 user-entered leads. No payments or messages are triggered.</small></section>')
+    queue=followup_queue(c,uid,wid)
+    out.append('<section class="ov-panel"><h2>Follow-up action queue</h2><p>New: a prioritized list of open leads that have not been updated for at least three days. Contact is always manual.</p>')
+    if queue:
+        out.append('<div class="scroll"><table><thead><tr><th>Priority</th><th>Lead</th><th>Contact</th><th>Days idle</th><th>Potential value</th></tr></thead><tbody>')
+        for item in queue:
+            out.append('<tr><td>'+h(item["priority"])+'</td><td>'+h(item["name"])+'</td><td>'+h(item["contact"])+'</td><td>'+h(item["days"])+'</td><td>'+h(round(item["value"],2))+'</td></tr>')
+        out.append('</tbody></table></div>')
+    else:
+        out.append('<p>No leads currently need follow-up under the three-day rule.</p>')
+    out.append('<small>Based on up to 300 open leads. High: 14+ days idle; Medium: 7–13; Normal: 3–6. No emails or calls are sent automatically.</small></section>')
     if d["role"] in ("owner","editor"):
         out.append('<section class="ov-panel"><h2>Add a lead</h2><form method="post" action="'+url+'">'+hidden+'<label>Name<input name="name" required maxlength="120"></label><label>Contact<input name="contact" required maxlength="200"></label><label>Source<input name="source" required maxlength="100"></label><label>Potential value<input name="value" type="number" min="0" max="1000000000" step="0.01" required></label><button name="action" value="add">Add lead</button></form></section>')
     for lead in d["leads"]:
