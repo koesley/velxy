@@ -68,38 +68,70 @@ def update(c,uid,wid,action_id,stage,note):
            (secrets.token_hex(12),wid,action_id,uid,row[1],stage,note,now))
 
 def snapshot(c,uid,wid,today=None):
+ """Compute truthful all-record counts and prioritize urgent work in the bounded view."""
  bos.core.access(c,uid,wid);setup(c)
  today=today or date.today().isoformat()
+ _due(today)
+ counts=c.execute("""SELECT COUNT(*),
+ SUM(CASE WHEN stage NOT IN ('won','lost') THEN 1 ELSE 0 END),
+ SUM(CASE WHEN stage NOT IN ('won','lost') AND due<? THEN 1 ELSE 0 END),
+ SUM(CASE WHEN stage NOT IN ('won','lost') AND due=? THEN 1 ELSE 0 END),
+ SUM(CASE WHEN stage='won' THEN 1 ELSE 0 END),
+ SUM(CASE WHEN stage='lost' THEN 1 ELSE 0 END)
+ FROM vx_sales_actions44 WHERE workspace_id=?""",(today,today,wid)).fetchone()
  rows=c.execute("""SELECT a.id,a.plan_id,a.owner_id,a.contact_label,a.action_kind,
  a.summary,a.due,a.stage,p.title FROM vx_sales_actions44 a
  JOIN vx_growth_strategy42 p ON p.workspace_id=a.workspace_id AND p.id=a.plan_id
  WHERE a.workspace_id=? ORDER BY
- CASE WHEN a.stage IN ('won','lost') THEN 1 ELSE 0 END,
- a.due,a.created DESC LIMIT 200""",(wid,)).fetchall()
+ CASE WHEN a.stage IN ('won','lost') THEN 2
+      WHEN a.due<=? THEN 0 ELSE 1 END,
+ a.due,a.created DESC LIMIT 200""",(wid,today)).fetchall()
  keys=("id","plan_id","owner","contact","kind","summary","due","stage","plan")
  items=[dict(zip(keys,row)) for row in rows]
- open_items=[r for r in items if r["stage"] not in ("won","lost")]
- return {"items":items,"open":len(open_items),
-         "overdue":sum(r["due"]<today for r in open_items),
-         "due_today":sum(r["due"]==today for r in open_items),
-         "won_marked":sum(r["stage"]=="won" for r in items),
-         "lost_marked":sum(r["stage"]=="lost" for r in items)}
+ for item in items:
+  item["priority"]=("closed" if item["stage"] in ("won","lost") else
+                    "overdue" if item["due"]<today else
+                    "due_today" if item["due"]==today else "upcoming")
+ total,opened,overdue,due_today,won,lost=(int(x or 0) for x in counts)
+ return {"items":items,"total":total,"shown":len(items),"open":opened,
+         "overdue":overdue,"due_today":due_today,
+         "won_marked":won,"lost_marked":lost}
+
+def team_triage(c,uid,wid,today=None):
+ """Aggregate member workloads without leaking another workspace's actions."""
+ bos.core.access(c,uid,wid);setup(c)
+ today=today or date.today().isoformat()
+ _due(today)
+ rows=c.execute("""SELECT a.owner_id,COUNT(*),
+ SUM(CASE WHEN a.due<? THEN 1 ELSE 0 END),
+ SUM(CASE WHEN a.due=? THEN 1 ELSE 0 END)
+ FROM vx_sales_actions44 a
+ JOIN empire_members m ON m.workspace_id=a.workspace_id AND m.user_id=a.owner_id
+ WHERE a.workspace_id=? AND a.stage NOT IN ('won','lost')
+ GROUP BY a.owner_id ORDER BY 3 DESC,2 DESC,a.owner_id""",
+ (today,today,wid)).fetchall()
+ return [{"owner":int(r[0]),"open":int(r[1]),"overdue":int(r[2] or 0),
+          "due_today":int(r[3] or 0)} for r in rows]
 
 def render(c,uid,wid,csrf):
  bos.core.access(c,uid,wid);setup(c)
  e=lambda v:html.escape(str(v),quote=True)
  data=snapshot(c,uid,wid)
+ team=team_triage(c,uid,wid)
  plans=strategy.analyze(c,uid,wid)
  active=[p for p in plans if p["status"]!="completed"]
  members=c.execute("SELECT user_id FROM empire_members WHERE workspace_id=? ORDER BY user_id",(wid,)).fetchall()
  out=['<section class="panel"><h1>Sales Execution Queue</h1><p>Track manual prospect follow-ups and link each action to a measurable growth strategy. No emails, calls, payments or external actions are sent automatically. Won/lost labels are user-reported, not verified revenue.</p>',
  '<p>Open: '+str(data["open"])+' · Overdue: '+str(data["overdue"])+' · Due today: '+str(data["due_today"])+' · Won-marked: '+str(data["won_marked"])+' · Lost-marked: '+str(data["lost_marked"])+'</p></section>']
+ out.append('<section class="panel"><h2>Team follow-up workload</h2><p>Counts cover all open actions; urgent items appear first below.</p>'+(''.join('<p>Member #'+str(r["owner"])+': '+str(r["open"])+' open · '+str(r["overdue"])+' overdue · '+str(r["due_today"])+' due today</p>' for r in team) or '<p>No open follow-ups.</p>')+'</section>')
+ if data["total"]>data["shown"]:
+  out.append('<section class="panel"><p>Showing '+str(data["shown"])+' highest-priority actions of '+str(data["total"])+'. Summary and team totals include all actions.</p></section>')
  if active:
   out.append('<section class="panel"><h2>Schedule a customer action</h2><form method="post" action="/sales-execution"><input type="hidden" name="csrf" value="'+e(csrf)+'"><input type="hidden" name="workspace" value="'+e(wid)+'"><input type="hidden" name="action" value="create"><label>Strategy<select name="plan_id">'+''.join('<option value="'+e(p["id"])+'">'+e(p["title"])+'</option>' for p in active)+'</select></label><label>Owner<select name="owner">'+''.join('<option value="'+str(m[0])+'"'+(' selected' if m[0]==uid else '')+'>Member #'+str(m[0])+'</option>' for m in members)+'</select></label><label>Prospect or customer label<input name="contact" maxlength="120" required></label><label>Action type<select name="kind">'+''.join('<option>'+e(k)+'</option>' for k in KINDS)+'</select></label><label>Next step<textarea name="summary" maxlength="500" required></textarea></label><label>Follow-up date<input type="date" name="due" required></label><button>Create follow-up</button></form></section>')
  else:out.append('<section class="panel"><p>Create an active <a href="/growth-strategy?w='+urllib.parse.quote(wid,safe='')+'">growth strategy plan</a> before adding customer follow-ups.</p></section>')
  for item in data["items"]:
   event=c.execute("SELECT note FROM vx_sales_events44 WHERE workspace_id=? AND action_id=? ORDER BY created DESC LIMIT 1",(wid,item["id"])).fetchone()
-  out.append('<section class="panel"><h2>'+e(item["contact"])+'</h2><p>'+e(item["kind"])+' · '+e(item["stage"])+' · due '+e(item["due"])+' · owner #'+str(item["owner"])+'</p><p>Strategy: '+e(item["plan"])+'</p><p>'+e(item["summary"])+'</p><p>Latest evidence: '+e(event[0] if event else "Not recorded")+'</p>')
+  out.append('<section class="panel"><h2>'+e(item["contact"])+'</h2><p>'+e(item["kind"])+' · '+e(item["priority"])+' · '+e(item["stage"])+' · due '+e(item["due"])+' · owner #'+str(item["owner"])+'</p><p>Strategy: '+e(item["plan"])+'</p><p>'+e(item["summary"])+'</p><p>Latest evidence: '+e(event[0] if event else "Not recorded")+'</p>')
   if item["owner"]==uid and item["stage"] not in ("won","lost"):
    out.append('<form method="post" action="/sales-execution"><input type="hidden" name="csrf" value="'+e(csrf)+'"><input type="hidden" name="workspace" value="'+e(wid)+'"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="'+e(item["id"])+'"><label>Progress<select name="stage">'+''.join('<option value="'+e(s)+'"'+(' selected' if s==item["stage"] else '')+'>'+e(s)+'</option>' for s in STAGES)+'</select></label><label>Evidence note<textarea name="note" maxlength="500" required></textarea></label><button>Save progress</button></form>')
   out.append('</section>')
