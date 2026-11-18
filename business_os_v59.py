@@ -47,6 +47,13 @@ def init(c):
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, event_type TEXT NOT NULL,
         object_id TEXT NOT NULL, actor_id INTEGER NOT NULL, created INTEGER NOT NULL,
         schema_version INTEGER NOT NULL DEFAULT 1)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS bos59_event_consumption (
+        workspace_id TEXT NOT NULL, consumer TEXT NOT NULL, event_id TEXT NOT NULL,
+        processed INTEGER NOT NULL, PRIMARY KEY(workspace_id,consumer,event_id))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS bos59_event_metrics (
+        workspace_id TEXT NOT NULL, event_type TEXT NOT NULL, event_day TEXT NOT NULL,
+        event_count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(workspace_id,event_type,event_day))""")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_events_recent ON bos59_events(workspace_id,created DESC)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_fulfillment_lead ON bos59_fulfillment(workspace_id,lead_id,status)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_services_scope ON bos59_services(workspace_id,active)")
@@ -68,6 +75,47 @@ def recent_events(c,uid,wid,limit=25):
     init(c)
     limit=max(1,min(int(limit),50))
     return c.execute("SELECT event_type,object_id,created FROM bos59_events WHERE workspace_id=? ORDER BY created DESC,id DESC LIMIT ?",(wid,limit)).fetchall()
+
+def process_business_events(c,uid,wid,limit=100):
+    """Idempotent bounded projection of recorded events into daily activity metrics.
+
+    This is an explicit internal read-model processor, not an external action runner.
+    Caller owns the transaction and must commit it for progress to persist.
+    """
+    core.access(c,uid,wid,write=True)
+    init(c)
+    limit=max(1,min(int(limit),200))
+    rows=c.execute("""SELECT e.id,e.event_type,e.created FROM bos59_events e
+        WHERE e.workspace_id=? AND NOT EXISTS (
+          SELECT 1 FROM bos59_event_consumption p
+          WHERE p.workspace_id=e.workspace_id AND p.consumer='daily_metrics_v1' AND p.event_id=e.id)
+        ORDER BY e.created,e.id LIMIT ?""",(wid,limit)).fetchall()
+    processed=0
+    for eid,kind,created in rows:
+        cursor=c.execute("""INSERT OR IGNORE INTO bos59_event_consumption
+            (workspace_id,consumer,event_id,processed) VALUES(?,?,?,?)""",
+            (wid,"daily_metrics_v1",eid,int(time.time())))
+        if cursor.rowcount!=1:
+            continue
+        day=time.strftime("%Y-%m-%d",time.gmtime(created))
+        c.execute("""INSERT INTO bos59_event_metrics(workspace_id,event_type,event_day,event_count)
+            VALUES(?,?,?,1) ON CONFLICT(workspace_id,event_type,event_day)
+            DO UPDATE SET event_count=event_count+1""",(wid,kind,day))
+        processed+=1
+    if processed:
+        core.audit(c,uid,wid,"bos_event_projection_processed",str(processed))
+    remaining=c.execute("""SELECT COUNT(*) FROM bos59_events e WHERE e.workspace_id=?
+        AND NOT EXISTS(SELECT 1 FROM bos59_event_consumption p
+        WHERE p.workspace_id=e.workspace_id AND p.consumer='daily_metrics_v1' AND p.event_id=e.id)""",(wid,)).fetchone()[0]
+    return {"processed":processed,"remaining":remaining}
+
+
+def event_activity(c,uid,wid,limit=12):
+    core.access(c,uid,wid)
+    init(c)
+    return c.execute("""SELECT event_day,event_type,event_count FROM bos59_event_metrics
+        WHERE workspace_id=? ORDER BY event_day DESC,event_type LIMIT ?""",
+        (wid,max(1,min(int(limit),50)))).fetchall()
 
 def _text(value, limit):
     if not isinstance(value,str) or not value.strip() or len(value.strip()) > limit:
@@ -541,6 +589,13 @@ def render(c,uid,wid,csrf,search="",status_filter="all",page=1):
     d["leads"]=results["leads"]
 
     out=['<section class="ov-hero"><span>VELXTRIA · BUSINESS OS V59</span><h1>Revenue recovery command center</h1><p>Manage leads, prepare follow-ups and require human approval. No automatic messages are sent.</p></section>']
+    activity=event_activity(c,uid,wid,12)
+    out.append('<details class="ov-panel"><summary>Event processing and daily activity</summary><p>Build a durable daily activity summary from stored business events. Processing is bounded and repeat-safe; no customer messages or payments are sent.</p>')
+    if d["role"] in ("owner","editor"):
+        out.append('<form method="post" action="'+url+'">'+hidden+'<button name="action" value="process_business_events">Process pending business events</button></form>')
+    for day,kind,count in activity:
+        out.append('<article class="ov-job"><strong>'+h(day)+' · '+h(kind)+'</strong><span>'+h(count)+' recorded events</span></article>')
+    out.append('</details>')
     events=recent_events(c,uid,wid,15)
     out.append('<details class="ov-panel"><summary>Business event journal ('+h(len(events))+' recent)</summary><p>Recorded changes in this workspace. Entries describe internal actions, not external delivery or payment.</p>')
     for event_type,object_id,created in events:
