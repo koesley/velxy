@@ -252,7 +252,7 @@ def complete_task(c,uid,wid,tid):
     if related:
         c.execute("UPDATE bos59_fulfillment SET status='ready_for_review' WHERE workspace_id=? AND id=? AND status='open'",(wid,related[0]))
         core.audit(c,uid,wid,"bos_fulfillment_ready_for_review",related[0])
-            record_event(c,uid,wid,"fulfillment.ready_for_review",related[0])
+        record_event(c,uid,wid,"fulfillment.ready_for_review",related[0])
 
 def create_quote(c,uid,wid,lid,description,quantity,unit_price):
     """Create a draft estimate. No invoice, charge or outbound delivery."""
