@@ -27,6 +27,39 @@ def set_suppression(c, owner, email, status, reason=""):
     status=excluded.status,reason=excluded.reason,updated_at=excluded.updated_at""",
     (owner,email,status,reason[:500],int(time.time())))
 
+def import_bounce_lines(c, owner, raw):
+    """Import pasted recipient|bounce-error lines, no automatic clearance.
+
+    Each line must contain an explicit email and its delivery diagnostic.
+    Unknown errors are held for review, never marked verified.
+    """
+    if len(raw)>30000:
+        raise ValueError("Import exceeds 30,000 characters")
+    entries=[line.strip() for line in raw.splitlines() if line.strip()]
+    if len(entries)>150:
+        raise ValueError("Maximum 150 bounce entries per import")
+    # Validate every line before changing the database.
+    parsed=[]
+    for line in entries:
+        if "|" not in line:
+            raise ValueError("Each line must be email | bounce error")
+        email, diagnostic=line.split("|",1)
+        email=email.strip().lower()
+        if not email or "@" not in email or len(email)>254 or not diagnostic.strip():
+            raise ValueError("Invalid recipient or missing bounce error")
+        status=outreach_deliverability.classify_bounce(diagnostic)
+        if status=="needs_manual_review":
+            status="hold_for_verification"
+        parsed.append((email,status,diagnostic.strip()[:500]))
+    # Never weaken existing permanent suppressions or opt-outs on import.
+    protected={"do_not_contact","suppress_permanent","suppress_rejected"}
+    for email,status,reason in parsed:
+        existing=c.execute("SELECT status FROM outreach_suppression WHERE owner_id=? AND email=?",(owner,email)).fetchone()
+        if existing and existing[0] in protected:
+            continue
+        set_suppression(c,owner,email,status,reason)
+    return len(parsed)
+
 def outreach_eligibility(c, owner, email):
     setup(c)
     email=email.strip().lower()
@@ -109,6 +142,7 @@ def dashboard(c, owner, csrf):
         return p
     parts.append('<section class="panel"><h2>Add a lead</h2>'+form()+'</section>')
     parts.append('<section class="panel"><h2>Contact delivery safety</h2><p>All addresses are held by default until independently verified. This page never sends email.</p><form method="post" action="/outreach-suppression"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><label>Email<input name="email" required></label><label>Status<select name="status">'+''.join('<option value="'+x+'">'+esc(x.replace('_',' ').title())+'</option>' for x in ("hold_for_verification","suppress_permanent","suppress_rejected","do_not_contact","verified_clear"))+'</select></label><label>Evidence<input name="reason" maxlength="500"></label><button type="submit">Save status</button></form></section>')
+    parts.append('<section class="panel"><h2>Import Gmail bounce reports</h2><p>Paste one recipient and its exact error per line, separated by |. Example: info@example.com | 550 5.1.1 User does not exist. No emails are sent.</p><form method="post" action="/outreach-bounce-import"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><textarea name="bounce_lines" rows="7" maxlength="30000" required></textarea><button type="submit">Import bounce statuses</button></form></section>')
     statuses=c.execute("SELECT email,status FROM outreach_suppression WHERE owner_id=? ORDER BY updated_at DESC LIMIT 100",(owner,)).fetchall()
     parts.append('<section class="panel"><h2>Delivery status register</h2>'+''.join('<p>'+esc(email)+' — '+esc(status)+'</p>' for email,status in statuses)+'</section>')
 
