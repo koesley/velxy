@@ -257,6 +257,48 @@ def quote_from_service(c,uid,wid,lid,sid,quantity):
         raise ValueError("Active service not found")
     return create_quote(c,uid,wid,lid,row[0],quantity,row[1])
 
+QUOTE_STATES=("draft","presented","accepted","declined")
+
+def update_quote(c,uid,wid,qid,new_status):
+    """Record manually verified quote progress; never send or charge customers."""
+    core.access(c,uid,wid,write=True)
+    init(c)
+    if new_status not in QUOTE_STATES:
+        raise ValueError("Invalid quote status")
+    row=c.execute("SELECT lead_id,status FROM bos59_quotes WHERE id=? AND workspace_id=?",(qid,wid)).fetchone()
+    if not row:
+        raise ValueError("Quote not found")
+    lid,old_status=row
+    transitions={"draft":("presented","declined"),"presented":("accepted","declined"),
+                 "accepted":(),"declined":()}
+    if new_status not in transitions.get(old_status,()):
+        raise ValueError("Quote status transition not allowed")
+    c.execute("UPDATE bos59_quotes SET status=? WHERE id=? AND workspace_id=?",(new_status,qid,wid))
+    core.audit(c,uid,wid,"bos_quote_"+new_status,qid)
+    if new_status=="accepted":
+        existing=c.execute("SELECT 1 FROM bos59_tasks WHERE workspace_id=? AND lead_id=? AND title=? AND status='open'",
+                           (wid,lid,"Fulfill accepted quote "+qid[:8])).fetchone()
+        if not existing:
+            now=int(time.time())
+            due=(datetime.date.today()+datetime.timedelta(days=1)).isoformat()
+            c.execute("INSERT INTO bos59_tasks VALUES(?,?,?,?,?,?,?,?,?)",
+                      (secrets.token_hex(12),wid,lid,"Fulfill accepted quote "+qid[:8],due,"open",uid,now,None))
+            core.audit(c,uid,wid,"bos_quote_fulfillment_task_created",qid)
+    return new_status
+
+def quote_workflow_summary(c,uid,wid):
+    core.access(c,uid,wid)
+    init(c)
+    rows=c.execute("SELECT status,quantity,unit_price FROM bos59_quotes WHERE workspace_id=? ORDER BY created DESC LIMIT 500",(wid,)).fetchall()
+    totals={state:{"count":0,"value":0.0} for state in QUOTE_STATES}
+    for status,qty,price in rows:
+        if status in totals:
+            totals[status]["count"]+=1
+            totals[status]["value"]+=qty*price
+    for entry in totals.values():
+        entry["value"]=round(entry["value"],2)
+    return totals
+
 def overview(c,uid,wid):
     role=core.access(c,uid,wid)
     init(c)
@@ -460,13 +502,22 @@ def render(c,uid,wid,csrf):
     quotes_by_lead={}
     for qid,lid,description,qty,price,status in c.execute("SELECT id,lead_id,description,quantity,unit_price,status FROM bos59_quotes WHERE workspace_id=? ORDER BY created DESC LIMIT 500",(wid,)):
         quotes_by_lead.setdefault(lid,[]).append((qid,description,qty,price,status))
+    quote_totals=quote_workflow_summary(c,uid,wid)
+    out.append('<section class="ov-panel"><h2>Quote-to-work workflow</h2><p>New: track estimates through presentation, customer acceptance or decline, then automatically create an internal fulfillment task when acceptance is recorded.</p><div class="ov-metrics">')
+    for state,summary in quote_totals.items():
+        out.append('<article class="ov-card"><strong>'+h(state.title())+' quotes</strong><span>'+h(summary["count"])+'</span><small>Estimated value '+h(format(summary["value"],".2f"))+'</small></article>')
+    out.append('</div><small>All statuses are manually recorded. Accepted quotes do not prove payment. No messages or charges are sent.</small></section>')
     for lead in d["leads"]:
         out.append('<section class="ov-panel"><h2>'+h(lead["name"])+'</h2><p>'+h(lead["source"])+' · '+h(lead["status"])+' · potential value '+h(lead["value"])+'</p>')
         if services and d["role"] in ("owner","editor"):
             out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Quote from service catalog<select name="service">'+''.join('<option value="'+h(sid)+'">'+h(name)+' — '+h(format(price,".2f"))+'</option>' for sid,name,description,price in services)+'</select></label><label>Quantity<input type="number" name="quantity" min="1" max="100000" value="1" required></label><button name="action" value="quote_service">Create catalog quote</button></form>')
         out.append('<h3>Estimates &amp; quotes</h3>')
         for qid,description,qty,price,status in quotes_by_lead.get(lead["id"],[])[:10]:
-            out.append('<article class="ov-job"><strong>'+h(description)+'</strong><p>'+h(qty)+' × '+h(format(price,".2f"))+' = '+h(format(qty*price,".2f"))+' · '+h(status)+'</p></article>')
+            out.append('<article class="ov-job"><strong>'+h(description)+'</strong><p>'+h(qty)+' × '+h(format(price,".2f"))+' = '+h(format(qty*price,".2f"))+' · '+h(status)+'</p>')
+            next_states={"draft":("presented","declined"),"presented":("accepted","declined")}
+            if d["role"] in ("owner","editor") and status in next_states:
+                out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="quote" value="'+h(qid)+'"><label>Record quote outcome<select name="quote_status">'+''.join('<option value="'+h(state)+'">'+h(state.title())+'</option>' for state in next_states[status])+'</select></label><button name="action" value="quote_status">Update quote</button></form>')
+            out.append('</article>')
         if d["role"] in ("owner","editor"):
             out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>Quote item / service<input name="quote_description" maxlength="300" required placeholder="Website setup"></label><label>Quantity<input name="quote_quantity" type="number" min="1" max="100000" value="1" required></label><label>Unit price<input name="quote_price" type="number" min="0" max="1000000" step="0.01" required></label><button name="action" value="create_quote">Save draft estimate</button></form>')
         out.append('<h3>Customer tasks</h3>')
