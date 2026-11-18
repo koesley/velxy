@@ -508,8 +508,16 @@ class Handler(BaseHTTPRequestHandler):
    if name:
     try:
      result=outreach_copy.draft(outreach_copy.Prospect(name,industry,val('first_name'),observation,source),style)
+     checks=outreach_copy.quality_check(outreach_copy.Prospect(name,industry,val('first_name'),observation,source),result)
+     if checks['warnings']:body+='<section class="panel"><h3>Quality checks</h3><ul>'+''.join('<li>'+escape(w)+'</li>' for w in checks['warnings'])+'</ul></section>'
      body+='<section class="panel"><h2>Review before sending</h2><p><strong>Subject:</strong> '+escape(result['subject'])+'</p><textarea readonly rows="16" style="width:100%">'+escape(result['body'])+'</textarea><p>Confirm the observation and source are accurate. Respect declines and opt-outs; do not send without review.</p></section>'
     except ValueError as exc:body+='<section class="panel"><p>'+escape(exc)+'</p></section>'
+   body+='<section class="panel"><h2>Reply triage</h2><p>Paste a prospect reply to get a suggested next step. Declines and opt-outs are not invitations to keep pitching.</p><form method="get" action="/outreach-studio"><label>Prospect reply<textarea name="reply" maxlength="500" rows="3">'+escape(val('reply'))+'</textarea></label><button type="submit">Review reply</button></form>'
+   if val('reply'):
+    guidance=outreach_copy.reply_guidance(val('reply'))
+    body+='<p><strong>'+escape(guidance['classification'].replace('_',' ').title())+'</strong>: '+escape(guidance['recommended_action'])+'</p>'
+    if guidance['suggested_reply']:body+='<textarea readonly rows="4" style="width:100%">'+escape(guidance['suggested_reply'])+'</textarea>'
+   body+='</section>'
    return self.respond(200,shell('Outreach Studio',body,user,csrf))
   if p=='/about':
    return self.respond(200,shell('Meet VELXTRIA',landing_page()))
