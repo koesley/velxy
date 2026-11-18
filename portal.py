@@ -2478,7 +2478,8 @@ class Handler(BaseHTTPRequestHandler):
  def post_data(self):
   try:n=int(self.headers.get('Content-Length','0'))
   except ValueError:raise ValueError('Invalid request size')
-  if n<=0 or n>MAX_BYTES+65536:raise ValueError('Upload too large (maximum 5 MB)')
+  if n<=0:raise ValueError('Empty request — no form data received.')
+  if n>MAX_BYTES+65536:raise ValueError('Upload too large (maximum 5 MB)')
   raw=self.rfile.read(n);ct=self.headers.get('Content-Type','')
   if ct.startswith('application/x-www-form-urlencoded'):
    return {k:v[0] for k,v in urllib.parse.parse_qs(raw.decode('utf-8'),keep_blank_values=True).items()},None
