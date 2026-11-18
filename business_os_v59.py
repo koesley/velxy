@@ -59,6 +59,57 @@ def add_lead(c, uid, wid, name, contact, source, value):
         core.audit(c,uid,wid,"bos_lead_created",lid)
     return lid
 
+def import_leads_csv(c,uid,wid,csv_text):
+    """Import up to 100 leads from pasted CSV with strict validation and deduplication."""
+    core.access(c,uid,wid,write=True)
+    init(c)
+    if not isinstance(csv_text,str) or not csv_text.strip() or len(csv_text)>40000:
+        raise ValueError("CSV must contain 1–40000 characters")
+    try:
+        reader=csv.DictReader(io.StringIO(csv_text,newline=""))
+        required={"name","contact","source","value"}
+        if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
+            raise ValueError("CSV headers must include name,contact,source,value")
+        if len(reader.fieldnames)>12 or any(not h or len(h)>80 for h in reader.fieldnames):
+            raise ValueError("Invalid CSV headers")
+        parsed=[]
+        import math
+        for row in reader:
+            if len(parsed)>=100:
+                raise ValueError("Maximum 100 leads per import")
+            if None in row or any(v is None for v in row.values()):
+                raise ValueError("Malformed CSV row")
+            name=_text(row["name"],120)
+            contact=_text(row["contact"],200)
+            source=_text(row["source"],100)
+            try:
+                value=float(row["value"])
+            except (ValueError,TypeError,OverflowError):
+                raise ValueError("Invalid lead value")
+            if not math.isfinite(value) or not 0<=value<=1000000000:
+                raise ValueError("Invalid lead value")
+            parsed.append((name,contact,source,value))
+    except csv.Error:
+        raise ValueError("Invalid CSV formatting")
+    if not parsed:
+        raise ValueError("No leads found in CSV")
+    existing={(str(name).casefold(),str(contact).casefold()) for name,contact in c.execute(
+        "SELECT name,contact FROM bos59_leads WHERE workspace_id=?",(wid,))}
+    seen=set()
+    unique=[]
+    for name,contact,source,value in parsed:
+        key=(name.casefold(),contact.casefold())
+        if key in existing or key in seen:
+            continue
+        seen.add(key)
+        unique.append((name,contact,source,value))
+    now=int(time.time())
+    for name,contact,source,value in unique:
+        c.execute("INSERT INTO bos59_leads VALUES(?,?,?,?,?,?,?,?,?)",
+                  (secrets.token_hex(12),wid,name,contact,source,value,"new",now,now))
+    core.audit(c,uid,wid,"bos_leads_csv_imported",str(len(unique)))
+    return {"imported":len(unique),"duplicates_skipped":len(parsed)-len(unique)}
+
 def update_lead(c,uid,wid,lid,status):
     core.access(c,uid,wid,write=True)
     init(c)
@@ -316,6 +367,8 @@ def render(c,uid,wid,csrf):
     for bucket,count in velocity["buckets"].items():
         out.append('<tr><td>'+h(bucket)+'</td><td>'+h(count)+'</td></tr>')
     out.append('</tbody></table></div><small>Uses existing lead creation and update timestamps. Up to 300 recent leads; potential values are estimates, not collected revenue.</small></section>')
+    if d["role"] in ("owner","editor"):
+        out.append('<section class="ov-panel"><h2>Bulk lead importer</h2><p>New: bring existing customer prospects into VELXTRIA in one operation. Paste CSV with columns name,contact,source,value (up to 100 rows). Existing name + contact matches are skipped.</p><form method="post" action="'+url+'">'+hidden+'<label>Lead CSV<textarea name="csv_text" maxlength="40000" rows="6" required placeholder="name,contact,source,value&#10;Example Business,contact@example.com,Referral,250"></textarea></label><button name="action" value="import_csv">Import leads</button></form><small>Import is manual and workspace-scoped. No outreach is sent.</small></section>')
     if d["role"] in ("owner","editor"):
         out.append('<section class="ov-panel"><h2>Add a lead</h2><form method="post" action="'+url+'">'+hidden+'<label>Name<input name="name" required maxlength="120"></label><label>Contact<input name="contact" required maxlength="200"></label><label>Source<input name="source" required maxlength="100"></label><label>Potential value<input name="value" type="number" min="0" max="1000000000" step="0.01" required></label><button name="action" value="add">Add lead</button></form></section>')
     notes_by_lead={}
