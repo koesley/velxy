@@ -54,7 +54,7 @@ def update(c,uid,wid,identifier,status,spend,leads,conversions,notes):
     if status not in STATES:raise ValueError("Invalid campaign state.")
     try:
         leads=int(leads);conversions=int(conversions)
-        if str(leads)!=str(leads) or leads<0 or conversions<0 or conversions>leads or leads>1000000000:raise ValueError()
+        if leads<0 or conversions<0 or conversions>leads or leads>1000000000:raise ValueError()
     except (TypeError,ValueError):raise ValueError("Leads and conversions must be valid nonnegative counts; conversions cannot exceed leads.")
     notes=str(notes).strip()
     if len(notes)>500:raise ValueError("Notes must be at most 500 characters.")
