@@ -502,7 +502,7 @@ class Handler(BaseHTTPRequestHandler):
       row=c.execute('SELECT workspace_id FROM empire_members WHERE user_id=? LIMIT 1',(user['id'],)).fetchone()
       wid=row[0] if row else ''
      if not wid:raise ValueError('Create a workspace first')
-     body=revenue_priority_live.render(c,user['id'],wid)
+     body=revenue_priority_live.render(c,user['id'],wid,csrf)
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
    return self.respond(200,shell('Live Pipeline Priorities',body,user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/revenue-priority':
@@ -1289,6 +1289,13 @@ class Handler(BaseHTTPRequestHandler):
      elif action=='measure':sovereign_lab_v57.measure(c,user['id'],wid,pid,fields.get('observed',''),fields.get('evidence',''))
      else:raise ValueError('Unknown Decision Lab action')
     return self.redirect('/sovereign-lab-v57?w='+urllib.parse.quote(wid,safe=''))
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+  if p=='/revenue-priority/live':
+   if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
+   wid=fields.get('workspace','')
+   try:
+    with db() as c:revenue_priority_live.propose_followup(c,user['id'],wid,fields.get('lead',''))
+    return self.redirect('/revenue-priority/live?w='+urllib.parse.quote(wid,safe=''))
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
   if p=='/business-intelligence-v60':
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
