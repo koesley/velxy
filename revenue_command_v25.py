@@ -1,5 +1,7 @@
 """VELXTRIA unified, workspace-scoped revenue command center (read-only)."""
 import html
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from revenue_action_evidence import RevenueAction, rank_actions
 import urllib.parse
 import revenue_conversion_v24 as conversion
 import revenue_priority_live as priorities
@@ -12,6 +14,15 @@ def snapshot(c, uid, wid):
     bos.core.access(c, uid, wid)
     metrics = conversion.summarize(c, uid, wid)
     ranked = priorities.live_rankings(c, uid, wid, limit=5)
+    evidence_actions = []
+    for item in ranked:
+        try:
+            cents = int((Decimal(item['estimated_value']) * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+            if cents > 0:
+                evidence_actions.append(RevenueAction(str(item['identifier']), 'lead_followup', cents, Decimal(str(item['confidence']))))
+        except (ValueError, TypeError, InvalidOperation, KeyError):
+            continue
+    action_proposals = rank_actions(evidence_actions, limit=5)
     pending = c.execute(
         "SELECT COUNT(*) FROM bos59_actions WHERE workspace_id=? AND decision='pending'",
         (wid,)
@@ -23,7 +34,7 @@ def snapshot(c, uid, wid):
         "ORDER BY f.due_date,f.created LIMIT 8", (wid,)
     ).fetchall()
     return {"metrics": metrics, "ranked": ranked, "pending_approvals": int(pending),
-            "next_followups": due}
+            "next_followups": due, "action_proposals": action_proposals}
 
 
 def render(c, uid, wid):
@@ -71,4 +82,11 @@ def render(c, uid, wid):
         out.append('</table>')
     out.append('<p>' + link("/revenue-followups", "Schedule or record follow-up outcomes") +
                '</p></section>')
+    out.append('<section class="panel"><h2>Evidence-ranked action proposals</h2><p>Heuristic ranking of existing open leads. Values are potential, not collected revenue. Nothing is sent or executed.</p>')
+    if not data['action_proposals']:
+        out.append('<p>No eligible proposals.</p>')
+    for action in data['action_proposals']:
+        out.append('<article><strong>Review lead ' + e(action['source_id']) + '</strong> · Priority ' + e(action['priority_score']) + ' · Potential 
+ + e(format(Decimal(action['potential_cents']) / 100, ',.2f')) + '</article>')
+    out.append('</section>')
     return ''.join(out)
