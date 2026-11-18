@@ -30,6 +30,31 @@ class WorkflowHardeningTests(unittest.TestCase):
         self.assertEqual(ascension_workflows.transition(self.c,1,self.wid,"cancel","Stop"),"cancelled")
         with self.assertRaises(ValueError):
             ascension_workflows.transition(self.c,1,self.wid,"advance","Too late")
+    def test_duplicate_workflow_creation_rejected(self):
+        with self.assertRaises(ValueError):
+            ascension_workflows.create(self.c,1,self.action)
+        self.assertEqual(self.c.execute(
+            "SELECT COUNT(*) FROM ascension_workflows WHERE owner_id=? AND action_id=?",
+            (1,self.action)).fetchone()[0],1)
+
+    def test_other_owner_cannot_cancel(self):
+        with self.assertRaises(ValueError):
+            ascension_workflows.transition(self.c,2,self.wid,"cancel","Unauthorized")
+        self.assertEqual(self.c.execute(
+            "SELECT status FROM ascension_workflows WHERE id=?",
+            (self.wid,)).fetchone()[0],"active")
+        self.assertEqual(self.c.execute(
+            "SELECT COUNT(*) FROM ascension_workflow_events WHERE owner_id=? AND workflow_id=?",
+            (2,self.wid)).fetchone()[0],0)
+
+    def test_cancelled_workflow_cannot_be_cancelled_twice(self):
+        self.assertEqual(ascension_workflows.transition(self.c,1,self.wid,"cancel","Stop"),"cancelled")
+        with self.assertRaises(ValueError):
+            ascension_workflows.transition(self.c,1,self.wid,"cancel","Duplicate request")
+        self.assertEqual(self.c.execute(
+            "SELECT COUNT(*) FROM ascension_workflow_events WHERE owner_id=? AND workflow_id=? AND event='cancelled'",
+            (1,self.wid)).fetchone()[0],1)
+
     def test_stalled_proposal_signal_is_evidence_based(self):
         # A separate, unapproved CRM record must appear in the discovery queue.
         other=sales_pipeline.save(self.c,1,{"business":"Second Prospect","stage":"proposal","value":"2000"})
