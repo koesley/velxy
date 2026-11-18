@@ -3,6 +3,7 @@
 No outbound messages, autonomous spending, or unsupported revenue claims.
 """
 import csv
+import datetime
 import html
 import io
 import secrets
@@ -26,6 +27,11 @@ def init(c):
     c.execute("""CREATE TABLE IF NOT EXISTS bos59_lead_notes (
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, lead_id TEXT NOT NULL,
         author_id INTEGER NOT NULL, body TEXT NOT NULL, created INTEGER NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS bos59_tasks (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, lead_id TEXT NOT NULL,
+        title TEXT NOT NULL, due_date TEXT NOT NULL, status TEXT NOT NULL,
+        created_by INTEGER NOT NULL, created INTEGER NOT NULL, completed INTEGER)""")
+    c.execute("CREATE INDEX IF NOT EXISTS bos59_tasks_due ON bos59_tasks(workspace_id,status,due_date)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_notes_lead ON bos59_lead_notes(workspace_id,lead_id,created)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_leads_scope ON bos59_leads(workspace_id,status)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_actions_scope ON bos59_actions(workspace_id,decision)")
@@ -105,6 +111,34 @@ def add_note(c,uid,wid,lid,body):
               (nid,wid,lid,uid,body,int(time.time())))
     core.audit(c,uid,wid,"bos_lead_note_created",lid)
     return nid
+
+def add_task(c,uid,wid,lid,title,due_date):
+    core.access(c,uid,wid,write=True)
+    init(c)
+    title=_text(title,160)
+    try:
+        parsed=datetime.date.fromisoformat(due_date)
+        if parsed.isoformat()!=due_date:
+            raise ValueError("Invalid due date")
+    except (TypeError,ValueError):
+        raise ValueError("Use a valid due date (YYYY-MM-DD)")
+    if not c.execute("SELECT 1 FROM bos59_leads WHERE workspace_id=? AND id=?",(wid,lid)).fetchone():
+        raise ValueError("Lead not found")
+    tid=secrets.token_hex(12)
+    c.execute("INSERT INTO bos59_tasks VALUES(?,?,?,?,?,?,?,?,?)",
+              (tid,wid,lid,title,due_date,"open",uid,int(time.time()),None))
+    core.audit(c,uid,wid,"bos_task_created",tid)
+    return tid
+
+def complete_task(c,uid,wid,tid):
+    core.access(c,uid,wid,write=True)
+    init(c)
+    row=c.execute("SELECT lead_id FROM bos59_tasks WHERE workspace_id=? AND id=? AND status='open'",(wid,tid)).fetchone()
+    if not row:
+        raise ValueError("Open task not found")
+    c.execute("UPDATE bos59_tasks SET status='done',completed=? WHERE workspace_id=? AND id=? AND status='open'",
+              (int(time.time()),wid,tid))
+    core.audit(c,uid,wid,"bos_task_completed",tid)
 
 def overview(c,uid,wid):
     role=core.access(c,uid,wid)
@@ -287,8 +321,24 @@ def render(c,uid,wid,csrf):
     notes_by_lead={}
     for lid,body,created in c.execute("SELECT lead_id,body,created FROM bos59_lead_notes WHERE workspace_id=? ORDER BY created DESC LIMIT 500",(wid,)):
         notes_by_lead.setdefault(lid,[]).append((body,created))
+    tasks_by_lead={}
+    today=datetime.date.today().isoformat()
+    for tid,lid,title,due,status in c.execute("SELECT id,lead_id,title,due_date,status FROM bos59_tasks WHERE workspace_id=? ORDER BY due_date ASC,created ASC LIMIT 1000",(wid,)):
+        tasks_by_lead.setdefault(lid,[]).append((tid,title,due,status))
+    open_tasks=[(lid,tid,title,due) for lid,items in tasks_by_lead.items() for tid,title,due,status in items if status=="open"]
+    due_now=sum(due<=today for lid,tid,title,due in open_tasks)
+    out.append('<section class="ov-panel"><h2>Customer task manager</h2><p>New: schedule follow-up work, see upcoming deadlines, and mark tasks completed.</p><p><strong>'+h(due_now)+'</strong> tasks due or overdue · <strong>'+h(len(open_tasks))+'</strong> open tasks</p></section>')
     for lead in d["leads"]:
         out.append('<section class="ov-panel"><h2>'+h(lead["name"])+'</h2><p>'+h(lead["source"])+' · '+h(lead["status"])+' · potential value '+h(lead["value"])+'</p>')
+        out.append('<h3>Customer tasks</h3>')
+        for tid,task_title,due,status in tasks_by_lead.get(lead["id"],[])[:15]:
+            label="Overdue" if status=="open" and due<today else "Due today" if status=="open" and due==today else status.title()
+            out.append('<article class="ov-job"><strong>'+h(task_title)+'</strong><p>Due '+h(due)+' · '+h(label)+'</p>')
+            if status=="open" and d["role"] in ("owner","editor"):
+                out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="task" value="'+h(tid)+'"><button name="action" value="complete_task">Mark completed</button></form>')
+            out.append('</article>')
+        if d["role"] in ("owner","editor"):
+            out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="lead" value="'+h(lead["id"])+'"><label>New task<input name="task_title" maxlength="160" required placeholder="Call customer about quote"></label><label>Due date<input type="date" name="due_date" required></label><button name="action" value="add_task">Schedule task</button></form>')
         out.append('<h3>Customer interaction history</h3>')
         for note_body,note_created in notes_by_lead.get(lead["id"],[])[:20]:
             out.append('<article class="ov-job"><small>'+h(time.strftime("%Y-%m-%d %H:%M UTC",time.gmtime(note_created)))+'</small><p>'+h(note_body)+'</p></article>')
