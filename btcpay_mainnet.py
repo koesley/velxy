@@ -268,6 +268,8 @@ def _claim_and_activate(conn, user_id, order_id, invoice_id):
         (user_id, subscriptions.PRODUCT_KEY, subscriptions.PRICING_PLAN, 'active', invoice_id,
          start, end, t, VERIFICATION_SOURCE, t))
     log_event('pro_activated', order_id=order_id, invoice_id=invoice_id, user_id=user_id)
+    import site_stats
+    site_stats.record(conn, 'pro_activated', order_id)
     return True
 
 

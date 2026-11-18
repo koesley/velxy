@@ -12,6 +12,7 @@ import persistent
 import agent_core
 import license_verification
 import subscriptions
+import site_stats
 import btcpay_integration
 import btcpay_mainnet
 import sales_pipeline
@@ -162,6 +163,7 @@ def db():
  c.execute("CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, filename TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL, digest TEXT NOT NULL, email_status TEXT NOT NULL DEFAULT 'not_sent', FOREIGN KEY(user_id) REFERENCES users(id))")
  c.execute("CREATE TABLE IF NOT EXISTS deliveries (report_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', next_attempt INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(report_id) REFERENCES reports(id))")
  c.execute('CREATE TABLE IF NOT EXISTS paid_licenses (license_hash TEXT PRIMARY KEY, license_key TEXT NOT NULL, user_id INTEGER NOT NULL UNIQUE, redeemed_at INTEGER NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
+ site_stats.ensure(c)
  payhip_integration.setup(c)
  subscriptions.setup(c)
  business_v3.setup(c)
@@ -373,6 +375,32 @@ def landing_buy_html(user,csrf):
   return '<button class="v8-primary" type="button" disabled>Get PRO — $49 with Bitcoin</button><p class="v8-buy-note">Bitcoin checkout is coming soon. Create a demo account to try the free reports meanwhile.</p>'
  nxt=urllib.parse.quote('/about',safe='')
  return '<a class="v8-primary" href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a><p class="v8-buy-note">Sign in to continue to secure Bitcoin checkout. New here? <a href="/register?next='+nxt+'">Create a demo account</a> first.</p>'
+
+def pro_upgrade_html(user,csrf,pending_mainnet=None):
+ """PRO upsell block, shared by the dashboard and the paywall page.
+
+ Same three states the dashboard shows: a pending payment gets a
+ continue-to-checkout panel, an enabled checkout gets the real BTCPay
+ form, and a disabled checkout gets the manual-arrangement text. One
+ helper so the paywall can never drift from what a paying customer sees.
+ """
+ if btcpay_mainnet.checkout_enabled():
+  if pending_mainnet:
+   return '<section class="panel"><h2>Bitcoin payment pending</h2><p>Your $49 PRO payment is waiting for Bitcoin payment. Complete it at the BTCPay checkout, then use Check payment status — PRO activates automatically once the payment settles.</p><p><a href="'+escape(pending_mainnet['checkout_url'])+'">Continue to BTCPay checkout</a></p><form method="post" action="/btcpay/mainnet/check-status"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Check payment status</button></form></section>'
+  return '<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>50 reports per billing cycle. Pay with Bitcoin: BTCPay creates a secure invoice and PRO activates automatically once the payment settles. Nothing is charged until you pay.</p><form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Pay $49 with Bitcoin</button></form></section>'
+ btc_address=os.getenv('VELXTRIA_BITCOIN_ADDRESS','bc1qxdjxk3kzke0shnlqupkndyel7mf9v6fahfkgx4').strip()
+ return '<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Direct Bitcoin payment is available by manual arrangement only. Contact the VELXTRIA operator to confirm the exact BTC amount and payment reference <strong>before sending</strong>. No automatic invoice, exchange-rate quote, payment verification, or access activation is enabled.</p><p>Bitcoin network (BTC) receiving address:</p><p><code style="overflow-wrap:anywhere;word-break:break-all">'+escape(btc_address)+'</code></p><p><strong>Do not send BTC until you receive a confirmed amount and instructions.</strong> Payments to the wrong network or address may be irreversible.</p></section>'
+
+def paywall_html(user,csrf,used,pending_mainnet=None):
+ """Free-limit page: the moment a user is most likely to pay, show them
+ how instead of a bare error. `used` is their lifetime free-report count.
+ """
+ return ('<section class="panel"><h2>You have used your 3 free reports</h2>'
+  '<p>You have generated '+str(used)+' free reports — the lifetime free allowance. '
+  'Go PRO to keep going: 50 reports per billing cycle for $49 / 30 days, paid with Bitcoin. '
+  'PRO activates automatically once the payment settles.</p></section>'
+  +pro_upgrade_html(user,csrf,pending_mainnet)
+  +'<p><a href="/">Back to dashboard</a></p>')
 
 def landing_pricing_html(user,csrf):
  return '''<section id="v8-pricing" class="v8-pricing"><div class="v8-sectiontop"><span>02 / PRICING</span><span>SIMPLE, NO SURPRISES.</span></div><h2>START FREE.<br><em>GO PRO WHEN IT PAYS.</em></h2><div class="v8-plans"><article class="v8-plan"><h3>FREE</h3><p class="v8-price">$0</p><ul><li>3 reports, lifetime</li><li>Upload a sales CSV, get cleaned data and summaries</li><li>No card, no purchase required</li></ul><a class="v8-ghost" href="/register">Create demo account ↗</a></article><article class="v8-plan v8-plan-pro"><h3>PRO</h3><p class="v8-price">$49 <span>/ 30 days</span></p><ul><li>50 reports per billing cycle</li><li>Pay with Bitcoin — verified automatically via BTCPay</li><li>PRO activates once the payment settles</li></ul>'''+landing_buy_html(user,csrf)+'''</article></div><p class="v8-pricing-note">Prices in USD. Bitcoin payment only — no card, no Stripe.</p></section>'''
@@ -756,6 +784,12 @@ class Handler(BaseHTTPRequestHandler):
    except Exception:
     status='failed'
    return self.respond(200 if status=='connected' else 503,status,'text/plain')
+  if p=='/founder-stats':
+   user,csrf,_=self.identity()
+   if not user:return self.fail(401,'Please sign in first.')
+   if user['role']!='admin':return self.fail(403,'Founder access required.',user,csrf)
+   with db() as c:totals,daily,recent=site_stats.summary(c)
+   return self.respond(200,shell('Founder stats',site_stats.stats_html(totals,daily,recent),user,csrf))
   if p=='/ascension-workflows':
    auth=self.require()
    if not auth:return
@@ -834,6 +868,7 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,shell('Outreach Studio',body,user,csrf))
   if p=='/about':
    user,csrf,_=self.identity()
+   with db() as c:site_stats.record(c,'about_view')
    return self.respond(200,shell('Meet VELXTRIA',landing_page(user,csrf)))
   if p=='/checkout-feedback.js':
    js="""document.addEventListener('submit',function(e){var f=e.target;if(!f || !f.action || !f.action.includes('/btcpay/mainnet/checkout'))return;var b=f.querySelector('button[type="submit"],button:not([type])');if(!b)return;if(b.disabled){e.preventDefault();return;}b.disabled=true;b.textContent='Preparing secure Bitcoin checkout…';b.setAttribute('aria-busy','true');var note=document.createElement('span');note.setAttribute('role','status');note.textContent=' Creating your invoice; please wait.';f.appendChild(note);});"""
@@ -876,7 +911,9 @@ class Handler(BaseHTTPRequestHandler):
    data=take_demo_zip(token)
    if data is None:return self.respond(404,'Demo download expired — run the demo again to generate a new report.','text/plain')
    return self.respond(200,data,'application/zip',headers=[('Content-Disposition','attachment; filename="VELXTRIA_Demo_Report.zip"')])
-  if p=='/' and not user:return self.respond(200,shell('Sales reporting made simple',landing_page(user,csrf)))
+  if p=='/' and not user:
+   with db() as c:site_stats.record(c,'landing_view')
+   return self.respond(200,shell('Sales reporting made simple',landing_page(user,csrf)))
   if not user:return self.redirect('/login')
   if p=='/sales-execution':
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
@@ -1188,22 +1225,13 @@ class Handler(BaseHTTPRequestHandler):
    access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 3 reports total · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
    limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '3 free reports total'
-   if ent['plan']!='pro':
-    if btcpay_mainnet.checkout_enabled():
-     if pending_mainnet:
-      upgrade_html='<section class="panel"><h2>Bitcoin payment pending</h2><p>Your $49 PRO payment is waiting for Bitcoin payment. Complete it at the BTCPay checkout, then use Check payment status — PRO activates automatically once the payment settles.</p><p><a href="'+escape(pending_mainnet['checkout_url'])+'">Continue to BTCPay checkout</a></p><form method="post" action="/btcpay/mainnet/check-status"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Check payment status</button></form></section>'
-     else:
-      upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>50 reports per billing cycle. Pay with Bitcoin: BTCPay creates a secure invoice and PRO activates automatically once the payment settles. Nothing is charged until you pay.</p><form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Pay $49 with Bitcoin</button></form></section>'
-    else:
-     btc_address=os.getenv('VELXTRIA_BITCOIN_ADDRESS','bc1qxdjxk3kzke0shnlqupkndyel7mf9v6fahfkgx4').strip()
-     upgrade_html='<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Direct Bitcoin payment is available by manual arrangement only. Contact the VELXTRIA operator to confirm the exact BTC amount and payment reference <strong>before sending</strong>. No automatic invoice, exchange-rate quote, payment verification, or access activation is enabled.</p><p>Bitcoin network (BTC) receiving address:</p><p><code style="overflow-wrap:anywhere;word-break:break-all">'+escape(btc_address)+'</code></p><p><strong>Do not send BTC until you receive a confirmed amount and instructions.</strong> Payments to the wrong network or address may be irreversible.</p></section>'
-   else: upgrade_html=''
+   upgrade_html=pro_upgrade_html(user,csrf,pending_mainnet) if ent['plan']!='pro' else ''
    body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section><section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
    if os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE: body+='<section class="panel"><h2>Site Studio</h2><a href="/site-studio">Create a company website draft</a></section>'
    body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
    body+=upgrade_html
    if user['role']=='admin':
-    body+='<section class="panel"><a href="/agents">Open Founder Agent Control</a></section>'
+    body+='<section class="panel"><a href="/agents">Open Founder Agent Control</a> · <a href="/founder-stats">Founder stats — traffic and funnel</a></section>'
     with db() as c:
      users=c.execute('SELECT email,role,access FROM users ORDER BY created DESC').fetchall();errors=c.execute("SELECT count(*) FROM reports WHERE status != 'ready'").fetchone()[0]
     body+='<section class="panel"><h2>Founder overview</h2><p>Accounts: '+str(len(users))+' · Failed reports: '+str(errors)+'</p><p>Payhip verification: <strong>STAGING ONLY — manual review; no automatic access</strong>. SMTP: <strong>'+('configured' if DELIVERY_ENABLED else 'not configured')+'</strong>. Do not use this prototype to enforce paid access.</p></section>'
@@ -2731,7 +2759,9 @@ class Handler(BaseHTTPRequestHandler):
    if not valid_email(email) or len(password)<12 or len(password)>256:return self.fail(400,'Use a valid email and password of 12–256 characters.')
    salt=secrets.token_hex(16)
    try:
-    with db() as c:c.execute('INSERT INTO users(email,salt,pw_hash,role,access,created) VALUES (?,?,?,?,?,?)',(email,salt,pw_hash(password,salt),'customer','demo',now()))
+    with db() as c:
+     c.execute('INSERT INTO users(email,salt,pw_hash,role,access,created) VALUES (?,?,?,?,?,?)',(email,salt,pw_hash(password,salt),'customer','demo',now()))
+     site_stats.record(c,'signup')
    except (sqlite3.IntegrityError, persistent_integrity_error()):return self.fail(409,'Account already exists.')
    nxt=safe_next(fields.get('next',''))
    dest='/login?registered=1'
@@ -2758,6 +2788,7 @@ class Handler(BaseHTTPRequestHandler):
    except ValueError as exc:return self.demo_fail(str(exc))
    except Exception as exc:return self.demo_fail('Could not process this file: '+str(exc)[:240])
    token=store_demo_zip(report['zip_bytes'])
+   with db() as c:site_stats.record(c,'demo_run','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
    return self.respond(200,shell('Your demo report',demo_result_html(report,token)))
   ident=self.require()
   if not ident:return
@@ -3175,6 +3206,7 @@ class Handler(BaseHTTPRequestHandler):
     return self.fail(503,'Unable to create Bitcoin invoice. Try again later.',user,csrf)
    with db() as c:
     c.execute("UPDATE btcpay_orders SET invoice_id=?,checkout_url=?,status='pending' WHERE order_id=? AND network='mainnet' AND status='creating'",(invoice_id,checkout_url,order_id))
+    site_stats.record(c,'checkout_started',order_id)
    return self.redirect(checkout_url)
   if p=='/btcpay/mainnet/check-status':
    if not btcpay_mainnet.configured():
@@ -3221,13 +3253,17 @@ class Handler(BaseHTTPRequestHandler):
   with LOCK:
    with db() as c:
     ent,count,remaining=subscriptions.usage(c,user['id'])
-    if remaining<=0:return self.fail(429,'Report allowance reached for this period.',user,csrf)
+    if remaining<=0:
+     pending_mainnet=btcpay_mainnet.pending_order(c,user['id']) if ent['plan']!='pro' else None
+     site_stats.record(c,'paywall_shown','used='+str(count))
+     return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
    ident=secrets.token_hex(16);digest=hashlib.sha256(data).hexdigest()
    try:
     report=run_report_engine(data)
     persistent.store(user['id'],ident,report['zip_bytes'],REPORTS)
     with db() as c:
      c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',report['accepted'],report['rejected'],digest))
+     site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
      if fields.get('email_report')=='yes':
       c.execute('INSERT INTO deliveries(report_id,user_id,recipient,status,next_attempt) VALUES (?,?,?,?,?)',(ident,user['id'],user['email'],'queued' if DELIVERY_ENABLED else 'not_configured',now()))
       c.execute('UPDATE reports SET email_status=? WHERE id=?',('queued' if DELIVERY_ENABLED else 'not_configured',ident))
