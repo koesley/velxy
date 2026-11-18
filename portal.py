@@ -1379,6 +1379,7 @@ class Handler(BaseHTTPRequestHandler):
       elif action=='add_service':business_os_v59.add_service(c,user['id'],wid,fields.get('service_name',''),fields.get('service_description',''),fields.get('service_price',''))
       elif action=='archive_service':business_os_v59.archive_service(c,user['id'],wid,fields.get('service',''))
       elif action=='quote_service':business_os_v59.quote_from_service(c,user['id'],wid,fields.get('lead',''),fields.get('service',''),fields.get('quantity',''))
+      elif action=='quote_status':business_os_v59.update_quote(c,user['id'],wid,fields.get('quote',''),fields.get('quote_status',''))
       elif action=='propose':business_os_v59.propose(c,user['id'],wid,fields.get('lead',''),fields.get('message',''))
       elif action=='review':business_os_v59.review(c,user['id'],wid,fields.get('draft',''),fields.get('decision',''),fields.get('reason',''))
       else:raise ValueError('Unknown action')
