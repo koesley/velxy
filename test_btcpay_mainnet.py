@@ -93,6 +93,12 @@ class MainnetTestCase(unittest.TestCase):
         with patch.dict(os.environ, {'VELXTRIA_BTCPAY_MAINNET_STORE_ID': ''}):
             self.assertFalse(btcpay_mainnet.configured())
 
+    def test_configured_allows_mainnet_demo_host(self):
+        # BTCPay's official mainnet demo is a real mainnet instance, not
+        # testnet: it must be accepted as the production host.
+        with patch.dict(os.environ, {'VELXTRIA_BTCPAY_MAINNET_URL': 'https://mainnet.demo.btcpayserver.org'}):
+            self.assertTrue(btcpay_mainnet.configured())
+
     def test_checkout_enabled_requires_flag(self):
         self.assertTrue(btcpay_mainnet.checkout_enabled())
         with patch.dict(os.environ, {'VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT': '0'}):

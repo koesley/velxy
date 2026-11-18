@@ -90,8 +90,10 @@ separate and are for local development only.
 
 ## 5. Confirm the server supports real mainnet payments
 
-The code refuses testnet/demo hosts in mainnet mode, but the URL alone
-cannot prove the store is on mainnet. Run both checks:
+The code refuses testnet hosts in mainnet mode. BTCPay's official mainnet
+demo (mainnet.demo.btcpayserver.org) is a real mainnet instance and is
+allowed. The URL alone cannot prove the store is on mainnet, so run both
+checks:
 
 **A. Automated check (no funds spent, no invoice created):**
 
