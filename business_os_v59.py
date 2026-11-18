@@ -39,6 +39,11 @@ def init(c):
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL,
         description TEXT NOT NULL, unit_price REAL NOT NULL, active INTEGER NOT NULL,
         created INTEGER NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS bos59_fulfillment (
+        id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, quote_id TEXT NOT NULL,
+        lead_id TEXT NOT NULL, task_id TEXT NOT NULL, status TEXT NOT NULL,
+        created INTEGER NOT NULL, completed INTEGER, UNIQUE(workspace_id,quote_id))""")
+    c.execute("CREATE INDEX IF NOT EXISTS bos59_fulfillment_lead ON bos59_fulfillment(workspace_id,lead_id,status)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_services_scope ON bos59_services(workspace_id,active)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_quotes_lead ON bos59_quotes(workspace_id,lead_id,created)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_tasks_due ON bos59_tasks(workspace_id,status,due_date)")
@@ -222,6 +227,10 @@ def complete_task(c,uid,wid,tid):
     c.execute("UPDATE bos59_tasks SET status='done',completed=? WHERE workspace_id=? AND id=? AND status='open'",
               (int(time.time()),wid,tid))
     core.audit(c,uid,wid,"bos_task_completed",tid)
+    related=c.execute("SELECT id FROM bos59_fulfillment WHERE workspace_id=? AND task_id=? AND status='open'",(wid,tid)).fetchone()
+    if related:
+        c.execute("UPDATE bos59_fulfillment SET status='ready_for_review' WHERE workspace_id=? AND id=? AND status='open'",(wid,related[0]))
+        core.audit(c,uid,wid,"bos_fulfillment_ready_for_review",related[0])
 
 def create_quote(c,uid,wid,lid,description,quantity,unit_price):
     """Create a draft estimate. No invoice, charge or outbound delivery."""
@@ -298,15 +307,35 @@ def update_quote(c,uid,wid,qid,new_status):
     c.execute("UPDATE bos59_quotes SET status=? WHERE id=? AND workspace_id=?",(new_status,qid,wid))
     core.audit(c,uid,wid,"bos_quote_"+new_status,qid)
     if new_status=="accepted":
-        existing=c.execute("SELECT 1 FROM bos59_tasks WHERE workspace_id=? AND lead_id=? AND title=? AND status='open'",
-                           (wid,lid,"Fulfill accepted quote "+qid[:8])).fetchone()
+        existing=c.execute("SELECT id FROM bos59_fulfillment WHERE workspace_id=? AND quote_id=?",(wid,qid)).fetchone()
         if not existing:
             now=int(time.time())
             due=(datetime.date.today()+datetime.timedelta(days=1)).isoformat()
+            task_id=secrets.token_hex(12)
+            project_id=secrets.token_hex(12)
             c.execute("INSERT INTO bos59_tasks VALUES(?,?,?,?,?,?,?,?,?)",
-                      (secrets.token_hex(12),wid,lid,"Fulfill accepted quote "+qid[:8],due,"open",uid,now,None))
-            core.audit(c,uid,wid,"bos_quote_fulfillment_task_created",qid)
+                      (task_id,wid,lid,"Fulfill accepted quote "+qid[:8],due,"open",uid,now,None))
+            c.execute("INSERT INTO bos59_fulfillment VALUES(?,?,?,?,?,?,?,?)",
+                      (project_id,wid,qid,lid,task_id,"open",now,None))
+            core.audit(c,uid,wid,"bos_fulfillment_created",project_id)
     return new_status
+
+def confirm_fulfillment(c,uid,wid,project_id):
+    """Owner/editor confirms actual delivery after task completion."""
+    core.access(c,uid,wid,write=True)
+    init(c)
+    row=c.execute("SELECT quote_id,task_id,status FROM bos59_fulfillment WHERE workspace_id=? AND id=?",(wid,project_id)).fetchone()
+    if not row:
+        raise ValueError("Fulfillment project not found")
+    qid,tid,status=row
+    if status!="ready_for_review":
+        raise ValueError("Complete fulfillment work before confirming delivery")
+    task=c.execute("SELECT status FROM bos59_tasks WHERE workspace_id=? AND id=?",(wid,tid)).fetchone()
+    if not task or task[0]!="done":
+        raise ValueError("Fulfillment task is not complete")
+    c.execute("UPDATE bos59_fulfillment SET status='delivered',completed=? WHERE workspace_id=? AND id=? AND status='ready_for_review'",
+              (int(time.time()),wid,project_id))
+    core.audit(c,uid,wid,"bos_fulfillment_delivered",project_id)
 
 def quote_workflow_summary(c,uid,wid):
     core.access(c,uid,wid)
@@ -551,6 +580,9 @@ def render(c,uid,wid,csrf,search="",status_filter="all",page=1):
     open_tasks=[(lid,tid,title,due) for lid,items in tasks_by_lead.items() for tid,title,due,status in items if status=="open"]
     due_now=sum(due<=today for lid,tid,title,due in open_tasks)
     out.append('<section class="ov-panel"><h2>Customer task manager</h2><p>New: schedule follow-up work, see upcoming deadlines, and mark tasks completed.</p><p><strong>'+h(due_now)+'</strong> tasks due or overdue · <strong>'+h(len(open_tasks))+'</strong> open tasks</p></section>')
+    fulfillment_by_lead={}
+    for fid,lid,qid,tid,state in c.execute("SELECT id,lead_id,quote_id,task_id,status FROM bos59_fulfillment WHERE workspace_id=? ORDER BY created DESC LIMIT 500",(wid,)):
+        fulfillment_by_lead.setdefault(lid,[]).append((fid,qid,tid,state))
     quotes_by_lead={}
     for qid,lid,description,qty,price,status in c.execute("SELECT id,lead_id,description,quantity,unit_price,status FROM bos59_quotes WHERE workspace_id=? ORDER BY created DESC LIMIT 500",(wid,)):
         quotes_by_lead.setdefault(lid,[]).append((qid,description,qty,price,status))
@@ -598,6 +630,13 @@ def render(c,uid,wid,csrf,search="",status_filter="all",page=1):
         for when,kind,detail in timeline[:30]:
             out.append('<article class="ov-job"><small>'+h(time.strftime("%Y-%m-%d",time.gmtime(when)))+' · '+h(kind)+'</small><p>'+h(detail)+'</p></article>')
         out.append('</details>')
+        if fulfillment_by_lead.get(lead["id"]):
+            out.append('<h3>Fulfillment projects</h3>')
+            for fid,qid,tid,state in fulfillment_by_lead[lead["id"]]:
+                out.append('<article class="ov-job"><strong>Quote '+h(qid[:8])+'</strong><p>Delivery status: '+h(state.replace("_"," ").title())+'</p>')
+                if state=="ready_for_review" and d["role"] in ("owner","editor"):
+                    out.append('<form method="post" action="'+url+'">'+hidden+'<input type="hidden" name="project" value="'+h(fid)+'"><button name="action" value="confirm_fulfillment">Confirm delivered</button></form>')
+                out.append('</article>')
         out.append('<h3>Customer tasks</h3>')
         for tid,task_title,due,status in tasks_by_lead.get(lead["id"],[])[:15]:
             label="Overdue" if status=="open" and due<today else "Due today" if status=="open" and due==today else status.title()
