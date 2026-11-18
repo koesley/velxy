@@ -95,5 +95,36 @@ class SalesPipelineTests(unittest.TestCase):
         self.assertNotIn("<script>",html)
         self.assertIn("&lt;script&gt;",html)
 
+
+    def test_quality_review_counts_only_open_leads(self):
+        sales_pipeline.save(self.c,1,{"business":"Cafe One","stage":"new"})
+        sales_pipeline.save(self.c,1,{"business":"Cafe Two","stage":"won"})
+        result=sales_pipeline.lead_quality_review(self.c,1)
+        self.assertEqual(result["open_leads"],1)
+        self.assertEqual(result["missing_contact"],1)
+        self.assertEqual(result["missing_industry"],1)
+        self.assertEqual(result["missing_value"],1)
+
+    def test_quality_review_tenant_isolation_and_duplicates(self):
+        lead={"business":"Example Cafe","email":"owner@example.com","stage":"new"}
+        sales_pipeline.save(self.c,1,lead)
+        sales_pipeline.save(self.c,1,dict(lead,business=" example cafe "))
+        sales_pipeline.save(self.c,2,lead)
+        self.assertEqual(sales_pipeline.lead_quality_review(self.c,1)["potential_duplicates"],1)
+        self.assertEqual(sales_pipeline.lead_quality_review(self.c,2)["potential_duplicates"],0)
+
+    def test_quality_review_no_false_duplicates_without_email(self):
+        sales_pipeline.save(self.c,1,{"business":"Example Cafe"})
+        sales_pipeline.save(self.c,1,{"business":"Example Cafe"})
+        self.assertEqual(sales_pipeline.lead_quality_review(self.c,1)["potential_duplicates"],0)
+
+    def test_quality_review_html_and_no_mutations(self):
+        sales_pipeline.save(self.c,1,{"business":"<script>alert(1)</script>"})
+        before=self.c.execute("SELECT COUNT(*) FROM sales_pipeline_leads").fetchone()[0]
+        rendered=sales_pipeline.dashboard(self.c,1,"csrf")
+        self.assertIn("Lead data quality",rendered)
+        self.assertNotIn("<script>",rendered)
+        self.assertEqual(before,self.c.execute("SELECT COUNT(*) FROM sales_pipeline_leads").fetchone()[0])
+
 if __name__=="__main__":
     unittest.main()
