@@ -1376,6 +1376,7 @@ class Handler(BaseHTTPRequestHandler):
       elif action=='note':business_os_v59.add_note(c,user['id'],wid,fields.get('lead',''),fields.get('note',''))
       elif action=='add_task':business_os_v59.add_task(c,user['id'],wid,fields.get('lead',''),fields.get('task_title',''),fields.get('due_date',''))
       elif action=='complete_task':business_os_v59.complete_task(c,user['id'],wid,fields.get('task',''))
+      elif action=='confirm_fulfillment':business_os_v59.confirm_fulfillment(c,user['id'],wid,fields.get('project',''))
       elif action=='create_quote':business_os_v59.create_quote(c,user['id'],wid,fields.get('lead',''),fields.get('quote_description',''),fields.get('quote_quantity',''),fields.get('quote_price',''))
       elif action=='add_service':business_os_v59.add_service(c,user['id'],wid,fields.get('service_name',''),fields.get('service_description',''),fields.get('service_price',''))
       elif action=='archive_service':business_os_v59.archive_service(c,user['id'],wid,fields.get('service',''))
