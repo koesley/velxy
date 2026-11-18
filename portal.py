@@ -649,7 +649,7 @@ class Handler(BaseHTTPRequestHandler):
       row=c.execute('SELECT workspace_id FROM empire_members WHERE user_id=? LIMIT 1',(user['id'],)).fetchone();wid=row[0] if row else ''
      if not wid:raise ValueError('Create a workspace first')
      if p.endswith('.csv'):body=business_os_v59.export_csv(c,user['id'],wid)
-     elif p=='/business-os-v59':body=business_os_v59.render(c,user['id'],wid,csrf)
+     elif p=='/business-os-v59':body=business_os_v59.render(c,user['id'],wid,csrf,q.get('search',[''])[0],q.get('status',['all'])[0],q.get('page',['1'])[0])
      else:body=business_agents_v59.render(c,user['id'],wid,csrf)
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
    if p.endswith('.csv'):return self.respond(200,body.encode('utf-8'),'text/csv; charset=utf-8',headers=[('Content-Disposition','attachment; filename="velxtria-leads.csv"')])
