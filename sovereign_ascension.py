@@ -75,8 +75,12 @@ def action(c, owner, lead_id, kind, decision, note=""):
           AND kind=? AND status='approved' ORDER BY created_at DESC LIMIT 1""",(owner,lead_id,kind)).fetchone()
         if not existing:
             raise ValueError("An approved action is required before completion")
-        c.execute("UPDATE ascension_actions SET status='completed',note=?,updated_at=? WHERE id=? AND owner_id=?",
-                  (note[:500],int(time.time()),existing[0],owner))
+        changed=c.execute("""UPDATE ascension_actions SET status='completed',note=?,updated_at=?
+            WHERE id=? AND owner_id=? AND status='approved'""",
+            (note[:500],int(time.time()),existing[0],owner))
+        updated_rows=changed.cursor.rowcount if hasattr(changed,"cursor") else changed.rowcount
+        if updated_rows != 1:
+            raise ValueError("Action changed concurrently; reload before completing")
         return existing[0]
     ident=secrets.token_hex(12)
     c.execute("""INSERT INTO ascension_actions VALUES (?,?,?,?,?,?,?,?)""",
