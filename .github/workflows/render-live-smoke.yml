@@ -1,0 +1,42 @@
+name: Render live smoke verification
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify Render health and protected Ascension routes
+        env:
+          BASE_URL: https://velxtria-private-preview-tzie.onrender.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${BASE_URL%/}"
+          echo "Checking Render health endpoint (free-tier cold starts may take time)"
+          healthy=0
+          for attempt in $(seq 1 12); do
+            status=$(curl --silent --show-error --location --max-time 25 --output /tmp/velxtria-health --write-out '%{http_code}' "$base/healthz" || true)
+            if [ "$status" = 200 ] && grep -qx 'ok' /tmp/velxtria-health; then
+              healthy=1
+              break
+            fi
+            echo "Health check attempt $attempt: HTTP $status"
+            sleep 15
+          done
+          if [ "$healthy" -ne 1 ]; then
+            echo "::error::Render health did not return HTTP 200 with expected body"
+            exit 1
+          fi
+          echo "Render health is reachable"
+          for path in /ascension /ascension-recovery; do
+            code=$(curl --silent --show-error --max-time 25 --output /tmp/velxtria-route --write-out '%{http_code}' "$base$path")
+            if [ "$code" != 401 ] && [ "$code" != 403 ]; then
+              echo "::error::$path returned HTTP $code without a session; expected 401 or 403"
+              exit 1
+            fi
+            echo "$path denies unauthenticated access (HTTP $code)"
+          done
+          echo "Smoke verification passed. This checks reachability and access controls, not deployed commit identity or authenticated behavior."
