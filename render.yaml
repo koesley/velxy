@@ -15,8 +15,12 @@ services:
         sync: false
       # Production BTCPay (mainnet) — values are entered in the Render
       # dashboard and never committed. See BTCPAY_MAINNET_SETUP.md.
-      # Keep VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT at '0' until the
-      # production server, store, and webhook are verified.
+      # The checkout flag is dashboard-controlled (sync: false): it was
+      # previously declared here as value '0', so every blueprint sync
+      # silently reset it to 0 and turned checkout off — including after
+      # it had been switched on in the dashboard and verified live with
+      # a real invoice. The store, server and webhook are verified, so
+      # the dashboard value now rules and deploys must not touch it.
       - key: VELXTRIA_BTCPAY_MAINNET_URL
         sync: false
       - key: VELXTRIA_BTCPAY_MAINNET_STORE_ID
@@ -26,4 +30,4 @@ services:
       - key: VELXTRIA_BTCPAY_MAINNET_WEBHOOK_SECRET
         sync: false
       - key: VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT
-        value: '0'
+        sync: false
