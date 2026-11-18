@@ -1,0 +1,24 @@
+name: Report actionable insights
+on:
+  pull_request:
+    paths:
+      - 'report_insights.py'
+      - 'test_report_insights.py'
+      - 'portal.py'
+      - '.github/workflows/report-insights.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'report_insights.py'
+      - 'test_report_insights.py'
+      - 'portal.py'
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest test_report_insights -v
+      - run: python -m compileall -q report_insights.py portal.py
