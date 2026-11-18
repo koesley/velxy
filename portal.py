@@ -247,14 +247,25 @@ S-1008,2026-11-15,Sample Customer G,Gutter Cleaning,0,120.00,Paid,Louisville
 
 _SAMPLE_REPORT_HTML=None
 
-def _csv_table_html(path):
- with path.open(encoding='utf-8-sig',newline='') as f:rows=list(csv.reader(f))
+def _csv_rows_html(rows):
  if not rows:return ''
  head,body=rows[0],rows[1:]
  out=['<table><thead><tr>'+''.join('<th>'+escape(c)+'</th>' for c in head)+'</tr></thead><tbody>']
  for r in body:out.append('<tr>'+''.join('<td>'+escape(c)+'</td>' for c in r)+'</tr>')
  out.append('</tbody></table>')
  return ''.join(out)
+
+def _csv_table_html(path):
+ with path.open(encoding='utf-8-sig',newline='') as f:rows=list(csv.reader(f))
+ return _csv_rows_html(rows)
+
+def _read_csv_rows(path):
+ with path.open(encoding='utf-8-sig',newline='') as f:return list(csv.reader(f))
+
+def report_summaries_html(monthly_rows,product_rows,stats):
+ """Monthly + product summary tables with the headline stats, as shown on
+ the landing page sample report and the instant demo result."""
+ return ('<div class="v8-sample-tables"><div><h4>Monthly summary</h4>'+_csv_rows_html(monthly_rows)+'</div><div><h4>Product summary</h4>'+_csv_rows_html(product_rows)+'</div></div><p class="v8-sample-stats">'+' · '.join(escape(l) for l in stats)+'</p>')
 
 def sample_report_html():
  """Render the public sample report with the real report engine.
@@ -267,17 +278,81 @@ def sample_report_html():
  if _SAMPLE_REPORT_HTML is not None:return _SAMPLE_REPORT_HTML
  _SAMPLE_REPORT_HTML=''
  try:
-  with tempfile.TemporaryDirectory() as t:
-   work=Path(t);shutil.copy2(ROOT/'automate.py',work/'automate.py');(work/'messy_sales_input.csv').write_text(SAMPLE_SALES_CSV,encoding='utf-8')
-   result=subprocess.run([sys.executable,'-I',str(work/'automate.py')],cwd=work,timeout=30,capture_output=True,text=True)
-   if result.returncode:return ''
-   out=work/'output'
-   summary=(out/'run_summary.txt').read_text(encoding='utf-8')
-   stats=[l for l in summary.splitlines() if l.startswith(('Source rows:','Accepted rows:','Rejected rows:','Paid revenue'))]
-   _SAMPLE_REPORT_HTML=('<div class="v8-sample-tables"><div><h4>Monthly summary</h4>'+_csv_table_html(out/'monthly_summary.csv')+'</div><div><h4>Product summary</h4>'+_csv_table_html(out/'product_summary.csv')+'</div></div><p class="v8-sample-stats">'+' · '.join(escape(l) for l in stats)+'</p>')
+  report=run_report_engine(SAMPLE_SALES_CSV.encode('utf-8'))
+  _SAMPLE_REPORT_HTML=report_summaries_html(report['monthly_rows'],report['product_rows'],report['stats'])
  except Exception:
   _SAMPLE_REPORT_HTML=''
  return _SAMPLE_REPORT_HTML
+
+# The five files the report engine produces for every report.
+REPORT_FILES=['cleaned_sales.csv','rejected_rows.csv','monthly_summary.csv','product_summary.csv','run_summary.txt']
+
+def validate_csv_upload(filename,data,columns_hint='Expand the required headers on the dashboard.'):
+ """Shared upload validation for the dashboard upload and the anonymous demo.
+
+ Returns the decoded CSV text. Raises ValueError with the same messages the
+ dashboard upload has always shown, so existing behaviour is unchanged.
+ """
+ if not filename.lower().endswith('.csv') or not data or len(data)>MAX_BYTES:
+  raise ValueError('Upload one nonempty CSV file up to 5 MB.')
+ if b'\x00' in data:raise ValueError('Invalid CSV file.')
+ try:decoded=data.decode('utf-8-sig')
+ except UnicodeError:raise ValueError('Could not read this file as UTF-8 text.')
+ reader=csv.DictReader(io.StringIO(decoded))
+ if reader.fieldnames!=REQUIRED:raise ValueError('Incorrect columns. '+columns_hint)
+ if len(decoded.splitlines())>20001:raise ValueError('Limit is 20,000 lines per upload.')
+ return decoded
+
+def run_report_engine(data):
+ """Run the real report engine on raw CSV bytes.
+
+ Returns {'zip_bytes','accepted','rejected','stats','monthly_rows',
+ 'product_rows','summary'}. Raises ValueError on any processing failure.
+ Nothing is persisted: the caller decides what to keep.
+ """
+ with tempfile.TemporaryDirectory() as t:
+  work=Path(t);shutil.copy2(ROOT/'automate.py',work/'automate.py');(work/'messy_sales_input.csv').write_bytes(data)
+  result=subprocess.run([sys.executable,'-I',str(work/'automate.py')],cwd=work,timeout=30,capture_output=True,text=True)
+  if result.returncode:raise ValueError('Processing failed: '+(result.stderr or result.stdout)[-300:])
+  out=work/'output'
+  if not all((out/f).exists() for f in REPORT_FILES):raise ValueError('Missing report output')
+  def rowcount(path):
+   with path.open(encoding='utf-8-sig',newline='') as f:return max(0,sum(1 for _ in csv.reader(f))-1)
+  accepted=rowcount(out/'cleaned_sales.csv');rejected=rowcount(out/'rejected_rows.csv')
+  summary=(out/'run_summary.txt').read_text(encoding='utf-8')
+  stats=[l for l in summary.splitlines() if l.startswith(('Source rows:','Accepted rows:','Rejected rows:','Paid revenue'))]
+  archive=io.BytesIO()
+  with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as z:
+   for f in REPORT_FILES:z.write(out/f,arcname=f)
+  return {'zip_bytes':archive.getvalue(),'accepted':accepted,'rejected':rejected,'stats':stats,'monthly_rows':_read_csv_rows(out/'monthly_summary.csv'),'product_rows':_read_csv_rows(out/'product_summary.csv'),'summary':summary}
+
+# Anonymous demo downloads: ZIP bytes held in memory only, keyed by a random
+# token, expiring after 10 minutes. Nothing is written to disk or the
+# database, so a demo never creates an account, a report row, or a stored
+# file. Capped so a burst of demos cannot grow memory without bound.
+DEMO_ZIP_TTL=600
+DEMO_ZIP_MAX=25
+_DEMO_ZIPS={}
+_DEMO_ZIPS_LOCK=Lock()
+
+def store_demo_zip(zip_bytes):
+ token=secrets.token_urlsafe(24);now_s=time.time()
+ with _DEMO_ZIPS_LOCK:
+  for key in [k for k,(_,exp) in _DEMO_ZIPS.items() if exp<=now_s]:del _DEMO_ZIPS[key]
+  while len(_DEMO_ZIPS)>=DEMO_ZIP_MAX:del _DEMO_ZIPS[min(_DEMO_ZIPS,key=lambda k:_DEMO_ZIPS[k][1])]
+  _DEMO_ZIPS[token]=(zip_bytes,now_s+DEMO_ZIP_TTL)
+ return token
+
+def take_demo_zip(token):
+ if not token:return None
+ with _DEMO_ZIPS_LOCK:
+  entry=_DEMO_ZIPS.get(token)
+  if not entry:return None
+  data,exp=entry
+  if exp<=time.time():
+   del _DEMO_ZIPS[token]
+   return None
+  return data
 
 def landing_buy_html(user,csrf):
  """Buy block for the landing page.
@@ -298,6 +373,24 @@ def landing_buy_html(user,csrf):
 def landing_pricing_html(user,csrf):
  return '''<section id="v8-pricing" class="v8-pricing"><div class="v8-sectiontop"><span>02 / PRICING</span><span>SIMPLE, NO SURPRISES.</span></div><h2>START FREE.<br><em>GO PRO WHEN IT PAYS.</em></h2><div class="v8-plans"><article class="v8-plan"><h3>FREE</h3><p class="v8-price">$0</p><ul><li>3 reports, lifetime</li><li>Upload a sales CSV, get cleaned data and summaries</li><li>No card, no purchase required</li></ul><a class="v8-ghost" href="/register">Create demo account ↗</a></article><article class="v8-plan v8-plan-pro"><h3>PRO</h3><p class="v8-price">$49 <span>/ 30 days</span></p><ul><li>50 reports per billing cycle</li><li>Pay with Bitcoin — verified automatically via BTCPay</li><li>PRO activates once the payment settles</li></ul>'''+landing_buy_html(user,csrf)+'''</article></div><p class="v8-pricing-note">Prices in USD. Bitcoin payment only — no card, no Stripe.</p></section>'''
 
+def landing_demo_html():
+ """No-signup instant demo: upload a CSV on the landing page and see the
+ report. No account, no email, nothing saved — the file is processed once
+ and never stored.
+ """
+ return '''<section id="try" class="v8-demo"><div class="v8-sectiontop"><span>TRY IT NOW</span><span>NO ACCOUNT. NO WAITING.</span></div><h2>YOUR FILE.<br><em>YOUR NUMBERS. RIGHT NOW.</em></h2><p>Drop in a sales CSV and see the cleaned report instantly — the same engine PRO uses. No account, no email, nothing saved. Your file is processed once and never stored.</p><form method="post" action="/try" enctype="multipart/form-data"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><button class="v8-primary" type="submit">Generate my report</button></form><p class="v8-demo-note">5 MB maximum · 20,000 rows · Your download link works for 10 minutes — create a free account to keep your reports.</p><details><summary>Required column headers</summary><code>'''+escape(', '.join(REQUIRED))+'''</code></details></section>'''
+
+def demo_result_html(result,token):
+ """The instant demo result: the report summaries on screen, a ZIP download,
+ and the next step (free account to keep reports, PRO for more)."""
+ nxt=urllib.parse.quote('/about',safe='')
+ return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
+  +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
+  +'<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
+  +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
+  +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>'
+  +'<p class="v8-demo-note">Want to keep your reports? <a href="/register">Create a free account</a> — 3 reports, lifetime. Ready for more? <a href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a>.</p></section></div>')
+
 def landing_sample_html():
  sample=sample_report_html()
  body=sample if sample else '<p>Sample report is being prepared — please try again shortly.</p>'
@@ -311,7 +404,7 @@ def landing_page(user=None,csrf=''):
    <div class="v8-status"><span class="v8-live"></span> VELXTRIA / INTELLIGENT REPORTING <span class="v8-status-right">PRIVATE PREVIEW</span></div>
    <h1>RUN YOUR BUSINESS.<br><span>WITH MORE</span><br><i>CLARITY.</i></h1>
    <p>VELXTRIA helps small businesses turn supported sales exports into organized reports, spot data problems, and explore the business tools already available in one workspace. Start with a demo using sample data.</p>
-   <div class="v8-actions"><a class="v8-primary" href="/register">TRY VELXTRIA <span>↗</span></a><a class="v8-ghost" href="/login">SIGN IN <span>↗</span></a><a class="v8-ghost" href="#v8-process">EXPLORE THE SYSTEM <span>↓</span></a></div>
+   <div class="v8-actions"><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a><a class="v8-ghost" href="/login">SIGN IN <span>↗</span></a><a class="v8-ghost" href="#v8-process">EXPLORE THE SYSTEM <span>↓</span></a></div>
    <div class="v8-disclaimer">PRIVATE PREVIEW <span>•</span> SAMPLE OR NON-SENSITIVE DATA ONLY <span>•</span> PAID ACCESS REQUIRES VERIFIED PAYMENT; DO NOT SEND FUNDS WITHOUT CONFIRMING THE CURRENT CHECKOUT PROCESS</div>
   </div>
   <div class="v8-stage" aria-label="Illustrative reporting command center">
@@ -329,7 +422,7 @@ def landing_page(user=None,csrf=''):
   <article><div class="v8-stephead"><span>02</span><span>↗</span></div><div class="v8-stepicon">⌁</div><h3>REFINE</h3><p>Separate accepted records from flagged rows and create structured summaries.</p><small>VALIDATE / ORGANIZE</small></article>
   <article><div class="v8-stephead"><span>03</span><span>↗</span></div><div class="v8-stepicon">⇩</div><h3>DEPLOY</h3><p>Download cleaned sales data, rejected rows, and summaries in one ZIP.</p><small>REPORT PACKAGE / ZIP</small></article>
  </div></section>
- """+landing_pricing_html(user,csrf)+landing_sample_html()+"""<section class="v8-bottom"><div><span>04 / YOUR NEXT MOVE</span><h2>LESS MESS.<br><em>MORE MOMENTUM.</em></h2><p>Try the private reporting demo with sample or non-sensitive data. No purchase required.</p></div><a class="v8-primary" href="/register">LAUNCH DEMO <span>↗</span></a></section>
+ """+landing_demo_html()+landing_pricing_html(user,csrf)+landing_sample_html()+"""<section class="v8-bottom"><div><span>04 / YOUR NEXT MOVE</span><h2>LESS MESS.<br><em>MORE MOMENTUM.</em></h2><p>Try the private reporting demo with sample or non-sensitive data. No purchase required.</p></div><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a></section>
  <div class="v8-footnote">✦ VELXTRIA <span>BUILT FOR CLEARER WORKFLOWS · PREVIEW EDITION</span></div>
  </div>"""
 
@@ -434,6 +527,25 @@ body:has(.v8) header{position:relative;z-index:10;background:#0a0a15;border-bott
 .v8-sample-tables h4{color:#c4a2ff;letter-spacing:.15em;font-size:.75rem;margin-bottom:.8rem}
 .v8-sample-stats{color:#c4a2ff;margin-top:1.5rem;font-size:.95rem}
 @media(max-width:700px){.v8-plans,.v8-sample-tables{grid-template-columns:1fr}}
+/* Instant demo: no-signup CSV upload on the landing page, and its result. */
+.v8-demo{max-width:1500px;margin:auto;padding:7rem clamp(1.5rem,5vw,6rem)}
+.v8-demo h2,.v8-demo-result h2{font-size:clamp(2.5rem,5vw,5.7rem);line-height:1.06;letter-spacing:-.065em;margin:2.4rem 0 1.5rem;font-weight:900}
+.v8-demo h2 em,.v8-demo-result h2 em{font-style:normal;background:linear-gradient(110deg,#a888ff,#d0a7ff 45%,#ffb7f1);color:transparent;background-clip:text;-webkit-background-clip:text}
+.v8-demo>p,.v8-demo-result>p{color:#b1acc3;line-height:1.7;max-width:720px}
+.v8-demo form{margin-top:2.5rem;display:flex;gap:1.5rem;align-items:flex-end;flex-wrap:wrap}
+.v8-demo label{display:flex;flex-direction:column;gap:.7rem;color:#c4a2ff;font-size:.7rem;letter-spacing:.15em;font-weight:800}
+.v8-demo input[type=file]{color:#e6e0f5;font:inherit;font-size:.9rem;letter-spacing:0;font-weight:400}
+.v8-demo input[type=file]::file-selector-button{padding:.9rem 1.2rem;background:linear-gradient(145deg,#201b32,#10121d);border:1px solid #423553;color:#e6e0f5;font:inherit;font-weight:700;cursor:pointer;margin-right:1rem}
+.v8-demo form .v8-primary{border:none;cursor:pointer;font:inherit;font-size:.75rem;letter-spacing:.1em;font-weight:900}
+.v8-demo-note{color:#806eaa;font-size:.85rem;line-height:1.7;margin-top:1.5rem;max-width:720px}
+.v8-demo-note a{color:#c4a2ff;text-decoration:underline}
+.v8-demo details{margin-top:1.5rem;color:#b1acc3}
+.v8-demo details summary{cursor:pointer;color:#c4a2ff;font-size:.8rem;letter-spacing:.1em}
+.v8-demo details code{display:block;margin-top:.8rem;color:#e6e0f5;font-size:.9rem}
+.v8-demo-result{max-width:1500px;margin:auto;padding:5rem clamp(1.5rem,5vw,6rem)}
+.v8-demo-result .v8-primary{margin:2rem 0 .5rem}
+.v8-demo-result .v8-sample-tables{margin:2rem 0}
+@media(max-width:700px){.v8-demo form{flex-direction:column;align-items:flex-start}}
 """
 
 # V4 workspace visual refinement: native controls retain their existing form behavior.
@@ -578,6 +690,11 @@ class Handler(BaseHTTPRequestHandler):
   self.end_headers();self.wfile.write(b)
  def fail(self,status,message,user=None,csrf=''):
   self.respond(status,shell('Notice','<section class="panel"><h2>'+escape(message)+'</h2><p><a href="/">Return to dashboard</a></p></section>',user,csrf))
+ def demo_fail(self,message):
+  # Anonymous demo error: point back at the demo form on the landing page,
+  # not at a dashboard the visitor does not have.
+  body='<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>TRY THE DEMO</span><span>THAT FILE DID NOT WORK.</span></div><h2>COULD NOT RUN<br><em>THAT FILE.</em></h2><p>'+escape(message)+'</p><p><a class="v8-primary" href="/#try">Try another file</a></p></section></div>'
+  return self.respond(400,shell('Try the demo',body))
  def identity(self):
   cookie=SimpleCookie()
   try:cookie.load(self.headers.get('Cookie',''))
@@ -718,6 +835,13 @@ class Handler(BaseHTTPRequestHandler):
    nxt=safe_next(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('next',[''])[0])
    login='/login'+('?next='+urllib.parse.quote(nxt,safe='') if nxt!='/' else '')
    return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><input type="hidden" name="next" value="'+escape(nxt)+'"><label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form><p>Already have an account? <a href="'+login+'">Sign in</a></p></section>'))
+  if p=='/try':return self.redirect('/#try')
+  if p=='/try-download':
+   # Anonymous demo ZIP: held in memory only, token expires after 10 minutes.
+   token=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('token',[''])[0]
+   data=take_demo_zip(token)
+   if data is None:return self.respond(404,'Demo download expired — run the demo again to generate a new report.','text/plain')
+   return self.respond(200,data,'application/zip',headers=[('Content-Disposition','attachment; filename="VELXTRIA_Demo_Report.zip"')])
   if p=='/' and not user:return self.respond(200,shell('Sales reporting made simple',landing_page(user,csrf)))
   if not user:return self.redirect('/login')
   if p=='/sales-execution':
@@ -2578,6 +2702,20 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c:c.execute('INSERT INTO sessions VALUES (?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),row[0],now()+86400,csrf))
    secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
    return self.redirect(safe_next(fields.get('next','')),[('Set-Cookie','velxtria_session='+token+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400'+secure)])
+  if p=='/try':
+   # Instant demo: no account, no session, no CSRF token. The POST changes
+   # no state (no user, no report row, no stored file — the ZIP lives in
+   # memory for 10 minutes), so there is nothing a forged request could
+   # alter; the same CPU exposure already exists on the public sample report.
+   if not uploaded:return self.demo_fail('Choose a CSV file.')
+   filename,data=uploaded
+   try:
+    validate_csv_upload(filename,data,columns_hint='Check the required column headers below the demo form and try again.')
+    report=run_report_engine(data)
+   except ValueError as exc:return self.demo_fail(str(exc))
+   except Exception as exc:return self.demo_fail('Could not process this file: '+str(exc)[:240])
+   token=store_demo_zip(report['zip_bytes'])
+   return self.respond(200,shell('Your demo report',demo_result_html(report,token)))
   ident=self.require()
   if not ident:return
   user,csrf,token=ident
@@ -3035,34 +3173,18 @@ class Handler(BaseHTTPRequestHandler):
   if p!='/upload':return self.fail(404,'Page not found.',user,csrf)
   if not uploaded:return self.fail(400,'Choose a CSV file.',user,csrf)
   filename,data=uploaded
-  if not filename.lower().endswith('.csv') or not data or len(data)>MAX_BYTES:return self.fail(400,'Upload one nonempty CSV file up to 5 MB.',user,csrf)
-  if b'\x00' in data:return self.fail(400,'Invalid CSV file.',user,csrf)
-  try:
-   decoded=data.decode('utf-8-sig');reader=csv.DictReader(io.StringIO(decoded))
-   if reader.fieldnames!=REQUIRED:raise ValueError('Incorrect columns. Expand the required headers on the dashboard.')
-   if len(decoded.splitlines())>20001:raise ValueError('Limit is 20,000 lines per upload.')
-  except (UnicodeError,csv.Error,ValueError) as e:return self.fail(400,str(e),user,csrf)
+  try:validate_csv_upload(filename,data)
+  except ValueError as e:return self.fail(400,str(e),user,csrf)
   with LOCK:
    with db() as c:
     ent,count,remaining=subscriptions.usage(c,user['id'])
     if remaining<=0:return self.fail(429,'Report allowance reached for this period.',user,csrf)
    ident=secrets.token_hex(16);digest=hashlib.sha256(data).hexdigest()
    try:
-    with tempfile.TemporaryDirectory() as t:
-     work=Path(t);shutil.copy2(ROOT/'automate.py',work/'automate.py');(work/'messy_sales_input.csv').write_bytes(data)
-     result=subprocess.run([sys.executable,'-I',str(work/'automate.py')],cwd=work,timeout=30,capture_output=True,text=True)
-     if result.returncode:raise ValueError('Processing failed: '+(result.stderr or result.stdout)[-300:])
-     out=work/'output';files=['cleaned_sales.csv','rejected_rows.csv','monthly_summary.csv','product_summary.csv','run_summary.txt']
-     if not all((out/f).exists() for f in files):raise ValueError('Missing report output')
-     def rowcount(path):
-      with path.open(encoding='utf-8-sig',newline='') as f:return max(0,sum(1 for _ in csv.reader(f))-1)
-     accepted=rowcount(out/'cleaned_sales.csv');rejected=rowcount(out/'rejected_rows.csv')
-     archive=io.BytesIO()
-     with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as z:
-      for f in files:z.write(out/f,arcname=f)
-     persistent.store(user['id'],ident,archive.getvalue(),REPORTS)
+    report=run_report_engine(data)
+    persistent.store(user['id'],ident,report['zip_bytes'],REPORTS)
     with db() as c:
-     c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',accepted,rejected,digest))
+     c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',report['accepted'],report['rejected'],digest))
      if fields.get('email_report')=='yes':
       c.execute('INSERT INTO deliveries(report_id,user_id,recipient,status,next_attempt) VALUES (?,?,?,?,?)',(ident,user['id'],user['email'],'queued' if DELIVERY_ENABLED else 'not_configured',now()))
       c.execute('UPDATE reports SET email_status=? WHERE id=?',('queued' if DELIVERY_ENABLED else 'not_configured',ident))
