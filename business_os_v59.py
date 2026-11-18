@@ -105,6 +105,27 @@ def overview(c,uid,wid):
                            "Approving a draft never sends it externally.",
                            "Only the latest 300 records are shown."]}
 
+def pipeline_insights(c, uid, wid):
+    """New: conversion and lead-priority insights from existing workspace records."""
+    core.access(c, uid, wid)
+    init(c)
+    rows=c.execute("SELECT id,name,value,status,created,updated FROM bos59_leads WHERE workspace_id=? ORDER BY created DESC LIMIT 300",(wid,)).fetchall()
+    counts={state:0 for state in STATES}
+    values={state:0.0 for state in STATES}
+    stale=[]
+    current=int(time.time())
+    for lid,name,value,status,created,updated in rows:
+        if status not in counts:
+            continue
+        counts[status]+=1
+        values[status]+=float(value)
+        if status in ("new","contacted") and current-int(updated)>=7*86400:
+            stale.append({"id":lid,"name":name,"value":float(value),"days":max(0,(current-int(updated))//86400)})
+    stale.sort(key=lambda x:(-x["value"],-x["days"],x["name"]))
+    closed=counts["won"]+counts["lost"]
+    return {"counts":counts,"values":values,"closed_conversion_pct":round(100*counts["won"]/closed,1) if closed else None,
+            "stale":stale[:10],"stale_count":len(stale),"sample_limit":300}
+
 def export_csv(c,uid,wid):
     data=overview(c,uid,wid)
     f=io.StringIO()
@@ -121,6 +142,14 @@ def render(c,uid,wid,csrf):
     url="/business-os-v59"
     out=['<section class="ov-hero"><span>VELXTRIA · BUSINESS OS V59</span><h1>Revenue recovery command center</h1><p>Manage leads, prepare follow-ups and require human approval. No automatic messages are sent.</p></section>']
     out.append('<section class="ov-metrics">'+''.join('<article class="ov-card"><strong>'+h(k.replace("_"," ").title())+'</strong><span>'+h(v)+'</span></article>' for k,v in d["metrics"].items())+'</section>')
+    insights=pipeline_insights(c,uid,wid)
+    conversion=("Not enough closed leads" if insights["closed_conversion_pct"] is None else str(insights["closed_conversion_pct"])+"%")
+    out.append('<section class="ov-panel"><h2>Pipeline intelligence</h2><p>New: see conversion and follow-up priorities from your existing leads.</p><div class="ov-metrics"><article class="ov-card"><strong>Closed-lead win rate</strong><span>'+h(conversion)+'</span></article><article class="ov-card"><strong>Needs follow-up (7+ days)</strong><span>'+h(insights["stale_count"])+'</span></article><article class="ov-card"><strong>Contacted pipeline</strong><span>'+h(round(insights["values"]["contacted"],2))+'</span></article></div>')
+    if insights["stale"]:
+        out.append('<h3>Follow-up priorities</h3><ol>'+''.join('<li><strong>'+h(x["name"])+'</strong> · potential '+h(round(x["value"],2))+' · '+h(x["days"])+' days since update</li>' for x in insights["stale"])+'</ol>')
+    else:
+        out.append('<p>No open leads overdue for follow-up in the displayed records.</p>')
+    out.append('<small>Based on up to 300 user-entered leads. Win rate is won / (won + lost), not verified revenue. No messages are sent.</small></section>')
     if d["role"] in ("owner","editor"):
         out.append('<section class="ov-panel"><h2>Add a lead</h2><form method="post" action="'+url+'">'+hidden+'<label>Name<input name="name" required maxlength="120"></label><label>Contact<input name="contact" required maxlength="200"></label><label>Source<input name="source" required maxlength="100"></label><label>Potential value<input name="value" type="number" min="0" max="1000000000" step="0.01" required></label><button name="action" value="add">Add lead</button></form></section>')
     for lead in d["leads"]:
