@@ -18,6 +18,8 @@ import btcpay_mainnet
 import referrals
 import demo_shares
 import trust_pages
+import notifications
+import password_reset
 import sales_pipeline
 import sovereign_ascension
 import ascension_recovery
@@ -172,6 +174,8 @@ def db():
  subscriptions.setup(c)
  referrals.setup(c)
  demo_shares.setup(c)
+ notifications.setup(c)
+ password_reset.setup(c)
  business_v3.setup(c)
  business_v4.setup(c)
  operator_v5.setup(c)
@@ -1058,9 +1062,18 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/login':
    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
    nxt=safe_next(q.get('next',[''])[0])
-   banner='<p>Account created — sign in to start your first report.</p>' if q.get('registered',[''])[0]=='1' else ''
+   banner=''
+   if q.get('registered',[''])[0]=='1':banner='<p>Account created — sign in to start your first report.</p>'
+   elif q.get('reset',[''])[0]=='1':banner='<p>Password updated — sign in with your new password.</p>'
    reg='/register'+('?next='+urllib.parse.quote(nxt,safe='') if nxt!='/' else '')
-   return self.respond(200,shell('Sign in','<section class="panel narrow"><h1>Welcome back</h1>'+banner+'<form method="post" action="/login"><input type="hidden" name="next" value="'+escape(nxt)+'"><label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" required></label><button>Sign in</button></form><p>No account yet? <a href="'+reg+'">Create a demo account</a></p></section>'))
+   return self.respond(200,shell('Sign in','<section class="panel narrow"><h1>Welcome back</h1>'+banner+'<form method="post" action="/login"><input type="hidden" name="next" value="'+escape(nxt)+'"><label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" required></label><button>Sign in</button></form><p><a href="/forgot">Forgot your password?</a></p><p>No account yet? <a href="'+reg+'">Create a demo account</a></p></section>'))
+  if p=='/forgot':
+   return self.respond(200,shell('Reset password','<section class="panel narrow"><h1>Forgot your password?</h1><p>Enter the email on your account and we will send a reset link. It works once and expires in one hour.</p><form method="post" action="/forgot"><label>Email<input name="email" type="email" required></label><button>Send reset link</button></form><p><a href="/login">Back to sign in</a></p></section>'))
+  if p=='/reset':
+   token=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('token',[''])[0]
+   with db() as c:valid=password_reset.verify_token(c,token) is not None
+   if not valid:return self.respond(400,shell('Reset password','<section class="panel narrow"><h1>Link expired</h1><p>This reset link is expired or already used. <a href="/forgot">Request a new one</a>.</p></section>'))
+   return self.respond(200,shell('Reset password','<section class="panel narrow"><h1>Choose a new password</h1><form method="post" action="/reset"><input type="hidden" name="token" value="'+escape(token)+'"><label>New password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Update password</button></form></section>'))
   if p=='/register':
    nxt=safe_next(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('next',[''])[0])
    login='/login'+('?next='+urllib.parse.quote(nxt,safe='') if nxt!='/' else '')
@@ -2968,6 +2981,26 @@ class Handler(BaseHTTPRequestHandler):
     return self.respond(503,'Webhook temporarily unavailable','text/plain')
   try:fields,uploaded=self.post_data()
   except Exception as e:return self.fail(400,str(e))
+  if p=='/forgot':
+   # The reply never reveals whether the email has an account, and when
+   # SMTP is not configured no reset is promised at all.
+   if not notifications.smtp_configured():
+    return self.respond(200,shell('Reset password','<section class="panel narrow"><h1>Reset by email is not available yet</h1><p>Password reset by email is not set up on this site yet. Email <a href="/contact">support</a> and we will help you back in.</p><p><a href="/login">Back to sign in</a></p></section>'))
+   email=fields.get('email','').strip().lower()
+   if valid_email(email):
+    with db() as c:
+     row=c.execute('SELECT id FROM users WHERE email=?',(email,)).fetchone()
+     if row:password_reset.request_reset(c,row[0],email,btcpay_mainnet.site_url())
+   return self.respond(200,shell('Reset password','<section class="panel narrow"><h1>Check your email</h1><p>If an account exists for that email, a reset link is on its way. It works once and expires in one hour.</p><p><a href="/login">Back to sign in</a></p></section>'))
+  if p=='/reset':
+   token=fields.get('token','');password=fields.get('password','')
+   if len(password)<12 or len(password)>256:return self.fail(400,'Use a password of 12–256 characters.')
+   with db() as c:
+    uid=password_reset.consume_token(c,token)
+    if uid is None:return self.fail(400,'This reset link is expired or already used.')
+    password_reset.set_password(c,uid,password)
+    c.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
+   return self.redirect('/login?reset=1')
   if p=='/register':
    email=fields.get('email','').strip().lower();password=fields.get('password','')
    if not valid_email(email) or len(password)<12 or len(password)>256:return self.fail(400,'Use a valid email and password of 12–256 characters.')
@@ -3529,26 +3562,28 @@ class Handler(BaseHTTPRequestHandler):
 
 def delivery_worker():
  """Local background queue; SMTP only when explicitly configured and user opted in."""
+ last_reminder_scan=0
  while not STOP.wait(5):
   if not DELIVERY_ENABLED:continue
   try:
    with db() as c:
     row=c.execute("SELECT report_id,user_id,recipient,attempts FROM deliveries WHERE status IN ('queued','retry') AND next_attempt<=? AND attempts<3 ORDER BY next_attempt LIMIT 1",(now(),)).fetchone()
-    if not row:continue
-    report_id,user_id,recipient,attempts=row
-    c.execute("UPDATE deliveries SET status='sending', attempts=attempts+1 WHERE report_id=?",(report_id,))
-   report_bytes=persistent.retrieve(user_id,report_id,REPORTS)
-   msg=EmailMessage();msg['Subject']='Your VELXTRIA report is ready';msg['From']=os.environ['VELXTRIA_SMTP_FROM'];msg['To']=recipient
-   msg.set_content('Your requested VELXTRIA report is attached. This is a local demonstration. Do not send sensitive business information.')
-   msg.add_attachment(report_bytes,maintype='application',subtype='zip',filename='VELXTRIA_Report.zip')
-   host=os.environ['VELXTRIA_SMTP_HOST'];port=int(os.getenv('VELXTRIA_SMTP_PORT','587'))
-   with smtplib.SMTP(host,port,timeout=20) as smtp:
-    smtp.starttls()
-    smtp.login(os.environ['VELXTRIA_SMTP_USER'],os.environ['VELXTRIA_SMTP_PASSWORD'])
-    smtp.send_message(msg)
-   with db() as c:
-    c.execute("UPDATE deliveries SET status='sent',last_error='' WHERE report_id=?",(report_id,))
-    c.execute("UPDATE reports SET email_status='sent' WHERE id=?",(report_id,))
+    if row:
+     report_id,user_id,recipient,attempts=row
+     c.execute("UPDATE deliveries SET status='sending', attempts=attempts+1 WHERE report_id=?",(report_id,))
+   if row:
+    report_bytes=persistent.retrieve(user_id,report_id,REPORTS)
+    msg=EmailMessage();msg['Subject']='Your VELXTRIA report is ready';msg['From']=os.environ['VELXTRIA_SMTP_FROM'];msg['To']=recipient
+    msg.set_content('Your requested VELXTRIA report is attached. This is a local demonstration. Do not send sensitive business information.')
+    msg.add_attachment(report_bytes,maintype='application',subtype='zip',filename='VELXTRIA_Report.zip')
+    host=os.environ['VELXTRIA_SMTP_HOST'];port=int(os.getenv('VELXTRIA_SMTP_PORT','587'))
+    with smtplib.SMTP(host,port,timeout=20) as smtp:
+     smtp.starttls()
+     smtp.login(os.environ['VELXTRIA_SMTP_USER'],os.environ['VELXTRIA_SMTP_PASSWORD'])
+     smtp.send_message(msg)
+    with db() as c:
+     c.execute("UPDATE deliveries SET status='sent',last_error='' WHERE report_id=?",(report_id,))
+     c.execute("UPDATE reports SET email_status='sent' WHERE id=?",(report_id,))
   except Exception as exc:
    if 'report_id' in locals():
     retry=(attempts+1)<3
@@ -3556,6 +3591,16 @@ def delivery_worker():
      c.execute('UPDATE deliveries SET status=?,last_error=?,next_attempt=? WHERE report_id=?',('retry' if retry else 'failed',str(exc)[:160],now()+min(3600,60*2**attempts),report_id))
      c.execute('UPDATE reports SET email_status=? WHERE id=?',('retry' if retry else 'failed',report_id))
    print('Email delivery error:',type(exc).__name__)
+  # Notifications (PRO confirmations, password resets, renewal reminders)
+  # are best-effort: a failure here must never break report delivery.
+  try:
+   with db() as c:
+    if now()-last_reminder_scan>=3600:
+     notifications.scan_renewal_reminders(c)
+     last_reminder_scan=now()
+    while notifications.process_one(c):pass
+  except Exception as exc:
+   print('Email notification error:',type(exc).__name__)
 
 def month_start():
  d=datetime.now(timezone.utc)
