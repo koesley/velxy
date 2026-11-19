@@ -18,6 +18,7 @@ import btcpay_mainnet
 import referrals
 import demo_shares
 import trust_pages
+import csv_readiness
 import notifications
 import password_reset
 import sales_pipeline
@@ -614,7 +615,7 @@ def landing_page(user=None,csrf=''):
    <div class="v8-status"><span class="v8-live"></span> VELXTRIA / INTELLIGENT REPORTING <span class="v8-status-right">PRIVATE PREVIEW</span></div>
    <h1>RUN YOUR BUSINESS.<br><span>WITH MORE</span><br><i>CLARITY.</i></h1>
    <p>VELXTRIA helps small businesses turn supported sales exports into organized reports, spot data problems, and explore the business tools already available in one workspace. Start with a demo using sample data.</p>
-   <div class="v8-actions"><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a><a class="v8-ghost" href="/register">CREATE FREE ACCOUNT <span>↗</span></a><a class="v8-ghost" href="/login">SIGN IN <span>↗</span></a><a class="v8-ghost" href="#v8-process">EXPLORE THE SYSTEM <span>↓</span></a></div>
+   <div class="v8-actions"><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a><a class="v8-ghost" href="/register">CREATE FREE ACCOUNT <span>↗</span></a><a class="v8-ghost" href="/login">SIGN IN <span>↗</span></a><a class="v8-ghost" href="/csv-readiness">CHECK MY CSV <span>↗</span></a><a class="v8-ghost" href="#v8-process">EXPLORE THE SYSTEM <span>↓</span></a></div>
    <div class="v8-disclaimer">PRIVATE PREVIEW <span>•</span> SAMPLE OR NON-SENSITIVE DATA ONLY <span>•</span> PAID ACCESS REQUIRES VERIFIED PAYMENT; DO NOT SEND FUNDS WITHOUT CONFIRMING THE CURRENT CHECKOUT PROCESS</div>
   </div>
   <div class="v8-stage" aria-label="Illustrative reporting command center">
@@ -939,6 +940,8 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,robots_txt(public_base_url(self.headers.get('Host'))),'text/plain',headers=[('Cache-Control','public, max-age=3600')])
   if p=='/sitemap.xml':
    return self.respond(200,sitemap_xml(public_base_url(self.headers.get('Host'))),'application/xml',headers=[('Cache-Control','public, max-age=3600')])
+  if p=='/csv-readiness':
+   return self.respond(200,shell('CSV readiness check',csv_readiness.page(REQUIRED,MAX_BYTES)))
   if p=='/terms':
    return self.respond(200,shell('Terms of Service',trust_pages.TERMS_HTML))
   if p=='/privacy':
