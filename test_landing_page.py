@@ -41,7 +41,8 @@ class LandingPageTests(unittest.TestCase):
         import re
         page = self.portal.shell('Home', self.portal.landing_page())
         nav = page.split('<nav class="velx-nav">', 1)[1].split('</nav>', 1)[0]
-        primary = re.findall(r'class="velx-primary" href="([^"]+)"', nav)
+        primary_section = nav.split('<details class="velx-more">', 1)[0]
+        primary = re.findall(r'class="velx-primary" href="([^"]+)"', primary_section)
         self.assertEqual(primary, ['/', '/business-os-v59', '/revenue-priority', '/account'])
         self.assertIn('<details class="velx-more">', nav)
         self.assertIn('href="/sales-pipeline"', nav)
