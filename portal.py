@@ -469,6 +469,35 @@ def paywall_html(user,csrf,used,pending_mainnet=None):
 def landing_pricing_html(user,csrf):
  return '''<section id="v8-pricing" class="v8-pricing"><div class="v8-sectiontop"><span>02 / PRICING</span><span>SIMPLE, NO SURPRISES.</span></div><h2>START FREE.<br><em>GO PRO WHEN IT PAYS.</em></h2><div class="v8-plans"><article class="v8-plan"><h3>FREE</h3><p class="v8-price">$0</p><ul><li>3 reports, lifetime</li><li>Upload a sales CSV, get cleaned data and summaries</li><li>No card, no purchase required</li></ul><a class="v8-ghost" href="/register">Create demo account ↗</a></article><article class="v8-plan v8-plan-pro"><h3>PRO</h3><p class="v8-price">$49 <span>/ 30 days</span></p><ul><li>50 reports per billing cycle</li><li>Pay with Bitcoin — verified automatically via BTCPay</li><li>PRO activates once the payment settles</li></ul>'''+landing_buy_html(user,csrf)+'''</article></div><p class="v8-pricing-note">Prices in USD. Bitcoin payment only — no card, no Stripe.</p></section>'''
 
+def demo_csv_template_url():
+ """Generate a local, inert CSV starter template from the actual upload schema."""
+ output=io.StringIO(newline='')
+ writer=csv.writer(output,lineterminator='\r\n')
+ writer.writerow(REQUIRED)
+ writer.writerow(['VX-001','2026-01-15','Example Customer','Example Service','1','49.00','Completed','Example Region'])
+ return 'data:text/csv;charset=utf-8,'+urllib.parse.quote(output.getvalue(),safe='')
+
+
+def landing_preflight_html():
+ """Give visitors a usable template and an honest free/paid decision before upload."""
+ return ('<section id="v8-start-guide" class="v8-process" aria-labelledby="v8-guide-heading">'
+  '<div class="v8-sectiontop"><span>BEFORE YOU START</span><span>KNOW WHAT YOU NEED.</span></div>'
+  '<h2 id="v8-guide-heading">GET A REPORT.<br><em>WITHOUT THE GUESSWORK.</em></h2>'
+  '<div class="v8-steps">'
+  '<article><h3>1 / PREPARE</h3><p>Use a CSV with the eight required headers. '
+  'The starter file contains fictional example data; replace it before uploading.</p>'
+  '<a href="'+escape(demo_csv_template_url())+'" download="velxtria_sales_template.csv">Download CSV starter template</a></article>'
+  '<article><h3>2 / TRY FREE</h3><p>Preview the reporting engine without an account. '
+  'Upload only sample or non-sensitive business information (5 MB maximum).</p>'
+  '<a href="#try">Open instant demo</a></article>'
+  '<article><h3>3 / KEEP REPORTS</h3><p>Create a free account for three lifetime reports. '
+  'PRO is $49 per 30 days for up to 50 reports per cycle; Bitcoin only. '
+  'Access starts only after payment verification.</p>'
+  '<a href="/register">Create free account</a> · <a href="#v8-pricing">Compare plans</a></article>'
+  '</div><p>CSV headers: <code>'+escape(', '.join(REQUIRED))+'</code>. '
+  'The sample row is illustrative, not a customer record.</p></section>')
+
+
 def landing_demo_html():
  """No-signup instant demo: upload a CSV on the landing page and see the
  report. No account, no email, nothing saved — the file is processed once
@@ -545,7 +574,7 @@ def landing_page(user=None,csrf=''):
   <article><div class="v8-stephead"><span>02</span><span>↗</span></div><div class="v8-stepicon">⌁</div><h3>REFINE</h3><p>Separate accepted records from flagged rows and create structured summaries.</p><small>VALIDATE / ORGANIZE</small></article>
   <article><div class="v8-stephead"><span>03</span><span>↗</span></div><div class="v8-stepicon">⇩</div><h3>DEPLOY</h3><p>Download cleaned sales data, rejected rows, and summaries in one ZIP.</p><small>REPORT PACKAGE / ZIP</small></article>
  </div></section>
- """+landing_demo_html()+landing_pricing_html(user,csrf)+landing_sample_html()+"""<section class="v8-bottom"><div><span>04 / YOUR NEXT MOVE</span><h2>LESS MESS.<br><em>MORE MOMENTUM.</em></h2><p>Try the private reporting demo with sample or non-sensitive data. No purchase required.</p></div><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a></section>
+ """+landing_preflight_html()+landing_demo_html()+landing_pricing_html(user,csrf)+landing_sample_html()+"""<section class="v8-bottom"><div><span>04 / YOUR NEXT MOVE</span><h2>LESS MESS.<br><em>MORE MOMENTUM.</em></h2><p>Try the private reporting demo with sample or non-sensitive data. No purchase required.</p></div><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a></section>
  <div class="v8-footnote">✦ VELXTRIA <span>BUILT FOR CLEARER WORKFLOWS · PREVIEW EDITION</span></div>
  </div>"""
 
