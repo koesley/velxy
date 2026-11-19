@@ -50,6 +50,28 @@ def change_status(c, uid, wid, identifier, status):
     c.execute("UPDATE vx_followup23 SET status=?,updated=? WHERE workspace_id=? AND id=? AND status='planned'",
               (status,int(time.time()),wid,identifier))
 
+
+def uncovered_open_leads(c, uid, wid, limit=15):
+    """Open leads with no planned follow-up; read-only, workspace scoped."""
+    bos.core.access(c, uid, wid)
+    setup(c)
+    if type(limit) is not int or not 1 <= limit <= 50:
+        raise ValueError("Invalid coverage limit.")
+    predicate = """FROM bos59_leads l WHERE l.workspace_id=?
+        AND l.status IN ('new','contacted')
+        AND NOT EXISTS (
+            SELECT 1 FROM vx_followup23 f
+            WHERE f.workspace_id=l.workspace_id AND f.lead_id=l.id
+              AND f.status='planned')"""
+    count = c.execute("SELECT COUNT(*) " + predicate, (wid,)).fetchone()[0]
+    rows = c.execute(
+        "SELECT l.id,l.name,l.status,l.value " + predicate +
+        " ORDER BY CASE WHEN l.status='contacted' THEN 0 ELSE 1 END,"
+        " l.updated ASC,l.id ASC LIMIT ?",
+        (wid,limit)
+    ).fetchall()
+    return int(count), rows
+
 def render(c,uid,wid,csrf):
     bos.core.access(c,uid,wid)
     setup(c)
@@ -66,6 +88,22 @@ def render(c,uid,wid,csrf):
     out=['<section class="panel"><h1>Follow-up Tracker</h1><p>Schedule internal follow-up work and record outcomes. '
          'This feature never contacts customers automatically. Statuses are manually entered and do not verify collected revenue.</p>',
          '<p>Planned (displayed): '+str(planned)+' · Overdue (displayed): '+str(overdue)+' · Showing at most 100 records.</p></section>']
+    uncovered_count, uncovered_rows = uncovered_open_leads(c,uid,wid)
+    out.append('<section class="panel"><h2>Open leads needing a follow-up plan</h2>'
+               '<p>'+str(uncovered_count)+' open leads have no currently planned follow-up. '
+               'Previously completed follow-ups do not count as upcoming work. '
+               'This is a manual planning queue, not permission to contact anyone. '
+               'Showing up to 15 leads, contacted first and oldest updates first.</p>')
+    if uncovered_rows:
+        out.append('<table><tr><th>Lead</th><th>Stage</th><th>Estimated value</th></tr>')
+        for lid,name,stage,value in uncovered_rows:
+            out.append('<tr><td>'+esc(name)+'</td><td>'+esc(stage)+
+                       '</td><td>'+esc(value)+'</td></tr>')
+        out.append('</table>')
+    else:
+        out.append('<p>No open leads are missing a planned follow-up.</p>')
+    out.append('<p>Estimated values are user-entered, not collected revenue. '
+               'Review contact restrictions before any outreach.</p></section>')
     if leads:
         out.append('<section class="panel"><h2>Plan a follow-up</h2><form method="post" action="/revenue-followups">'
                    '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
