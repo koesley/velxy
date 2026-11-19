@@ -99,7 +99,7 @@ def classify_reply(message: str) -> str:
     current = []
     for line in message[:20000].splitlines():
         stripped = line.strip()
-        if stripped.startswith(">") or re.match(r"On .+ wrote:\\s*$", stripped, re.I):
+        if stripped.startswith(">") or re.match(r"On .+ wrote:\s*$", stripped, re.I):
             break
         if stripped.lower().startswith(("from:", "original message", "-----original message")):
             break
