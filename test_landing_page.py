@@ -101,6 +101,12 @@ class LandingPageTests(unittest.TestCase):
         self.assertEqual(self.portal.safe_next('//evil.example.com'), '/')
         self.assertEqual(self.portal.safe_next(''), '/')
         self.assertEqual(self.portal.safe_next(None), '/')
+        self.assertEqual(self.portal.safe_next('/\\\\evil.example/path'), '/')
+        self.assertEqual(self.portal.safe_next('/%0a'), '/%0a')
+        self.assertEqual(self.portal.safe_next('/safe\\nLocation: //evil.example'), '/')
+        self.assertEqual(self.portal.safe_next('/safe\\r'), '/')
+        self.assertEqual(self.portal.safe_next('/safe\\x7f'), '/')
+        self.assertEqual(self.portal.safe_next('/safe?next=1'), '/safe?next=1')
 
     def test_get_root_returns_200_with_pricing_buy_and_sample(self):
         server = ThreadingHTTPServer(('127.0.0.1', 0), self.portal.Handler)
