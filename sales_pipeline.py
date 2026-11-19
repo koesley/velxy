@@ -193,6 +193,33 @@ def dashboard(c, owner, csrf):
     statuses=c.execute("SELECT email,status FROM outreach_suppression WHERE owner_id=? ORDER BY updated_at DESC LIMIT 100",(owner,)).fetchall()
     parts.append('<section class="panel"><h2>Delivery status register</h2>'+''.join('<p>'+esc(email)+' — '+esc(status)+'</p>' for email,status in statuses)+'</section>')
 
+    # Contact-review evidence is owner-scoped and read-only. Show a bounded
+    # audit sample, not an unbounded dump of customer delivery diagnostics.
+    event_total=c.execute(
+        "SELECT COUNT(*) FROM outreach_suppression_events WHERE owner_id=?",
+        (owner,)).fetchone()[0]
+    recent_events=c.execute(
+        """SELECT email,status,reason,created_at FROM outreach_suppression_events
+           WHERE owner_id=? ORDER BY created_at DESC LIMIT 30""",
+        (owner,)).fetchall()
+    # Suppression evidence may contain copied SMTP text or customer input:
+    # escape every displayed field, including timestamps and status values.
+    event_rows=''.join(
+        '<tr><td>'+esc(email)+'</td><td>'+esc(status)+'</td><td>'+
+        esc(reason)+'</td><td>'+esc(created_at)+'</td></tr>'
+        for email,status,reason,created_at in recent_events)
+    parts.append(
+        '<section class="panel"><h2>Contact decision history</h2>'
+        '<p>Latest '+str(len(recent_events))+' of '+str(event_total)+
+        ' recorded decisions for this account. Historical records are evidence, '
+        'not permission to contact a customer. The current suppression status '
+        'above always governs outreach eligibility.</p>'
+        '<div style="overflow-x:auto"><table><thead><tr>'
+        '<th>Email</th><th>Decision</th><th>Recorded evidence</th>'
+        '<th>Recorded at (Unix UTC)</th></tr></thead><tbody>'+
+        (event_rows or '<tr><td colspan="4">No decisions recorded yet.</td></tr>')+
+        '</tbody></table></div></section>')
+
     for lead in rows:
         parts.append('<section class="panel"><h3>'+esc(lead[1])+'</h3><p>'+esc(lead[5].title())+' · $'+str(lead[6])+' estimated · '+esc(lead[2])+'</p><details><summary>Edit lead</summary>'+form(lead)+'</details></section>')
     return ''.join(parts)
