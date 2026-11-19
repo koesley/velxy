@@ -840,7 +840,14 @@ class Handler(BaseHTTPRequestHandler):
     with db() as c:
      previews=genesis_forge_service_v1.get_previews(c,user['id'],wid)
     rows=''.join('<li>'+html.escape(item['name'],quote=True)+' — '+html.escape(item['industry'],quote=True)+' (revision '+str(item['revision'])+')</li>' for item in previews)
-    body='<section class="panel"><h2>Genesis Forge — Saved Designs</h2><p>Read-only application previews. Publishing is not enabled.</p><ul>'+(rows or '<li>No designs yet.</li>')+'</ul></section>'
+    rows=''.join('<li><a href="/genesis-forge?w='+urllib.parse.quote(wid,safe='')+'&amp;preview='+urllib.parse.quote(item['id'],safe='')+'">'+html.escape(item['name'],quote=True)+'</a> — '+html.escape(item['industry'],quote=True)+' (revision '+str(item['revision'])+')</li>' for item in previews)
+    form='<form method="post" action="/genesis-forge/create"><input type="hidden" name="csrf" value="'+html.escape(csrf,quote=True)+'"><input type="hidden" name="workspace" value="'+html.escape(wid,quote=True)+'"><label>Application name <input name="name" maxlength="100" required></label><label>Industry <select name="industry"><option value="general">General</option><option value="cleaning">Cleaning</option><option value="construction">Construction</option><option value="consulting">Consulting</option></select></label><button type="submit">Create design preview</button></form>'
+    body='<section class="panel"><h2>Genesis Forge — Saved Designs</h2><p>Create and inspect a preview. Publishing is not enabled.</p>'+form+'<ul>'+(rows or '<li>No designs yet.</li>')+'</ul></section>'
+    preview_id=q.get('preview',[''])[0]
+    if preview_id:
+     with db() as preview_db:record=genesis_forge_service_v1.get_preview(preview_db,user['id'],wid,preview_id)
+     blocks=''.join('<li>'+html.escape(block['label'],quote=True)+'</li>' for block in record['manifest']['components'])
+     body+='<section class="panel"><h2>Design preview: '+html.escape(record['manifest']['name'],quote=True)+'</h2><ul>'+blocks+'</ul><p>No live customer data is loaded.</p></section>'
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
    return self.respond(200,shell('Genesis Forge',body,user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/founder-stats':
@@ -2872,6 +2879,13 @@ class Handler(BaseHTTPRequestHandler):
   if not ident:return
   user,csrf,token=ident
   if not hmac.compare_digest(fields.get('csrf',''),csrf):return self.fail(403,'Session verification failed.',user,csrf)
+  if p=='/genesis-forge/create':
+   wid=fields.get('workspace','')
+   try:
+    with db() as c:
+     result=genesis_forge_service_v1.create_preview(c,user['id'],wid,fields.get('name',''),fields.get('industry','general'))
+    return self.redirect('/genesis-forge?w='+urllib.parse.quote(wid,safe='')+'&preview='+urllib.parse.quote(result['id'],safe=''))
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
   if p=='/ascension-workflow-create':
    try:
     with db() as c:ascension_workflows.create(c,user['id'],fields.get('action_id',''))
