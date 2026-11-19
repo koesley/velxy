@@ -248,10 +248,11 @@ class ReportEngineTests(unittest.TestCase):
 
     def test_demo_zip_store_expires_and_caps(self):
         import portal
-        token = portal.store_demo_zip(b'zip-bytes')
+        token = portal.store_demo_zip(b'zip-bytes', 6, 3, 'sales.csv')
         self.assertEqual(portal.take_demo_zip(token), b'zip-bytes')
+        self.assertEqual(portal.peek_demo_zip(token)[2:], (6, 3, 'sales.csv'))
         # Expired entries are gone on the next read.
-        portal._DEMO_ZIPS[token] = (b'stale', 0)
+        portal._DEMO_ZIPS[token] = (b'stale', 0, 6, 3, 'sales.csv')
         self.assertIsNone(portal.take_demo_zip(token))
         self.assertNotIn(token, portal._DEMO_ZIPS)
 
