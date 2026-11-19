@@ -64,6 +64,7 @@ import sovereign_genesis_v56
 import sovereign_opportunities_v57
 import business_os_v59
 import genesis_forge_service_v1
+from genesis_forge_v1 import COMPONENTS as GENESIS_COMPONENTS, TEMPLATES as GENESIS_TEMPLATES
 import business_agents_v59
 import business_intelligence_v60
 import agent_engine_v61
@@ -839,15 +840,16 @@ class Handler(BaseHTTPRequestHandler):
    try:
     with db() as c:
      previews=genesis_forge_service_v1.get_previews(c,user['id'],wid)
-    rows=''.join('<li>'+html.escape(item['name'],quote=True)+' — '+html.escape(item['industry'],quote=True)+' (revision '+str(item['revision'])+')</li>' for item in previews)
     rows=''.join('<li><a href="/genesis-forge?w='+urllib.parse.quote(wid,safe='')+'&amp;preview='+urllib.parse.quote(item['id'],safe='')+'">'+html.escape(item['name'],quote=True)+'</a> — '+html.escape(item['industry'],quote=True)+' (revision '+str(item['revision'])+')</li>' for item in previews)
     form='<form method="post" action="/genesis-forge/create"><input type="hidden" name="csrf" value="'+html.escape(csrf,quote=True)+'"><input type="hidden" name="workspace" value="'+html.escape(wid,quote=True)+'"><label>Application name <input name="name" maxlength="100" required></label><label>Industry <select name="industry"><option value="general">General</option><option value="cleaning">Cleaning</option><option value="construction">Construction</option><option value="consulting">Consulting</option></select></label><button type="submit">Create design preview</button></form>'
     body='<section class="panel"><h2>Genesis Forge — Saved Designs</h2><p>Create and inspect a preview. Publishing is not enabled.</p>'+form+'<ul>'+(rows or '<li>No designs yet.</li>')+'</ul></section>'
     preview_id=q.get('preview',[''])[0]
     if preview_id:
      with db() as preview_db:record=genesis_forge_service_v1.get_preview(preview_db,user['id'],wid,preview_id)
-     blocks=''.join('<li>'+html.escape(block['label'],quote=True)+'</li>' for block in record['manifest']['components'])
-     body+='<section class="panel"><h2>Design preview: '+html.escape(record['manifest']['name'],quote=True)+'</h2><ul>'+blocks+'</ul><p>No live customer data is loaded.</p></section>'
+     blocks=''.join('<li><label><input type="checkbox" name="component" value="'+html.escape(block['type'],quote=True)+'" checked> '+html.escape(block['label'],quote=True)+'</label></li>' for block in record['manifest']['components'])
+     available=''.join('<li><label><input type="checkbox" name="component" value="'+html.escape(key,quote=True)+'"> '+html.escape(spec['label'],quote=True)+'</label></li>' for key,spec in GENESIS_COMPONENTS.items() if key not in {b['type'] for b in record['manifest']['components']})
+     edit='<form method="post" action="/genesis-forge/update"><input type="hidden" name="csrf" value="'+html.escape(csrf,quote=True)+'"><input type="hidden" name="workspace" value="'+html.escape(wid,quote=True)+'"><input type="hidden" name="preview_id" value="'+html.escape(preview_id,quote=True)+'"><input type="hidden" name="revision" value="'+str(record['revision'])+'"><label>Application name <input name="name" maxlength="100" required value="'+html.escape(record['manifest']['name'],quote=True)+'"></label><label>Industry <select name="industry">'+''.join('<option value="'+html.escape(k,quote=True)+'"'+(' selected' if k==record['manifest']['industry'] else '')+'>'+html.escape(k.title(),quote=True)+'</option>' for k in GENESIS_TEMPLATES)+'</select></label><p>Choose 1–5 components:</p><ul>'+blocks+available+'</ul><button type="submit">Save revised preview</button></form>'
+     body+='<section class="panel"><h2>Design preview: '+html.escape(record['manifest']['name'],quote=True)+'</h2>'+edit+'<p>No live customer data is loaded.</p></section>'
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
    return self.respond(200,shell('Genesis Forge',body,user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/founder-stats':
