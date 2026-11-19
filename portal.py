@@ -63,6 +63,7 @@ import sovereign_connectors_v56
 import sovereign_genesis_v56
 import sovereign_opportunities_v57
 import business_os_v59
+import genesis_forge_service_v1
 import business_agents_v59
 import business_intelligence_v60
 import agent_engine_v61
@@ -828,6 +829,20 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,robots_txt(public_base_url(self.headers.get('Host'))),'text/plain',headers=[('Cache-Control','public, max-age=3600')])
   if p=='/sitemap.xml':
    return self.respond(200,sitemap_xml(public_base_url(self.headers.get('Host'))),'application/xml',headers=[('Cache-Control','public, max-age=3600')])
+  if p=='/genesis-forge':
+   auth=self.require()
+   if not auth:return
+   user,csrf,_=auth
+   q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+   wid=q.get('w',[''])[0]
+   if not wid:return self.fail(400,'Workspace ID required.',user,csrf)
+   try:
+    with db() as c:
+     previews=genesis_forge_service_v1.get_previews(c,user['id'],wid)
+    rows=''.join('<li>'+html.escape(item['name'],quote=True)+' — '+html.escape(item['industry'],quote=True)+' (revision '+str(item['revision'])+')</li>' for item in previews)
+    body='<section class="panel"><h2>Genesis Forge — Saved Designs</h2><p>Read-only application previews. Publishing is not enabled.</p><ul>'+(rows or '<li>No designs yet.</li>')+'</ul></section>'
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+   return self.respond(200,shell('Genesis Forge',body,user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/founder-stats':
    user,csrf,_=self.identity()
    if not user:return self.fail(401,'Please sign in first.')
