@@ -60,6 +60,15 @@ def tearDownModule():
     import portal
     with portal.db() as c:
         c.execute(
+            'DELETE FROM referral_rewards WHERE referrer_id IN '
+            "(SELECT id FROM users WHERE email='demo@example.test')")
+        c.execute(
+            'DELETE FROM referral_signups WHERE referrer_id IN '
+            "(SELECT id FROM users WHERE email='demo@example.test')")
+        c.execute(
+            "DELETE FROM referrals WHERE user_id IN "
+            "(SELECT id FROM users WHERE email='demo@example.test')")
+        c.execute(
             'DELETE FROM sessions WHERE user_id IN '
             "(SELECT id FROM users WHERE email='demo@example.test')")
         c.execute("DELETE FROM users WHERE email='demo@example.test'")

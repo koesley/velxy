@@ -96,6 +96,7 @@ def reward_for_payment(conn, user_id, order_id):
     Idempotent: one reward per referred user, ever. Returns True only when
     this call credited the reward.
     """
+    setup(conn)
     row = conn.execute('SELECT referrer_id FROM referral_signups WHERE user_id=?',
                        (user_id,)).fetchone()
     if not row:
