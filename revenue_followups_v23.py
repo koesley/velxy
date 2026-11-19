@@ -3,6 +3,7 @@ import html
 import secrets
 import time
 from datetime import date
+from urllib.parse import urlencode
 import business_os_v59 as bos
 
 STATES = ("planned", "contacted", "replied", "won", "lost")
@@ -50,22 +51,44 @@ def change_status(c, uid, wid, identifier, status):
     c.execute("UPDATE vx_followup23 SET status=?,updated=? WHERE workspace_id=? AND id=? AND status='planned'",
               (status,int(time.time()),wid,identifier))
 
-def render(c,uid,wid,csrf):
+def render(c,uid,wid,csrf,page=1,status_filter='all'):
     bos.core.access(c,uid,wid)
     setup(c)
     esc=lambda v:html.escape(str(v),quote=True)
+    if type(page) is not int or not 1 <= page <= 10000:
+        raise ValueError("Invalid follow-up page.")
+    if status_filter not in ('all',) + STATES:
+        raise ValueError("Invalid follow-up filter.")
+    clause = " AND f.status=?" if status_filter != 'all' else ""
+    params = (wid,status_filter) if status_filter != 'all' else (wid,)
+    total = c.execute("SELECT COUNT(*) FROM vx_followup23 f WHERE f.workspace_id=?" + clause,params).fetchone()[0]
+    pages = max(1,(total+49)//50)
+    if page > pages:
+        raise ValueError("Follow-up page is out of range.")
+    query_url=lambda pg,st:'/revenue-followups?'+urlencode({'w':wid,'page':pg,'status':st})
+
     leads=c.execute("SELECT id,name FROM bos59_leads WHERE workspace_id=? AND status IN ('new','contacted') ORDER BY updated DESC LIMIT 300",(wid,)).fetchall()
     rows=c.execute("""SELECT f.id,l.name,f.due_date,f.status,f.note FROM vx_followup23 f
         JOIN bos59_leads l ON l.id=f.lead_id AND l.workspace_id=f.workspace_id
-        WHERE f.workspace_id=? ORDER BY CASE WHEN f.status='planned' THEN 0 ELSE 1 END,
-        f.due_date ASC,f.created DESC LIMIT 100""",(wid,)).fetchall()
+        WHERE f.workspace_id=?""" + clause + """ ORDER BY CASE WHEN f.status='planned' THEN 0 ELSE 1 END,
+        f.due_date ASC,f.created DESC,f.id ASC LIMIT 50 OFFSET ?""",params+(50*(page-1),)).fetchall()
     today=date.today().isoformat()
     planned=sum(x[3]=="planned" for x in rows)
     overdue=sum(x[3]=="planned" and x[2]<today for x in rows)
     options=''.join('<option value="'+esc(lid)+'">'+esc(name)+'</option>' for lid,name in leads)
     out=['<section class="panel"><h1>Follow-up Tracker</h1><p>Schedule internal follow-up work and record outcomes. '
          'This feature never contacts customers automatically. Statuses are manually entered and do not verify collected revenue.</p>',
-         '<p>Planned (displayed): '+str(planned)+' · Overdue (displayed): '+str(overdue)+' · Showing at most 100 records.</p></section>']
+         '<p>Planned (displayed): '+str(planned)+' · Overdue (displayed): '+str(overdue)+' · Showing 50 per page.</p></section>']
+    out.append('<section class="panel"><h2>Browse follow-ups</h2><form method="get" action="/revenue-followups">'
+               '<input type="hidden" name="w" value="'+esc(wid)+'">'
+               '<label>Status<select name="status">'+''.join(
+                   '<option value="'+esc(st)+'"'+(' selected' if st==status_filter else '')+'>'+esc(st.title())+'</option>'
+                   for st in ('all',)+STATES)+'</select></label><button>Filter</button></form>'
+               '<p>Matching records: '+str(total)+' · Page '+str(page)+' of '+str(pages)+'</p>'
+               +('<a href="'+esc(query_url(page-1,status_filter))+'">Previous</a> ' if page>1 else '')
+               +('<a href="'+esc(query_url(page+1,status_filter))+'">Next</a>' if page<pages else '')+'</section>')
+    if not rows:
+        out.append('<section class="panel"><p>No follow-ups match this filter.</p></section>')
     if leads:
         out.append('<section class="panel"><h2>Plan a follow-up</h2><form method="post" action="/revenue-followups">'
                    '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
