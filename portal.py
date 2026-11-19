@@ -229,8 +229,13 @@ def safe_next(value):
  Only same-site absolute paths are accepted, so a login link can never
  bounce the user to another site.
  """
- if isinstance(value,str) and value.startswith('/') and not value.startswith('//'):return value
- return '/'
+ if not isinstance(value,str) or not value.startswith('/'):
+  return '/'
+ # Browsers can normalize backslashes into forward slashes in Location
+ # headers. Reject them, control characters, and scheme-relative URLs.
+ if value.startswith('//') or '\\' in value or any(ord(ch)<32 or ord(ch)==127 for ch in value):
+  return '/'
+ return value
 
 # Small built-in sample dataset for the public sample report. Clearly sample
 # data, never a real customer's data. Three rows are intentionally messy

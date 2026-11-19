@@ -41,12 +41,13 @@ class LandingPageTests(unittest.TestCase):
         import re
         page = self.portal.shell('Home', self.portal.landing_page())
         nav = page.split('<nav class="velx-nav">', 1)[1].split('</nav>', 1)[0]
-        primary = re.findall(r'class="velx-primary" href="([^"]+)"', nav)
+        primary_section = nav.split('<details class="velx-more">', 1)[0]
+        primary = re.findall(r'class="velx-primary" href="([^"]+)"', primary_section)
         self.assertEqual(primary, ['/', '/business-os-v59', '/revenue-priority', '/account'])
         self.assertIn('<details class="velx-more">', nav)
-        self.assertIn('href="/sales-pipeline"', nav)
-        self.assertIn('href="/growth-strategy"', nav)
-        self.assertIn('href="/sovereign-command-v56"', nav)
+        self.assertIn('href="/revenue-priority/live"', nav)
+        self.assertIn('href="/revenue-followups"', nav)
+        self.assertIn('href="/revenue-command"', nav)
 
     def test_pricing_free_and_pro(self):
         html = self.portal.landing_page()
@@ -101,6 +102,12 @@ class LandingPageTests(unittest.TestCase):
         self.assertEqual(self.portal.safe_next('//evil.example.com'), '/')
         self.assertEqual(self.portal.safe_next(''), '/')
         self.assertEqual(self.portal.safe_next(None), '/')
+        self.assertEqual(self.portal.safe_next('/\\\\evil.example/path'), '/')
+        self.assertEqual(self.portal.safe_next('/%0a'), '/%0a')
+        self.assertEqual(self.portal.safe_next('/safe\\nLocation: //evil.example'), '/')
+        self.assertEqual(self.portal.safe_next('/safe\\r'), '/')
+        self.assertEqual(self.portal.safe_next('/safe\\x7f'), '/')
+        self.assertEqual(self.portal.safe_next('/safe?next=1'), '/safe?next=1')
 
     def test_get_root_returns_200_with_pricing_buy_and_sample(self):
         server = ThreadingHTTPServer(('127.0.0.1', 0), self.portal.Handler)
