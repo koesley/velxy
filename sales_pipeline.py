@@ -14,6 +14,11 @@ def setup(c):
         stage TEXT NOT NULL, estimated_value INTEGER NOT NULL DEFAULT 0,
         notes TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""")
     c.execute("CREATE INDEX IF NOT EXISTS sales_pipeline_owner ON sales_pipeline_leads(owner_id, updated_at)")
+    c.execute("""CREATE TABLE IF NOT EXISTS sales_pipeline_events (
+        id TEXT PRIMARY KEY, owner_id INTEGER NOT NULL, lead_id TEXT NOT NULL,
+        from_stage TEXT, to_stage TEXT NOT NULL, created_at INTEGER NOT NULL,
+        FOREIGN KEY(lead_id) REFERENCES sales_pipeline_leads(id))""")
+    c.execute("CREATE INDEX IF NOT EXISTS sales_pipeline_events_owner_lead ON sales_pipeline_events(owner_id,lead_id,created_at)")
     c.execute("CREATE TABLE IF NOT EXISTS outreach_suppression (owner_id INTEGER NOT NULL,email TEXT NOT NULL,status TEXT NOT NULL,reason TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(owner_id,email))")
     c.execute("CREATE TABLE IF NOT EXISTS outreach_suppression_events (owner_id INTEGER NOT NULL,email TEXT NOT NULL,status TEXT NOT NULL,reason TEXT NOT NULL,created_at INTEGER NOT NULL)")
 def set_suppression(c, owner, email, status, reason=""):
@@ -129,17 +134,38 @@ def save(c, owner, data):
         raise ValueError("Invalid email")
     lead_id=data.get("lead_id","").strip()
     if lead_id:
+        previous=c.execute("SELECT stage FROM sales_pipeline_leads WHERE id=? AND owner_id=?",(lead_id,owner)).fetchone()
+        if previous is None:
+            raise ValueError("Lead not found")
         result=c.execute("""UPDATE sales_pipeline_leads SET business=?,contact=?,email=?,industry=?,stage=?,estimated_value=?,notes=?,updated_at=?
                             WHERE id=? AND owner_id=?""",
                          (business,contact,email,industry,stage,value,notes,int(time.time()),lead_id,owner))
         if result.rowcount != 1:
             raise ValueError("Lead not found")
+        if previous[0] != stage:
+            c.execute("""INSERT INTO sales_pipeline_events(id,owner_id,lead_id,from_stage,to_stage,created_at)
+                         VALUES (?,?,?,?,?,?)""",
+                      (secrets.token_hex(12),owner,lead_id,previous[0],stage,int(time.time())))
         return lead_id
     lead_id=secrets.token_hex(12)
     now=int(time.time())
     c.execute("INSERT INTO sales_pipeline_leads VALUES (?,?,?,?,?,?,?,?,?,?,?)",
               (lead_id,owner,business,contact,email,industry,stage,value,notes,now,now))
+    c.execute("""INSERT INTO sales_pipeline_events(id,owner_id,lead_id,from_stage,to_stage,created_at)
+                 VALUES (?,?,?,?,?,?)""",
+              (secrets.token_hex(12),owner,lead_id,None,stage,now))
     return lead_id
+
+def lead_history(c, owner, lead_id, limit=20):
+    """Recent stage transitions only; never exposes another owner's lead."""
+    setup(c)
+    if not isinstance(limit,int) or isinstance(limit,bool) or not 1 <= limit <= 100:
+        raise ValueError("Invalid history limit")
+    if not c.execute("SELECT 1 FROM sales_pipeline_leads WHERE owner_id=? AND id=?",(owner,lead_id)).fetchone():
+        return []
+    return c.execute("""SELECT from_stage,to_stage,created_at FROM sales_pipeline_events
+                        WHERE owner_id=? AND lead_id=? ORDER BY created_at DESC,id DESC LIMIT ?""",
+                     (owner,lead_id,limit)).fetchall()
 def dashboard(c, owner, csrf):
     setup(c)
     rows=c.execute("""SELECT id,business,contact,email,industry,stage,estimated_value,notes
@@ -194,5 +220,9 @@ def dashboard(c, owner, csrf):
     parts.append('<section class="panel"><h2>Delivery status register</h2>'+''.join('<p>'+esc(email)+' — '+esc(status)+'</p>' for email,status in statuses)+'</section>')
 
     for lead in rows:
-        parts.append('<section class="panel"><h3>'+esc(lead[1])+'</h3><p>'+esc(lead[5].title())+' · $'+str(lead[6])+' estimated · '+esc(lead[2])+'</p><details><summary>Edit lead</summary>'+form(lead)+'</details></section>')
+        history=lead_history(c,owner,lead[0],10)
+        timeline=''.join('<li>'+esc(old or 'Created')+' → '+esc(new)+' · '+esc(time.strftime('%Y-%m-%d',time.gmtime(when)))+' UTC</li>' for old,new,when in history)
+        parts.append('<section class="panel"><h3>'+esc(lead[1])+'</h3><p>'+esc(lead[5].title())+' · 
+    return ''.join(parts)
++str(lead[6])+' estimated · '+esc(lead[2])+'</p><details><summary>Edit lead</summary>'+form(lead)+'</details><details><summary>Stage history</summary><ol>'+timeline+'</ol><p>Recent recorded stage changes only. Existing leads may have no earlier history.</p></details></section>')
     return ''.join(parts)
