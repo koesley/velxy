@@ -55,6 +55,16 @@ def make_fake(invoices):
     return fake
 
 
+def capturing_invoice_fake(seen):
+    """Fake btcpay_mainnet.request that records the invoice-create payload."""
+    def fake(method, path, payload=None):
+        if method == 'POST' and path == '/invoices':
+            seen['payload'] = payload
+            return {'id': 'inv-new', 'checkoutLink': 'https://btcpay.example.com/i/inv-new'}
+        raise RuntimeError('unexpected fake call %s %s' % (method, path))
+    return fake
+
+
 class MainnetTestCase(unittest.TestCase):
     def setUp(self):
         self.env = patch.dict(os.environ, MAINNET_ENV)
@@ -110,6 +120,25 @@ class MainnetTestCase(unittest.TestCase):
             invoice_id, checkout_url = btcpay_mainnet.issue_invoice(order_id)
         self.assertEqual(invoice_id, 'inv-new')
         self.assertTrue(checkout_url.startswith('https://btcpay.example.com/i/'))
+
+    def test_issue_invoice_sets_payment_return_url(self):
+        order_id = btcpay_mainnet.create_order(self.conn, 1)
+        seen = {}
+        with patch.object(btcpay_mainnet, 'request', capturing_invoice_fake(seen)):
+            btcpay_mainnet.issue_invoice(order_id)
+        self.assertEqual(
+            seen['payload']['checkout']['redirectURL'],
+            'https://velxtria-private-preview-tzie.onrender.com/account?paid=1')
+
+    def test_issue_invoice_return_url_uses_site_url_env(self):
+        order_id = btcpay_mainnet.create_order(self.conn, 1)
+        seen = {}
+        with patch.dict(os.environ, {'VELXTRIA_SITE_URL': 'https://example.test/'}):
+            with patch.object(btcpay_mainnet, 'request', capturing_invoice_fake(seen)):
+                btcpay_mainnet.issue_invoice(order_id)
+        self.assertEqual(
+            seen['payload']['checkout']['redirectURL'],
+            'https://example.test/account?paid=1')
 
     def test_setup_adds_network_column(self):
         cols = [row[1] for row in self.conn.execute('PRAGMA table_info(btcpay_orders)').fetchall()]

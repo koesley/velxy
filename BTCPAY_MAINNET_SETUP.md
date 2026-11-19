@@ -37,6 +37,7 @@ in chat, never print them in logs.
 | `VELXTRIA_BTCPAY_MAINNET_API_KEY` | Greenfield API key (see below) |
 | `VELXTRIA_BTCPAY_MAINNET_WEBHOOK_SECRET` | Secret you invent for the webhook (see below) |
 | `VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT` | `0` until verified, then `1` |
+| `VELXTRIA_SITE_URL` | Public site URL invoices redirect payers back to (`/account?paid=1`); optional, defaults to the production preview URL |
 
 > The flag is dashboard-controlled: `render.yaml` declares it with
 > `sync: false` and no value. Never declare a value for it in

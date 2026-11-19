@@ -23,6 +23,9 @@ Safety rules enforced here:
   * Settlement is idempotent: a conditional claim (UPDATE ... WHERE
     status='pending') means one settled invoice can activate PRO exactly
     once, no matter how often reconciliation or the webhook runs.
+  * The invoice's redirectURL sends the payer back to /account?paid=1.
+    That page re-verifies against BTCPay before showing any
+    confirmation; the redirect itself is never proof of payment.
   * Nothing in this module logs secrets, API keys, or webhook secrets.
 """
 import hashlib
@@ -83,6 +86,14 @@ def configured():
 def checkout_enabled():
     """Master switch for the customer checkout route."""
     return os.getenv('VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT', '0') == '1' and configured()
+
+
+def site_url():
+    """Public site URL invoices redirect payers back to. Override with
+    VELXTRIA_SITE_URL; the default is the production preview URL."""
+    return os.getenv(
+        'VELXTRIA_SITE_URL',
+        'https://velxtria-private-preview-tzie.onrender.com').rstrip('/')
 
 
 def webhook_configured():
@@ -168,7 +179,8 @@ def issue_invoice(order_id):
     result = request('POST', '/invoices', {
         'amount': PRICE, 'currency': 'USD',
         'metadata': {'orderId': order_id, 'itemDesc': 'VELXTRIA PRO - 30 Days - 50 Reports'},
-        'checkout': {'speedPolicy': 'HighSpeed'}
+        'checkout': {'speedPolicy': 'HighSpeed',
+                     'redirectURL': site_url() + '/account?paid=1'}
     })
     invoice_id = result.get('id')
     checkout_url = result.get('checkoutLink', '')
