@@ -75,8 +75,7 @@ def render(c, uid, wid):
         'Verify consent and suppression status before any customer communication.</p>',
         '<p>'+link("/business-os-v59","Review and correct lead records")+'</p>',
     ],
-        '<section class="panel"><h2>Highest-priority open leads</h2>',
-    ]
+     ]
     if data["contact_readiness"]["examples"]:
         out.append('<p>Oldest incomplete records (up to 10):</p><ul>')
         for _,name,missing_contact,missing_source in data["contact_readiness"]["examples"]:
@@ -85,7 +84,7 @@ def render(c, uid, wid):
             if missing_source: reasons.append("missing source")
             out.append('<li>'+e(name or "Unnamed lead")+' — '+e(", ".join(reasons))+'</li>')
         out.append('</ul>')
-    out.append('</section>')
+    out.append('</section><section class="panel"><h2>Highest-priority open leads</h2>')
     if not data["ranked"]:
         out.append('<p>No eligible open leads with positive manually entered values.</p>')
     for item in data["ranked"]:
