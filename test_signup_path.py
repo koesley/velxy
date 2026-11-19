@@ -94,6 +94,13 @@ class SignupPathTests(unittest.TestCase):
         _, headers, _ = self.fetch('/signup?next=https://evil.example.com')
         self.assertEqual(headers.get('Location'), '/register')
 
+    def test_public_hero_exposes_free_registration(self):
+        status, _, body = self.fetch('/')
+        self.assertEqual(status, 200)
+        self.assertIn('href="/register">CREATE FREE ACCOUNT', body)
+        self.assertIn('href="#try">TRY IT NOW', body)
+        self.assertIn('href="/login">SIGN IN', body)
+
     def test_login_page_links_visibly_to_register(self):
         status, _, body = self.fetch('/login')
         self.assertEqual(status, 200)
