@@ -1,10 +1,32 @@
 """Actionable goal-gap coverage using existing ranked pipeline opportunities."""
 import html
 import urllib.parse
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import business_os_v59 as bos
 import revenue_goals_v27 as goals
 import revenue_priority_live as priorities
+
+
+SCENARIOS = (Decimal("0.25"), Decimal("0.50"), Decimal("0.75"))
+
+
+def scenario_analysis(gap, candidates):
+    """Illustrative realization rates, not predictions or probabilities."""
+    amounts = []
+    for item in candidates:
+        try:
+            amount = Decimal(str(item["estimated_value"]))
+        except (InvalidOperation, ValueError, TypeError, KeyError):
+            continue
+        if amount.is_finite() and amount > 0:
+            amounts.append(amount)
+    total = sum(amounts, Decimal(0))
+    scenarios = []
+    for rate in SCENARIOS:
+        realized = (total * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        scenarios.append({"rate": rate, "illustrative_value": realized,
+                          "remaining": max(Decimal(0), gap - realized)})
+    return scenarios
 
 
 def plan(c, uid, wid):
@@ -14,7 +36,7 @@ def plan(c, uid, wid):
     ranked = priorities.live_rankings(c, uid, wid, limit=50)
     if gap is None:
         return {"goal":goal,"candidates":[],"covered":Decimal(0),
-                "remaining":None,"eligible_count":len(ranked)}
+                "remaining":None,"eligible_count":len(ranked),"scenarios":[],"selection_limit":50}
     remaining=gap
     candidates=[]
     covered=Decimal(0)
@@ -32,7 +54,8 @@ def plan(c, uid, wid):
             if remaining==0:
                 break
     return {"goal":goal,"candidates":candidates,"covered":covered,
-            "remaining":remaining,"eligible_count":len(ranked)}
+            "remaining":remaining,"eligible_count":len(ranked),
+            "scenarios":scenario_analysis(gap, candidates),"selection_limit":50}
 
 
 def render(c,uid,wid):
@@ -63,6 +86,19 @@ def render(c,uid,wid):
                '</p><p>Selected in existing priority order until estimated values '
                'cover the gap, or the top 50 eligible leads are exhausted. '
                'Potential coverage is not expected revenue.</p></section>')
+    if result["candidates"]:
+        out.append('<section class="panel"><h2>Illustrative realization scenarios</h2>'
+                   '<p>What if 25%, 50%, or 75% of the selected estimated pipeline value '
+                   'were realized? These are arithmetic examples, not measured win rates, '
+                   'probabilities, predictions, or guaranteed receipts.</p>')
+        for scenario in result["scenarios"]:
+            rate = str(int(scenario["rate"] * 100))
+            out.append('<p>' + rate + '% of selected estimates: ' +
+                       money(scenario["illustrative_value"]) +
+                       ' · Remaining gap: ' + money(scenario["remaining"]) + '</p>')
+        out.append('<p>Only the top 50 ranked eligible opportunities are considered; '
+                   'the plan may omit other leads. Do not use this as a cash-flow forecast.</p>'
+                   '</section>')
     if not result["candidates"]:
         out.append('<section class="panel"><p>No eligible ranked open leads. '
                    'Add or qualify leads in Business OS.</p></section>')
