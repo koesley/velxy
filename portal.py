@@ -1155,7 +1155,7 @@ class Handler(BaseHTTPRequestHandler):
       row=c.execute('SELECT workspace_id FROM empire_members WHERE user_id=? LIMIT 1',(user['id'],)).fetchone()
       wid=row[0] if row else ''
      if not wid:raise ValueError('Create a workspace first')
-     body=revenue_execution_v29.render(c,user['id'],wid,csrf)
+     body=revenue_execution_v29.render(c,user['id'],wid,csrf,q.get('status',['all'])[0],q.get('page',['1'])[0])
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
    return self.respond(200,shell('Revenue Execution Board',body,user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/revenue-gap':
