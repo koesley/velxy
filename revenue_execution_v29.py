@@ -6,6 +6,7 @@ import urllib.parse
 from datetime import date
 import business_os_v59 as bos
 import revenue_gap_v28 as gap
+import revenue_execution_workload as workload
 
 STATES=("todo","in_progress","done","blocked")
 
@@ -67,22 +68,31 @@ def change(c,uid,wid,task_id,status):
     c.execute("UPDATE vx_revenue_tasks29 SET status=?,updated=? WHERE workspace_id=? AND id=?",
               (status,int(time.time()),wid,task_id))
 
-def render(c,uid,wid,csrf):
+def render(c,uid,wid,csrf,status="all",page=1):
     bos.core.access(c,uid,wid)
     bos.init(c)
     setup(c)
     e=lambda v:html.escape(str(v),quote=True)
     leads=c.execute("SELECT id,name FROM bos59_leads WHERE workspace_id=? AND status IN ('new','contacted') ORDER BY updated DESC LIMIT 300",(wid,)).fetchall()
-    rows=c.execute("""SELECT t.id,l.name,t.title,t.due_date,t.status,t.owner_id FROM vx_revenue_tasks29 t
-        JOIN bos59_leads l ON l.id=t.lead_id AND l.workspace_id=t.workspace_id
-        WHERE t.workspace_id=? ORDER BY CASE WHEN t.status='done' THEN 1 ELSE 0 END,t.due_date,t.created DESC LIMIT 100""",(wid,)).fetchall()
-    counts={s:sum(r[4]==s for r in rows) for s in STATES}
+    counts,due_counts=workload.summary(c,wid)
+    total,rows=workload.page(c,wid,status,page)
+    page=int(page)
     w=urllib.parse.quote(wid,safe="")
     out=['<section class="panel"><h1>Revenue Execution Board</h1>',
          '<p>Internal tasks assigned to their creator. No automated outreach, payments, '
-         'or verified revenue attribution. Showing up to 100 tasks.</p>',
+         'or verified revenue attribution. Showing 25 tasks per page.</p>',
          '<p>'+ ' · '.join(e(s.replace("_"," ").title())+': '+str(counts[s]) for s in STATES)+'</p>',
-         '<p><a href="/revenue-gap?w='+w+'">View goal-gap opportunities</a></p></section>']
+         '<p>Overdue: '+str(due_counts[0])+' · Due today: '+str(due_counts[1])+' · Future: '+str(due_counts[2])+'</p>',
+         '<p><a href="/revenue-gap?w='+w+'">View goal-gap opportunities</a></p></section>',
+         '<section class="panel"><h2>Browse tasks</h2><p>Matching tasks: '+str(total)+' · Page '+str(page)+'</p>',
+         '<form method="get" action="/revenue-execution"><input type="hidden" name="w" value="'+e(wid)+'">',
+         '<label>Status<select name="status">'+''.join('<option value="'+e(x)+'"'+(' selected' if x==status else '')+'>'+e(x.replace("_"," ").title())+'</option>' for x in ("all",)+STATES)+'</select></label><button>Filter</button></form></section>']
+    base='/revenue-execution?w='+w+'&status='+urllib.parse.quote(status,safe='')+'&page='
+    nav=[]
+    if page>1:nav.append('<a href="'+base+str(page-1)+'">Previous</a>')
+    if page*25<total:nav.append('<a href="'+base+str(page+1)+'">Next</a>')
+    out.append('<section class="panel">'+(' · '.join(nav) if nav else 'No additional pages')+'</section>')
+
     if leads:
         out.append('<section class="panel"><h2>Create action task</h2><form method="post" action="/revenue-execution">'
                    '<input type="hidden" name="csrf" value="'+e(csrf)+'">'
