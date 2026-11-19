@@ -37,6 +37,17 @@ class LandingPageTests(unittest.TestCase):
         self.portal = portal
         portal._SAMPLE_REPORT_HTML = None
 
+    def test_public_navigation_is_focused_and_advanced_routes_remain_accessible(self):
+        import re
+        page = self.portal.shell('Home', self.portal.landing_page())
+        nav = page.split('<nav class="velx-nav">', 1)[1].split('</nav>', 1)[0]
+        primary = re.findall(r'class="velx-primary" href="([^"]+)"', nav)
+        self.assertEqual(primary, ['/', '/business-os-v59', '/revenue-priority', '/account'])
+        self.assertIn('<details class="velx-more">', nav)
+        self.assertIn('href="/sales-pipeline"', nav)
+        self.assertIn('href="/growth-strategy"', nav)
+        self.assertIn('href="/sovereign-command-v56"', nav)
+
     def test_pricing_free_and_pro(self):
         html = self.portal.landing_page()
         self.assertIn('FREE', html)
