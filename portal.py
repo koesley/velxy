@@ -15,6 +15,7 @@ import subscriptions
 import site_stats
 import btcpay_integration
 import btcpay_mainnet
+import referrals
 import sales_pipeline
 import sovereign_ascension
 import ascension_recovery
@@ -167,6 +168,7 @@ def db():
  site_stats.ensure(c)
  payhip_integration.setup(c)
  subscriptions.setup(c)
+ referrals.setup(c)
  business_v3.setup(c)
  business_v4.setup(c)
  operator_v5.setup(c)
@@ -236,6 +238,28 @@ def safe_next(value):
  if value.startswith('//') or '\\' in value or any(ord(ch)<32 or ord(ch)==127 for ch in value):
   return '/'
  return value
+
+def referral_cookie_header(code):
+ """Set-Cookie header for a validated referral code (first-party, 30 days)."""
+ return ('Set-Cookie', referrals.COOKIE_NAME+'='+code+'; Path=/; Max-Age='
+         +str(referrals.COOKIE_MAX_AGE)+'; SameSite=Lax')
+
+def referral_code_from_request(handler):
+ """A referral code carried by this request: the ?ref= query first, then the
+ referral cookie. Only returns codes that exist, so junk can never attribute
+ a signup."""
+ q=urllib.parse.parse_qs(urllib.parse.urlsplit(handler.path).query).get('ref',[''])[0]
+ cookie=SimpleCookie()
+ try:cookie.load(handler.headers.get('Cookie',''))
+ except Exception:pass
+ morsel=cookie.get(referrals.COOKIE_NAME)
+ code=q or (morsel.value if morsel else '')
+ if not referrals.valid_code(code):
+  return ''
+ with db() as c:
+  if referrals.referrer_for_code(c,code) is None:
+   return ''
+ return code
 
 # Small built-in sample dataset for the public sample report. Clearly sample
 # data, never a real customer's data. Three rows are intentionally messy
@@ -913,7 +937,9 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/about':
    user,csrf,_=self.identity()
    with db() as c:site_stats.record(c,'about_view')
-   return self.respond(200,shell('Meet VELXTRIA',landing_page(user,csrf)))
+   ref=referral_code_from_request(self) if not user else ''
+   headers=[referral_cookie_header(ref)] if ref else ()
+   return self.respond(200,shell('Meet VELXTRIA',landing_page(user,csrf)),headers=headers)
   if p=='/checkout-feedback.js':
    js="""document.addEventListener('submit',function(e){var f=e.target;if(!f || !f.action || !f.action.includes('/btcpay/mainnet/checkout'))return;var b=f.querySelector('button[type="submit"],button:not([type])');if(!b)return;if(b.disabled){e.preventDefault();return;}b.disabled=true;b.textContent='Preparing secure Bitcoin checkout…';b.setAttribute('aria-busy','true');var note=document.createElement('span');note.setAttribute('role','status');note.textContent=' Creating your invoice; please wait.';f.appendChild(note);});"""
    return self.respond(200,js,'application/javascript',headers=[('Cache-Control','public, max-age=3600')])
@@ -947,7 +973,10 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/register':
    nxt=safe_next(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('next',[''])[0])
    login='/login'+('?next='+urllib.parse.quote(nxt,safe='') if nxt!='/' else '')
-   return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><input type="hidden" name="next" value="'+escape(nxt)+'"><label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form><p>Already have an account? <a href="'+login+'">Sign in</a></p></section>'))
+   ref=referral_code_from_request(self)
+   ref_field='<input type="hidden" name="ref" value="'+escape(ref)+'">' if ref else ''
+   headers=[referral_cookie_header(ref)] if ref else ()
+   return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><input type="hidden" name="next" value="'+escape(nxt)+'">'+ref_field+'<label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form><p>Already have an account? <a href="'+login+'">Sign in</a></p></section>'),headers=headers)
   if p=='/try':return self.redirect('/#try')
   if p=='/try-download':
    # Anonymous demo ZIP: held in memory only, token expires after 10 minutes.
@@ -957,7 +986,9 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,data,'application/zip',headers=[('Content-Disposition','attachment; filename="VELXTRIA_Demo_Report.zip"')])
   if p=='/' and not user:
    with db() as c:site_stats.record(c,'landing_view')
-   return self.respond(200,shell('Sales reporting made simple',landing_page(user,csrf)))
+   ref=referral_code_from_request(self)
+   headers=[referral_cookie_header(ref)] if ref else ()
+   return self.respond(200,shell('Sales reporting made simple',landing_page(user,csrf)),headers=headers)
   if not user:return self.redirect('/login')
   if p=='/sales-execution':
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
@@ -1265,6 +1296,8 @@ class Handler(BaseHTTPRequestHandler):
     reports=c.execute('SELECT id,filename,created,status,accepted,rejected,email_status FROM reports WHERE user_id=? ORDER BY created DESC LIMIT 30',(user['id'],)).fetchall()
     ent,count,remaining=subscriptions.usage(c,user['id'])
     pending_mainnet=btcpay_mainnet.pending_order(c,user['id']) if ent['plan']!='pro' else None
+    ref_code=referrals.code_for(c,user['id'])
+    ref_stats=referrals.stats(c,user['id'])
    rows=''.join('<tr><td>'+escape(r[1])+'</td><td>'+escape(datetime.fromtimestamp(r[2],timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))+'</td><td>'+escape(r[3])+'</td><td>'+str(r[4])+' / '+str(r[5])+'</td><td><a href="/report?id='+escape(r[0])+'">View</a> · <a href="/download?id='+escape(r[0])+'">Download ZIP</a></td><td>'+escape(r[6])+'</td></tr>' for r in reports)
    access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 3 reports total · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
@@ -1274,6 +1307,8 @@ class Handler(BaseHTTPRequestHandler):
    if os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE: body+='<section class="panel"><h2>Site Studio</h2><a href="/site-studio">Create a company website draft</a></section>'
    body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
    body+=upgrade_html
+   ref_link=btcpay_mainnet.site_url()+'/?ref='+ref_code
+   body+='<section class="panel"><h2>Refer friends — earn free PRO</h2><p>Share your link: <a href="'+escape(ref_link)+'">'+escape(ref_link)+'</a></p><p>When someone signs up with your link and pays $49 for PRO, you get a free month of PRO. Referred signups: '+str(ref_stats['signups'])+' · Paid referrals: '+str(ref_stats['paid'])+' · Free months earned: '+str(ref_stats['months_earned'])+'</p></section>'
    if user['role']=='admin':
     body+='<section class="panel"><a href="/agents">Open Founder Agent Control</a> · <a href="/founder-stats">Founder stats — traffic and funnel</a></section>'
     with db() as c:
@@ -2825,6 +2860,16 @@ class Handler(BaseHTTPRequestHandler):
     with db() as c:
      c.execute('INSERT INTO users(email,salt,pw_hash,role,access,created) VALUES (?,?,?,?,?,?)',(email,salt,pw_hash(password,salt),'customer','demo',now()))
      site_stats.record(c,'signup')
+     uid=c.execute('SELECT id FROM users WHERE email=?',(email,)).fetchone()[0]
+     ref=fields.get('ref','').strip()
+     if not ref:
+      cookie=SimpleCookie()
+      try:cookie.load(self.headers.get('Cookie',''))
+      except Exception:pass
+      morsel=cookie.get(referrals.COOKIE_NAME)
+      ref=morsel.value if morsel else ''
+     if referrals.record_signup(c,uid,ref) is not None:
+      site_stats.record(c,'referral_signup')
    except (sqlite3.IntegrityError, persistent_integrity_error()):return self.fail(409,'Account already exists.')
    nxt=safe_next(fields.get('next',''))
    dest='/login?registered=1'
