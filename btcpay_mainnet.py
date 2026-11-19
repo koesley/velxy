@@ -263,10 +263,16 @@ def _claim_and_activate(conn, user_id, order_id, invoice_id):
     if claimed != 1:
         return False
     t = int(time.time())
-    # Each settled invoice grants one 30-day period; a renewal starts when the previous ends.
-    previous = conn.execute('SELECT period_end FROM subscriptions WHERE user_id=?', (user_id,)).fetchone()
-    start = max(t, previous[0] if previous and previous[0] > t else t)
-    end = start + DAYS * 86400
+    # Each settled invoice grants one 30-day period. A renewal extends the
+    # current period: the end moves 30 days out from where it was, and the
+    # start stays put, so PRO access is continuous. (Setting the start to
+    # the old period end would leave the user with no active period until
+    # then, because entitlement requires start <= now < end.)
+    previous = conn.execute('SELECT period_start,period_end FROM subscriptions WHERE user_id=?', (user_id,)).fetchone()
+    if previous and previous[1] > t:
+        start, end = previous[0], previous[1] + DAYS * 86400
+    else:
+        start, end = t, t + DAYS * 86400
     import subscriptions
     conn.execute('''INSERT INTO subscriptions
         (user_id,product_key,pricing_plan,status,source_reference,period_start,period_end,verified_at,verification_source,updated_at)
