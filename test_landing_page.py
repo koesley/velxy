@@ -45,9 +45,9 @@ class LandingPageTests(unittest.TestCase):
         primary = re.findall(r'class="velx-primary" href="([^"]+)"', primary_section)
         self.assertEqual(primary, ['/', '/business-os-v59', '/revenue-priority', '/account'])
         self.assertIn('<details class="velx-more">', nav)
-        self.assertIn('href="/sales-pipeline"', nav)
-        self.assertIn('href="/growth-strategy"', nav)
-        self.assertIn('href="/sovereign-command-v56"', nav)
+        self.assertIn('href="/revenue-priority/live"', nav)
+        self.assertIn('href="/revenue-followups"', nav)
+        self.assertIn('href="/revenue-command"', nav)
 
     def test_pricing_free_and_pro(self):
         html = self.portal.landing_page()
