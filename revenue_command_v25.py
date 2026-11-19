@@ -74,8 +74,7 @@ def render(c, uid, wid):
         '<p>These are record-completeness checks, not proof that contact is valid or outreach is permitted. '
         'Verify consent and suppression status before any customer communication.</p>',
         '<p>'+link("/business-os-v59","Review and correct lead records")+'</p>',
-    ],
-     ]
+    ]
     if data["contact_readiness"]["examples"]:
         out.append('<p>Oldest incomplete records (up to 10):</p><ul>')
         for _,name,missing_contact,missing_source in data["contact_readiness"]["examples"]:
