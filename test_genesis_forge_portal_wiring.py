@@ -21,7 +21,7 @@ class GenesisForgePortalWiringTests(unittest.TestCase):
         route = self.portal.split("if p=='/genesis-forge':", 1)[1].split("if p=='/founder-stats':", 1)[0]
         self.assertIn("html.escape(item['name'],quote=True)", route)
         self.assertIn("('Cache-Control','no-store')", route)
-        self.assertNotIn("create_preview(", route)
+        self.assertIn("Create design preview", route)
         self.assertNotIn("update_preview(", route)
 
 
