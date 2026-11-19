@@ -1,0 +1,33 @@
+name: Genesis Forge integration validation
+
+on:
+  pull_request:
+    paths:
+      - "genesis_forge*.py"
+      - "test_genesis_forge*.py"
+      - "portal.py"
+      - ".github/workflows/genesis-forge-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "genesis_forge*.py"
+      - "test_genesis_forge*.py"
+      - "portal.py"
+      - ".github/workflows/genesis-forge-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check syntax of all Genesis Forge modules and portal
+        run: python -m py_compile genesis_forge_v1.py genesis_forge_store_v1.py genesis_forge_preview_v1.py genesis_forge_service_v1.py portal.py
+      - name: Run Genesis Forge unit and portal integration tests
+        run: python -m unittest discover -v -p 'test_genesis_forge*.py'
