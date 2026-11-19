@@ -9,6 +9,7 @@ database, and a failed write never breaks the request it was logging.
 """
 
 import time
+import html
 from datetime import datetime, timezone
 
 EVENTS = ('landing_view', 'about_view', 'demo_run', 'signup',
@@ -45,11 +46,14 @@ def record(conn, event, detail='', created=None):
     """Append one event. Never raises: analytics must not break the
     request it is logging."""
     try:
+        if event not in EVENTS:
+            return
+        detail = str(detail).replace('\x00', '')[:240]
         ensure(conn)
         conn.execute(
             'INSERT INTO site_events (created, event, detail) VALUES (?,?,?)',
             (int(created if created is not None else time.time()),
-             event, str(detail)[:240]))
+             event, detail))
     except Exception as exc:  # noqa: BLE001 - analytics must not fail a request
         print('site_stats record failed:', type(exc).__name__, flush=True)
 
@@ -61,6 +65,8 @@ def summary(conn, days=14):
     {event: count})] for the last `days` days, oldest first. recent:
     [(created, event, detail)] newest first, capped at 50.
     """
+    if not isinstance(days, int) or isinstance(days, bool) or not 1 <= days <= 90:
+        raise ValueError('days must be an integer from 1 to 90')
     ensure(conn)
     totals = {e: 0 for e in EVENTS}
     for event, n in conn.execute(
@@ -74,11 +80,13 @@ def summary(conn, days=14):
             'WHERE created>=? GROUP BY event, created/86400 '
             'ORDER BY created/86400',
             (since,)):
-        by_day.setdefault(int(day) * 86400, {})[event] = n
+        if event in EVENTS:
+            by_day.setdefault(int(day) * 86400, {})[event] = n
     daily = [(day, by_day[day]) for day in sorted(by_day)]
     recent = conn.execute(
         'SELECT created, event, detail FROM site_events '
-        'ORDER BY created DESC LIMIT 50').fetchall()
+        'WHERE event IN (' + ','.join('?' for _ in EVENTS) + ') '
+        'ORDER BY created DESC LIMIT 50', EVENTS).fetchall()
     return totals, daily, recent
 
 
@@ -109,12 +117,13 @@ def stats_html(totals, daily, recent):
     recent_rows = ''.join(
         '<tr><td>' + datetime.fromtimestamp(
             r[0], timezone.utc).strftime('%Y-%m-%d %H:%M UTC') +
-        '</td><td>' + LABELS.get(r[1], r[1]) +
-        '</td><td>' + (r[2] or '') + '</td></tr>'
+        '</td><td>' + html.escape(LABELS.get(r[1], r[1])) +
+        '</td><td>' + html.escape(str(r[2] or '')) + '</td></tr>'
         for r in recent)
     return ('<section class="panel"><h2>Funnel</h2><p>All-time counts; '
-            'conversion is against the previous step.</p><table><thead><tr>'
-            '<th>Step</th><th>Count</th><th>Conversion</th></tr></thead><tbody>' +
+            'ratios compare event totals, not unique people or cohort conversion. '
+            'Repeated views and actions may exceed 100%.</p><table><thead><tr>'
+            '<th>Step</th><th>Event count</th><th>Ratio to previous event count</th></tr></thead><tbody>' +
             funnel_rows + '</tbody></table></section>'
             '<section class="panel"><h2>Totals</h2><table><thead><tr>'
             '<th>Event</th><th>All time</th></tr></thead><tbody>' +
