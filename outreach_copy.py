@@ -3,6 +3,7 @@
 This module never sends email. Callers must review factual observations before use.
 """
 from dataclasses import dataclass
+import re
 from typing import Optional
 
 @dataclass(frozen=True)
@@ -21,27 +22,47 @@ INDUSTRY_ANGLES = {
     "general": "spotting overlooked opportunities and simplifying everyday operations",
 }
 
+def _safe_field(value: str, label: str, limit: int) -> str:
+    """Bound prospect-controlled text and reject header/control injection."""
+    if not isinstance(value, str):
+        raise ValueError(label + " must be text")
+    value = value.strip()
+    if len(value) > limit:
+        raise ValueError(label + " is too long")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        raise ValueError(label + " contains control characters")
+    return value
+
+
+def _safe_observation(value: str) -> str:
+    """Allow ordinary punctuation, but not line breaks or fabricated long claims."""
+    return _safe_field(value, "Observation", 500)
+
+
 def draft(prospect: Prospect, style: str = "bold") -> dict:
     """Return subject/body/verification metadata, not a ready-to-send campaign.
 
     The observation is only included if a source is supplied; the caller must
     independently confirm it is accurate and appropriate before sending.
     """
-    if not prospect.name.strip():
+    name = _safe_field(prospect.name, "Business name", 120)
+    first_name = _safe_field(prospect.first_name, "Contact name", 80)
+    industry_name = _safe_field(prospect.industry, "Industry", 80)
+    observation = _safe_observation(prospect.verified_observation)
+    source = _safe_field(prospect.observation_source, "Observation source", 300)
+    if not name:
         raise ValueError("Business name is required")
     if style not in ("bold", "curious", "personal"):
         raise ValueError("Unknown outreach style")
-    industry = prospect.industry.lower().strip()
+    industry = industry_name.lower()
     angle = INDUSTRY_ANGLES.get(industry, INDUSTRY_ANGLES["general"])
-    greeting = "Hi " + (prospect.first_name.strip() or "there") + ","
-    observation = prospect.verified_observation.strip()
-    source = prospect.observation_source.strip()
+    greeting = "Hi " + (first_name or "there") + ","
     if observation and not source:
         raise ValueError("An observation source is required to prevent invented personalization")
     subjects = {
-        "bold": f"A new opportunity for {prospect.name.strip()}?",
-        "curious": f"One question about {prospect.name.strip()}",
-        "personal": f"Quick introduction to {prospect.name.strip()}",
+        "bold": f"A new opportunity for {name}?",
+        "curious": f"One question about {name}",
+        "personal": f"Quick introduction to {name}",
     }
     openings = {
         "bold": "The next advantage for a business might be hiding in work it already does every day.",
@@ -71,12 +92,29 @@ def draft(prospect: Prospect, style: str = "bold") -> dict:
 
 def classify_reply(message: str) -> str:
     """Conservative manual-triage hint; never automatically follow up."""
-    msg = message.lower()
-    if any(x in msg for x in ("unsubscribe", "remove me", "stop emailing", "do not contact")):
+    if not isinstance(message, str):
+        raise ValueError("Reply must be text")
+    # Only classify the sender's latest reply, not quoted earlier messages.
+    # Common reply headers and quote prefixes are not current consent.
+    current = []
+    for line in message[:20000].splitlines():
+        stripped = line.strip()
+        if stripped.startswith(">") or re.match(r"On .+ wrote:\\s*$", stripped, re.I):
+            break
+        if stripped.lower().startswith(("from:", "original message", "-----original message")):
+            break
+        current.append(line)
+    msg = " ".join(current).lower()
+    if any(x in msg for x in ("unsubscribe", "remove me", "stop emailing", "do not contact",
+                               "don't contact", "stop contacting", "take me off",
+                               "opt out", "opt-out", "no more emails")):
         return "do_not_contact"
-    if any(x in msg for x in ("not interested", "no thanks", "already have someone", "have someone else")):
+    if any(x in msg for x in ("not interested", "no thanks", "no thank you",
+                               "already have someone", "have someone else",
+                               "not right now", "not a priority")):
         return "declined"
-    if any(x in msg for x in ("tell me more", "interested", "send details", "schedule a call")):
+    if any(x in msg for x in ("tell me more", "i'm interested", "i am interested",
+                               "send details", "schedule a call", "book a call")):
         return "potential_interest"
     return "needs_review"
 
