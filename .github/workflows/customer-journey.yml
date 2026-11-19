@@ -8,6 +8,8 @@ on:
       - 'test_signup_path.py'
       - 'test_landing_page.py'
       - 'test_seo.py'
+      - 'test_btcpay_mainnet.py'
+      - 'btcpay_mainnet.py'
       - '.github/workflows/customer-journey.yml'
   pull_request:
     paths:
@@ -16,6 +18,8 @@ on:
       - 'test_signup_path.py'
       - 'test_landing_page.py'
       - 'test_seo.py'
+      - 'test_btcpay_mainnet.py'
+      - 'btcpay_mainnet.py'
       - '.github/workflows/customer-journey.yml'
   workflow_dispatch:
 permissions:
@@ -37,4 +41,4 @@ jobs:
         env:
           VELXTRIA_DEPLOYMENT_MODE: local
           VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT: '0'
-        run: python -m unittest -v test_signup_path test_landing_page test_seo
+        run: python -m unittest -v test_signup_path test_landing_page test_seo test_btcpay_mainnet
