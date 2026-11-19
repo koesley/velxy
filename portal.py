@@ -2785,7 +2785,7 @@ class Handler(BaseHTTPRequestHandler):
   if n>MAX_BYTES+65536:raise ValueError('Upload too large (maximum 5 MB)')
   raw=self.rfile.read(n);ct=self.headers.get('Content-Type','')
   if ct.startswith('application/x-www-form-urlencoded'):
-   return {k:v[0] for k,v in urllib.parse.parse_qs(raw.decode('utf-8'),keep_blank_values=True).items()},None
+   return {k:(','.join(v) if k=='component' else v[0]) for k,v in urllib.parse.parse_qs(raw.decode('utf-8'),keep_blank_values=True,max_num_fields=100).items()},None
   if ct.startswith('multipart/form-data'):
    # Minimal bounded multipart parser: one file and a CSRF field; no external dependencies.
    from email.parser import BytesParser
@@ -2886,6 +2886,14 @@ class Handler(BaseHTTPRequestHandler):
    try:
     with db() as c:
      result=genesis_forge_service_v1.create_preview(c,user['id'],wid,fields.get('name',''),fields.get('industry','general'))
+    return self.redirect('/genesis-forge?w='+urllib.parse.quote(wid,safe='')+'&preview='+urllib.parse.quote(result['id'],safe=''))
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+  if p=='/genesis-forge/update':
+   wid=fields.get('workspace','')
+   try:
+    selected=fields.get('component','').split(',') if fields.get('component','') else []
+    with db() as c:
+     result=genesis_forge_service_v1.update_preview(c,user['id'],wid,fields.get('preview_id',''),int(fields.get('revision','0')),fields.get('name',''),fields.get('industry','general'),selected)
     return self.redirect('/genesis-forge?w='+urllib.parse.quote(wid,safe='')+'&preview='+urllib.parse.quote(result['id'],safe=''))
    except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
   if p=='/ascension-workflow-create':
