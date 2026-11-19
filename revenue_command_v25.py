@@ -22,7 +22,22 @@ def snapshot(c, uid, wid):
         "WHERE f.workspace_id=? AND f.status='planned' "
         "ORDER BY f.due_date,f.created LIMIT 8", (wid,)
     ).fetchall()
-    return {"metrics": metrics, "ranked": ranked, "pending_approvals": int(pending),
+    hygiene = c.execute("""SELECT
+        COUNT(*) AS open_count,
+        COALESCE(SUM(CASE WHEN TRIM(contact)='' THEN 1 ELSE 0 END),0),
+        COALESCE(SUM(CASE WHEN TRIM(source)='' THEN 1 ELSE 0 END),0),
+        COALESCE(SUM(CASE WHEN TRIM(name)='' THEN 1 ELSE 0 END),0)
+        FROM bos59_leads WHERE workspace_id=? AND status IN ('new','contacted')""",
+        (wid,)).fetchone()
+    incomplete = c.execute("""SELECT id,name,
+        CASE WHEN TRIM(contact)='' THEN 1 ELSE 0 END AS missing_contact,
+        CASE WHEN TRIM(source)='' THEN 1 ELSE 0 END AS missing_source
+        FROM bos59_leads WHERE workspace_id=? AND status IN ('new','contacted')
+          AND (TRIM(contact)='' OR TRIM(source)='')
+        ORDER BY updated ASC,id ASC LIMIT 10""",(wid,)).fetchall()
+    return {"contact_readiness": {"open":int(hygiene[0]),"missing_contact":int(hygiene[1]),
+            "missing_source":int(hygiene[2]),"missing_name":int(hygiene[3]),
+            "examples":incomplete}, "metrics": metrics, "ranked": ranked, "pending_approvals": int(pending),
             "next_followups": due}
 
 
@@ -51,8 +66,26 @@ def render(c, uid, wid):
         tile("Pending message approvals", data["pending_approvals"]),
         tile("Overdue follow-ups", m["overdue_followups"]),
         '</div>',
+        '<section class="panel"><h2>Lead data readiness</h2>',
+        '<p>Open leads missing contact details: '+e(data["contact_readiness"]["missing_contact"])+
+        ' · Missing acquisition source: '+e(data["contact_readiness"]["missing_source"])+
+        ' · Missing name: '+e(data["contact_readiness"]["missing_name"])+
+        ' · Total open leads: '+e(data["contact_readiness"]["open"])+'.</p>',
+        '<p>These are record-completeness checks, not proof that contact is valid or outreach is permitted. '
+        'Verify consent and suppression status before any customer communication.</p>',
+        '<p>'+link("/business-os-v59","Review and correct lead records")+'</p>',
+    ],
         '<section class="panel"><h2>Highest-priority open leads</h2>',
     ]
+    if data["contact_readiness"]["examples"]:
+        out.append('<p>Oldest incomplete records (up to 10):</p><ul>')
+        for _,name,missing_contact,missing_source in data["contact_readiness"]["examples"]:
+            reasons = []
+            if missing_contact: reasons.append("missing contact")
+            if missing_source: reasons.append("missing source")
+            out.append('<li>'+e(name or "Unnamed lead")+' — '+e(", ".join(reasons))+'</li>')
+        out.append('</ul>')
+    out.append('</section>')
     if not data["ranked"]:
         out.append('<p>No eligible open leads with positive manually entered values.</p>')
     for item in data["ranked"]:
