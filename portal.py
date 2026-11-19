@@ -16,6 +16,7 @@ import site_stats
 import btcpay_integration
 import btcpay_mainnet
 import referrals
+import demo_shares
 import sales_pipeline
 import sovereign_ascension
 import ascension_recovery
@@ -169,6 +170,7 @@ def db():
  payhip_integration.setup(c)
  subscriptions.setup(c)
  referrals.setup(c)
+ demo_shares.setup(c)
  business_v3.setup(c)
  business_v4.setup(c)
  operator_v5.setup(c)
@@ -522,15 +524,21 @@ def landing_demo_html():
  """
  return '''<section id="try" class="v8-demo"><div class="v8-sectiontop"><span>TRY IT NOW</span><span>NO ACCOUNT. NO WAITING.</span></div><h2>YOUR FILE.<br><em>YOUR NUMBERS. RIGHT NOW.</em></h2><p>Drop in a sales CSV and see the cleaned report instantly — the same engine PRO uses. No account, no email, nothing saved. Your file is processed once and never stored.</p><form method="post" action="/try" enctype="multipart/form-data"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><button class="v8-primary" type="submit">Generate my report</button></form><p class="v8-demo-note">5 MB maximum · 20,000 rows · Your download link works for 10 minutes — create a free account to keep your reports.</p><details><summary>Required column headers</summary><code>'''+escape(', '.join(REQUIRED))+'''</code></details></section>'''
 
-def demo_result_html(result,token):
+def demo_result_html(result,token,share_token=None):
  """The instant demo result: the report summaries on screen, a ZIP download,
  and the next step (free account to keep reports, PRO for more)."""
  nxt=urllib.parse.quote('/about',safe='')
+ share=''
+ if share_token:
+  link=btcpay_mainnet.site_url()+'/demo/'+share_token
+  share=('<p class="v8-demo-note">Share this result: <a href="'+escape(link)+'">'+escape(link)+'</a></p>'
+         '<p class="v8-demo-note">The link shows only these summaries — never your file or a raw row — and works for 30 days.</p>')
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
   +'<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
   +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
   +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>'
+  +share
   +'<p class="v8-demo-note">Want to keep your reports? <a href="/register">Create a free account</a> — 3 reports, lifetime. Ready for more? <a href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a>.</p></section></div>')
 
 def report_view_html(row,monthly_rows,product_rows,stats):
@@ -1030,6 +1038,21 @@ class Handler(BaseHTTPRequestHandler):
    data=take_demo_zip(token)
    if data is None:return self.respond(404,'Demo download expired — run the demo again to generate a new report.','text/plain')
    return self.respond(200,data,'application/zip',headers=[('Content-Disposition','attachment; filename="VELXTRIA_Demo_Report.zip"')])
+  if p.startswith('/demo/'):
+   # Shared demo result: summaries only, never the file or a raw row.
+   share_token=p[len('/demo/'):]
+   if not share_token or '/' in share_token:
+    return self.respond(404,'This shared demo has expired or does not exist.','text/plain')
+   with db() as c:
+    shared=demo_shares.get(c,share_token)
+    if shared:site_stats.record(c,'demo_share_view',share_token)
+   if not shared:return self.respond(404,'This shared demo has expired or does not exist.','text/plain')
+   body=('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>SHARED DEMO REPORT</span><span>BUILT BY VELXTRIA.</span></div><h2>SOMEONE CLEANED UP<br><em>THEIR SALES DATA.</em></h2>'
+    +report_summaries_html(shared['monthly_rows'],shared['product_rows'],shared['stats'])
+    +'<p>Accepted '+str(shared['accepted'])+' rows · flagged '+str(shared['rejected'])+' rows. Only the summaries are shared — the original file and raw rows were never stored.</p>'
+    +'<a class="v8-primary" href="/#try">Try it with your own CSV — no account</a>'
+    +'<p class="v8-demo-note">VELXTRIA turns messy sales CSVs into clean monthly and product reports. Free demo, no signup. PRO $49/30 days, Bitcoin only.</p></section></div>')
+   return self.respond(200,shell('Shared demo report',body))
   if p=='/' and not user:
    with db() as c:site_stats.record(c,'landing_view')
    ref=referral_code_from_request(self)
@@ -2945,8 +2968,10 @@ class Handler(BaseHTTPRequestHandler):
    except ValueError as exc:return self.demo_fail(str(exc))
    except Exception as exc:return self.demo_fail('Could not process this file: '+str(exc)[:240])
    token=store_demo_zip(report['zip_bytes'])
-   with db() as c:site_stats.record(c,'demo_run','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
-   return self.respond(200,shell('Your demo report',demo_result_html(report,token)))
+   with db() as c:
+    site_stats.record(c,'demo_run','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
+    share_token=demo_shares.create(c,report)
+   return self.respond(200,shell('Your demo report',demo_result_html(report,token,share_token)))
   ident=self.require()
   if not ident:return
   user,csrf,token=ident
