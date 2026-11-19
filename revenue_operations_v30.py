@@ -5,6 +5,7 @@ from datetime import date
 import time
 import business_os_v59 as bos
 import revenue_execution_v29 as execution
+import revenue_task_triage
 
 def analyze(c,uid,wid,now=None):
     bos.core.access(c,uid,wid)
@@ -70,4 +71,5 @@ def render(c,uid,wid):
     out.extend('<p>'+esc(item)+'</p>' for item in recommendations)
     out.append('<p>Recommendations are deterministic; no task changes or external '
                'messages are performed automatically.</p></section>')
+    out.append(revenue_task_triage.render(c,uid,wid))
     return ''.join(out)
