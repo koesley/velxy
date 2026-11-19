@@ -370,15 +370,16 @@ def run_report_engine(data):
 # file. Capped so a burst of demos cannot grow memory without bound.
 DEMO_ZIP_TTL=600
 DEMO_ZIP_MAX=25
+DEMO_COOKIE='velxtria_demo'
 _DEMO_ZIPS={}
 _DEMO_ZIPS_LOCK=Lock()
 
-def store_demo_zip(zip_bytes):
+def store_demo_zip(zip_bytes,accepted,rejected,filename):
  token=secrets.token_urlsafe(24);now_s=time.time()
  with _DEMO_ZIPS_LOCK:
-  for key in [k for k,(_,exp) in _DEMO_ZIPS.items() if exp<=now_s]:del _DEMO_ZIPS[key]
+  for key in [k for k,(_,exp,*_rest) in _DEMO_ZIPS.items() if exp<=now_s]:del _DEMO_ZIPS[key]
   while len(_DEMO_ZIPS)>=DEMO_ZIP_MAX:del _DEMO_ZIPS[min(_DEMO_ZIPS,key=lambda k:_DEMO_ZIPS[k][1])]
-  _DEMO_ZIPS[token]=(zip_bytes,now_s+DEMO_ZIP_TTL)
+  _DEMO_ZIPS[token]=(zip_bytes,now_s+DEMO_ZIP_TTL,accepted,rejected,filename)
  return token
 
 def take_demo_zip(token):
@@ -386,11 +387,32 @@ def take_demo_zip(token):
  with _DEMO_ZIPS_LOCK:
   entry=_DEMO_ZIPS.get(token)
   if not entry:return None
-  data,exp=entry
+  data,exp,*_=entry
   if exp<=time.time():
    del _DEMO_ZIPS[token]
    return None
   return data
+
+def peek_demo_zip(token):
+ """A demo entry without removing it, or None when unknown or expired."""
+ if not token:return None
+ with _DEMO_ZIPS_LOCK:
+  entry=_DEMO_ZIPS.get(token)
+  if not entry:return None
+  if entry[1]<=time.time():
+   del _DEMO_ZIPS[token]
+   return None
+  return entry
+
+def claim_demo_zip(token):
+ """Atomically take a demo entry for claiming, or None when unknown,
+ expired, or already claimed."""
+ if not token:return None
+ with _DEMO_ZIPS_LOCK:
+  entry=_DEMO_ZIPS.pop(token,None)
+  if not entry:return None
+  if entry[1]<=time.time():return None
+  return entry
 
 def public_base_url(host):
  """Absolute site URL for robots.txt / sitemap.xml, from the request Host.
@@ -524,7 +546,7 @@ def landing_demo_html():
  """
  return '''<section id="try" class="v8-demo"><div class="v8-sectiontop"><span>TRY IT NOW</span><span>NO ACCOUNT. NO WAITING.</span></div><h2>YOUR FILE.<br><em>YOUR NUMBERS. RIGHT NOW.</em></h2><p>Drop in a sales CSV and see the cleaned report instantly — the same engine PRO uses. No account, no email, nothing saved. Your file is processed once and never stored.</p><form method="post" action="/try" enctype="multipart/form-data"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><button class="v8-primary" type="submit">Generate my report</button></form><p class="v8-demo-note">5 MB maximum · 20,000 rows · Your download link works for 10 minutes — create a free account to keep your reports.</p><details><summary>Required column headers</summary><code>'''+escape(', '.join(REQUIRED))+'''</code></details></section>'''
 
-def demo_result_html(result,token,share_token=None):
+def demo_result_html(result,token,share_token=None,user=None,csrf=''):
  """The instant demo result: the report summaries on screen, a ZIP download,
  and the next step (free account to keep reports, PRO for more)."""
  nxt=urllib.parse.quote('/about',safe='')
@@ -533,13 +555,19 @@ def demo_result_html(result,token,share_token=None):
   link=btcpay_mainnet.site_url()+'/demo/'+share_token
   share=('<p class="v8-demo-note">Share this result: <a href="'+escape(link)+'">'+escape(link)+'</a></p>'
          '<p class="v8-demo-note">The link shows only these summaries — never your file or a raw row — and works for 30 days.</p>')
+ if user:
+  keep=('<form method="post" action="/claim-demo"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><input type="hidden" name="token" value="'+escape(token)+'"><button>Save this report to my account</button></form>'
+        '<p class="v8-demo-note">Saves as one of your free reports — no re-upload.</p>')
+ else:
+  keep=('<p class="v8-demo-note">Want to keep it? <a href="/register">Create a free account</a> — then claim this report from your dashboard. It stays claimable for 10 minutes.</p>')
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
   +'<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
   +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
   +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>'
   +share
-  +'<p class="v8-demo-note">Want to keep your reports? <a href="/register">Create a free account</a> — 3 reports, lifetime. Ready for more? <a href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a>.</p></section></div>')
+  +keep
+  +'<p class="v8-demo-note">Ready for more? <a href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a>.</p></section></div>')
 
 def report_view_html(row,monthly_rows,product_rows,stats):
  """A saved report, viewed on screen: the same monthly + product summaries
@@ -1377,6 +1405,13 @@ class Handler(BaseHTTPRequestHandler):
    body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
    body+=upgrade_html
    body+=renewal_html(user,csrf,ent,pending_mainnet)
+   demo_cookie=SimpleCookie()
+   try:demo_cookie.load(self.headers.get('Cookie',''))
+   except Exception:pass
+   demo_morsel=demo_cookie.get(DEMO_COOKIE)
+   demo_entry=peek_demo_zip(demo_morsel.value) if demo_morsel else None
+   if demo_entry:
+    body+='<section class="panel"><h2>Your demo report is waiting</h2><p>You ran the instant demo — save it to your account instead of uploading the file again. It counts as one of your free reports.</p><form method="post" action="/claim-demo"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><input type="hidden" name="token" value="'+escape(demo_morsel.value)+'"><button>Save demo report to my account</button></form></section>'
    ref_link=btcpay_mainnet.site_url()+'/?ref='+ref_code
    body+='<section class="panel"><h2>Refer friends — earn free PRO</h2><p>Share your link: <a href="'+escape(ref_link)+'">'+escape(ref_link)+'</a></p><p>When someone signs up with your link and pays $49 for PRO, you get a free month of PRO. Referred signups: '+str(ref_stats['signups'])+' · Paid referrals: '+str(ref_stats['paid'])+' · Free months earned: '+str(ref_stats['months_earned'])+'</p></section>'
    if user['role']=='admin':
@@ -2967,11 +3002,13 @@ class Handler(BaseHTTPRequestHandler):
     report=run_report_engine(data)
    except ValueError as exc:return self.demo_fail(str(exc))
    except Exception as exc:return self.demo_fail('Could not process this file: '+str(exc)[:240])
-   token=store_demo_zip(report['zip_bytes'])
+   token=store_demo_zip(report['zip_bytes'],report['accepted'],report['rejected'],filename)
    with db() as c:
     site_stats.record(c,'demo_run','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
     share_token=demo_shares.create(c,report)
-   return self.respond(200,shell('Your demo report',demo_result_html(report,token,share_token)))
+   user,csrf,_=self.identity()
+   headers=[('Set-Cookie',DEMO_COOKIE+'='+token+'; Path=/; Max-Age=600; SameSite=Lax')]
+   return self.respond(200,shell('Your demo report',demo_result_html(report,token,share_token,user,csrf)),headers=headers)
   ident=self.require()
   if not ident:return
   user,csrf,token=ident
@@ -3372,6 +3409,35 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c:
     c.execute("UPDATE btcpay_orders SET invoice_id=?,checkout_url=?,status='pending' WHERE order_id=? AND status='creating'",(invoice_id,checkout_url,order_id))
    return self.redirect('/')
+  if p=='/claim-demo':
+   # Save an instant demo report into this account: the demo ZIP is moved
+   # out of memory into persistent storage and recorded as a report, so it
+   # counts against the same free allowance as an upload. The claim is
+   # one-time — the in-memory entry is popped — and the free-limit check
+   # runs first, so a paywalled user keeps their demo download.
+   demo_token=fields.get('token','')
+   if not peek_demo_zip(demo_token):
+    return self.fail(400,'That demo report has expired or was already claimed — run the demo again to generate a new report.',user,csrf)
+   with db() as c:
+    ent,count,remaining=subscriptions.usage(c,user['id'])
+    if remaining<=0:
+     pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
+     site_stats.record(c,'paywall_shown','used='+str(count))
+     return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
+   entry=claim_demo_zip(demo_token)
+   if not entry:
+    return self.fail(400,'That demo report has expired or was already claimed — run the demo again to generate a new report.',user,csrf)
+   zip_bytes,_exp,accepted,rejected,filename=entry
+   ident=secrets.token_hex(16);digest=hashlib.sha256(zip_bytes).hexdigest()
+   try:
+    persistent.store(user['id'],ident,zip_bytes,REPORTS)
+    with db() as c:
+     c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',accepted,rejected,digest))
+     site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(accepted,rejected))
+   except Exception as e:
+    persistent.remove(user['id'],ident)
+    return self.fail(422,'Could not save this report: '+str(e)[:240],user,csrf)
+   return self.redirect('/report?id='+ident,[('Set-Cookie',DEMO_COOKIE+'=; Path=/; Max-Age=0; SameSite=Lax')])
   if p=='/btcpay/mainnet/checkout':
    if not btcpay_mainnet.checkout_enabled():
     return self.fail(503,'Bitcoin checkout is not available.',user,csrf)
