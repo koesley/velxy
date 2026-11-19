@@ -2,7 +2,7 @@
 import html
 import secrets
 import time
-from datetime import date
+from datetime import date, timedelta
 import business_os_v59 as bos
 
 STATES = ("planned", "contacted", "replied", "won", "lost")
@@ -47,8 +47,31 @@ def change_status(c, uid, wid, identifier, status):
                   (wid,identifier)).fetchone()
     if not row or row[0]!="planned":
         raise ValueError("Only planned follow-ups can be completed.")
-    c.execute("UPDATE vx_followup23 SET status=?,updated=? WHERE workspace_id=? AND id=? AND status='planned'",
-              (status,int(time.time()),wid,identifier))
+    result = c.execute("UPDATE vx_followup23 SET status=?,updated=? WHERE workspace_id=? AND id=? AND status='planned'",
+                       (status,int(time.time()),wid,identifier))
+    if result.rowcount != 1:
+        raise ValueError("Follow-up was already completed; refresh and try again.")
+
+def workload(c, uid, wid, today=None):
+    """Accurate, workspace-wide manual follow-up workload, not limited to visible rows."""
+    bos.core.access(c, uid, wid)
+    setup(c)
+    today = today or date.today()
+    if not isinstance(today, date):
+        raise ValueError("Expected a date.")
+    start = today.isoformat()
+    end = (today + timedelta(days=7)).isoformat()
+    row = c.execute("""SELECT
+        COUNT(*),
+        COALESCE(SUM(CASE WHEN status='planned' THEN 1 ELSE 0 END),0),
+        COALESCE(SUM(CASE WHEN status='planned' AND due_date<? THEN 1 ELSE 0 END),0),
+        COALESCE(SUM(CASE WHEN status='planned' AND due_date=? THEN 1 ELSE 0 END),0),
+        COALESCE(SUM(CASE WHEN status='planned' AND due_date>? AND due_date<=? THEN 1 ELSE 0 END),0)
+        FROM vx_followup23 WHERE workspace_id=?""",
+        (start,start,start,end,wid)).fetchone()
+    return dict(zip(("total","planned","overdue","due_today","next_seven_days"),
+                    (int(value) for value in row)))
+
 
 def render(c,uid,wid,csrf):
     bos.core.access(c,uid,wid)
@@ -60,12 +83,16 @@ def render(c,uid,wid,csrf):
         WHERE f.workspace_id=? ORDER BY CASE WHEN f.status='planned' THEN 0 ELSE 1 END,
         f.due_date ASC,f.created DESC LIMIT 100""",(wid,)).fetchall()
     today=date.today().isoformat()
-    planned=sum(x[3]=="planned" for x in rows)
-    overdue=sum(x[3]=="planned" and x[2]<today for x in rows)
+    summary=workload(c,uid,wid)
     options=''.join('<option value="'+esc(lid)+'">'+esc(name)+'</option>' for lid,name in leads)
     out=['<section class="panel"><h1>Follow-up Tracker</h1><p>Schedule internal follow-up work and record outcomes. '
          'This feature never contacts customers automatically. Statuses are manually entered and do not verify collected revenue.</p>',
-         '<p>Planned (displayed): '+str(planned)+' · Overdue (displayed): '+str(overdue)+' · Showing at most 100 records.</p></section>']
+         '<p>Workspace totals: '+str(summary['planned'])+' planned · '+str(summary['overdue'])+
+         ' overdue · '+str(summary['due_today'])+' due today · '+str(summary['next_seven_days'])+
+         ' due in the next 7 days · '+str(summary['total'])+' total records.</p>'+
+         '<p>Only the first 100 records are displayed; the lead selector shows at most 300 recent open leads. '
+         'Counts cover the entire workspace, including records not displayed.</p>'+
+         '<p><a href="/revenue-conversion?w='+esc(wid)+'">View revenue conversion summary</a></p></section>']
     if leads:
         out.append('<section class="panel"><h2>Plan a follow-up</h2><form method="post" action="/revenue-followups">'
                    '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
