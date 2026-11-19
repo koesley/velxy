@@ -17,25 +17,48 @@ def setup(c):
         status TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL)""")
     c.execute("CREATE INDEX IF NOT EXISTS vx_recovery31_scope ON vx_recovery31(workspace_id,task_id,status)")
 
-def candidates(c,uid,wid,now=None):
-    bos.core.access(c,uid,wid)
+def workload(c, uid, wid, now=None):
+    """Workspace-wide recovery workload; no 100-row sampling bias."""
+    bos.core.access(c, uid, wid)
     setup(c)
-    current=int(time.time()) if now is None else int(now)
-    today=date.fromtimestamp(current).isoformat()
-    rows=c.execute("""SELECT t.id,t.title,t.status,t.due_date,t.updated,t.owner_id,l.name
-        FROM vx_revenue_tasks29 t JOIN bos59_leads l
+    current = int(time.time()) if now is None else int(now)
+    today = date.fromtimestamp(current).isoformat()
+    cutoff = current - 7 * 86400
+    condition = """t.status IN ('todo','in_progress','blocked')
+        AND (t.status='blocked' OR t.due_date < ? OR
+             (t.status IN ('todo','in_progress') AND t.updated <= ?))"""
+    base = """FROM vx_revenue_tasks29 t JOIN bos59_leads l
         ON l.workspace_id=t.workspace_id AND l.id=t.lead_id
-        WHERE t.workspace_id=? AND t.status IN ('todo','in_progress','blocked')
-        ORDER BY t.due_date,t.created LIMIT 100""",(wid,)).fetchall()
-    result=[]
-    for identifier,title,status,due,updated,owner,lead in rows:
-        reasons=[]
-        if status=="blocked":reasons.append("blocked")
-        if due<today:reasons.append("overdue")
-        if status in ("todo","in_progress") and current-int(updated)>=7*86400:reasons.append("stalled")
-        if reasons:result.append({"id":identifier,"title":title,"lead":lead,
-                                  "owner":owner,"reasons":reasons})
-    return result
+        WHERE t.workspace_id=? AND """ + condition
+    params = (wid, today, cutoff)
+    total = c.execute("SELECT COUNT(*) " + base, params).fetchone()[0]
+    active = c.execute("""SELECT COUNT(*) FROM vx_recovery31 r
+        JOIN vx_revenue_tasks29 t ON t.id=r.task_id AND t.workspace_id=r.workspace_id
+        WHERE r.workspace_id=? AND r.status='active'
+        AND t.status IN ('todo','in_progress','blocked')""", (wid,)).fetchone()[0]
+    rows = c.execute("""SELECT t.id,t.title,t.status,t.due_date,t.updated,
+        t.owner_id,l.name, EXISTS(
+          SELECT 1 FROM vx_recovery31 r
+          WHERE r.workspace_id=t.workspace_id AND r.task_id=t.id AND r.status='active'
+        ) """ + base + """
+        ORDER BY CASE WHEN t.status='blocked' THEN 0
+                      WHEN t.due_date < ? THEN 1 ELSE 2 END,
+                 t.due_date ASC,t.created ASC,t.id ASC LIMIT 100""",
+        params + (today,)).fetchall()
+    result = []
+    for identifier,title,status,due,updated,owner,lead,has_plan in rows:
+        reasons = []
+        if status == 'blocked': reasons.append('blocked')
+        if due < today: reasons.append('overdue')
+        if status in ('todo','in_progress') and int(updated) <= cutoff:
+            reasons.append('stalled')
+        result.append({'id':identifier,'title':title,'lead':lead,
+                       'owner':owner,'reasons':reasons,'has_active_plan':bool(has_plan)})
+    return {'total':total,'active_plans':active,'items':result}
+
+
+def candidates(c,uid,wid,now=None):
+    return workload(c,uid,wid,now=now)['items']
 
 def create(c,uid,wid,task_id,blocker,next_action):
     bos.core.access(c,uid,wid,write=True)
@@ -46,6 +69,7 @@ def create(c,uid,wid,task_id,blocker,next_action):
         raise ValueError("Blocker and next action must each be 1–500 characters.")
     eligible={row["id"]:row for row in candidates(c,uid,wid)}
     if task_id not in eligible:raise ValueError("Task is not eligible for recovery.")
+    if eligible[task_id]["has_active_plan"]:raise ValueError("An active recovery plan already exists.")
     if eligible[task_id]["owner"]!=uid:raise ValueError("Only the assigned task owner can create recovery plans.")
     if c.execute("SELECT 1 FROM vx_recovery31 WHERE workspace_id=? AND task_id=? AND status='active'",
                  (wid,task_id)).fetchone():
@@ -68,7 +92,8 @@ def resolve(c,uid,wid,identifier):
               (int(time.time()),wid,identifier))
 
 def render(c,uid,wid,csrf):
-    rows=candidates(c,uid,wid)
+    summary=workload(c,uid,wid)
+    rows=summary["items"]
     e=lambda x:html.escape(str(x),quote=True)
     w=urllib.parse.quote(wid,safe="")
     plans=c.execute("""SELECT r.id,t.title,r.blocker,r.next_action,r.status,r.owner_id
@@ -78,12 +103,14 @@ def render(c,uid,wid,csrf):
     out=['<section class="panel"><h1>Operations Recovery Engine</h1>',
          '<p>Document blockers and next steps for at-risk tasks. Internal workflow only: '
          'resolving a recovery plan does not mark the task complete, send messages, '
-         'or verify revenue.</p><p><a href="/revenue-execution?w='+w+
+         'or verify revenue.</p><p>Tasks needing attention: '+str(summary['total'])+
+         ' · Active recovery plans: '+str(summary['active_plans'])+
+         ' · Showing up to 100 priority tasks.</p><p><a href="/revenue-execution?w='+w+
          '">Manage tasks</a></p></section>']
     for task in rows:
         out.append('<section class="panel"><h2>'+e(task["title"])+
                    '</h2><p>'+e(task["lead"])+' · '+e(", ".join(task["reasons"]))+'</p>')
-        if task["owner"]==uid:
+        if task["owner"]==uid and not task["has_active_plan"]:
             out.append('<form method="post" action="/revenue-recovery">'
                        '<input type="hidden" name="csrf" value="'+e(csrf)+'">'
                        '<input type="hidden" name="workspace" value="'+e(wid)+'">'
@@ -92,6 +119,8 @@ def render(c,uid,wid,csrf):
                        '<label>Blocker<input name="blocker" maxlength="500" required></label>'
                        '<label>Next action<input name="next_action" maxlength="500" required></label>'
                        '<button>Create recovery plan</button></form>')
+        if task['has_active_plan']:
+            out.append('<p>Active recovery plan already recorded.</p>')
         out.append('</section>')
     out.append('<section class="panel"><h2>Recovery plans</h2></section>')
     for identifier,title,blocker,next_action,status,owner in plans:
