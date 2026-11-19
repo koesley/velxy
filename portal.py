@@ -64,6 +64,8 @@ import sovereign_connectors_v56
 import sovereign_genesis_v56
 import sovereign_opportunities_v57
 import business_os_v59
+import genesis_forge_service_v1
+from genesis_forge_v1 import COMPONENTS as GENESIS_COMPONENTS, TEMPLATES as GENESIS_TEMPLATES
 import business_agents_v59
 import business_intelligence_v60
 import agent_engine_v61
@@ -852,6 +854,28 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,robots_txt(public_base_url(self.headers.get('Host'))),'text/plain',headers=[('Cache-Control','public, max-age=3600')])
   if p=='/sitemap.xml':
    return self.respond(200,sitemap_xml(public_base_url(self.headers.get('Host'))),'application/xml',headers=[('Cache-Control','public, max-age=3600')])
+  if p=='/genesis-forge':
+   auth=self.require()
+   if not auth:return
+   user,csrf,_=auth
+   q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+   wid=q.get('w',[''])[0]
+   if not wid:return self.fail(400,'Workspace ID required.',user,csrf)
+   try:
+    with db() as c:
+     previews=genesis_forge_service_v1.get_previews(c,user['id'],wid)
+    rows=''.join('<li><a href="/genesis-forge?w='+urllib.parse.quote(wid,safe='')+'&amp;preview='+urllib.parse.quote(item['id'],safe='')+'">'+html.escape(item['name'],quote=True)+'</a> — '+html.escape(item['industry'],quote=True)+' (revision '+str(item['revision'])+')</li>' for item in previews)
+    form='<form method="post" action="/genesis-forge/create"><input type="hidden" name="csrf" value="'+html.escape(csrf,quote=True)+'"><input type="hidden" name="workspace" value="'+html.escape(wid,quote=True)+'"><label>Application name <input name="name" maxlength="100" required></label><label>Industry <select name="industry"><option value="general">General</option><option value="cleaning">Cleaning</option><option value="construction">Construction</option><option value="consulting">Consulting</option></select></label><button type="submit">Create design preview</button></form>'
+    body='<section class="panel"><h2>Genesis Forge — Saved Designs</h2><p>Create and inspect a preview. Publishing is not enabled.</p>'+form+'<ul>'+(rows or '<li>No designs yet.</li>')+'</ul></section>'
+    preview_id=q.get('preview',[''])[0]
+    if preview_id:
+     with db() as preview_db:record=genesis_forge_service_v1.get_preview(preview_db,user['id'],wid,preview_id)
+     blocks=''.join('<li><label><input type="checkbox" name="component" value="'+html.escape(block['type'],quote=True)+'" checked> '+html.escape(block['label'],quote=True)+'</label></li>' for block in record['manifest']['components'])
+     available=''.join('<li><label><input type="checkbox" name="component" value="'+html.escape(key,quote=True)+'"> '+html.escape(spec['label'],quote=True)+'</label></li>' for key,spec in GENESIS_COMPONENTS.items() if key not in {b['type'] for b in record['manifest']['components']})
+     edit='<form method="post" action="/genesis-forge/update"><input type="hidden" name="csrf" value="'+html.escape(csrf,quote=True)+'"><input type="hidden" name="workspace" value="'+html.escape(wid,quote=True)+'"><input type="hidden" name="preview_id" value="'+html.escape(preview_id,quote=True)+'"><input type="hidden" name="revision" value="'+str(record['revision'])+'"><label>Application name <input name="name" maxlength="100" required value="'+html.escape(record['manifest']['name'],quote=True)+'"></label><label>Industry <select name="industry">'+''.join('<option value="'+html.escape(k,quote=True)+'"'+(' selected' if k==record['manifest']['industry'] else '')+'>'+html.escape(k.title(),quote=True)+'</option>' for k in GENESIS_TEMPLATES)+'</select></label><p>Choose 1–5 components:</p><ul>'+blocks+available+'</ul><button type="submit">Save revised preview</button></form>'
+     body+='<section class="panel"><h2>Design preview: '+html.escape(record['manifest']['name'],quote=True)+'</h2>'+edit+'<p>No live customer data is loaded.</p></section>'
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+   return self.respond(200,shell('Genesis Forge',body,user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/founder-stats':
    user,csrf,_=self.identity()
    if not user:return self.fail(401,'Please sign in first.')
@@ -2796,7 +2820,7 @@ class Handler(BaseHTTPRequestHandler):
   if n>MAX_BYTES+65536:raise ValueError('Upload too large (maximum 5 MB)')
   raw=self.rfile.read(n);ct=self.headers.get('Content-Type','')
   if ct.startswith('application/x-www-form-urlencoded'):
-   return {k:v[0] for k,v in urllib.parse.parse_qs(raw.decode('utf-8'),keep_blank_values=True).items()},None
+   return {k:(','.join(v) if k=='component' else v[0]) for k,v in urllib.parse.parse_qs(raw.decode('utf-8'),keep_blank_values=True,max_num_fields=100).items()},None
   if ct.startswith('multipart/form-data'):
    # Minimal bounded multipart parser: one file and a CSRF field; no external dependencies.
    from email.parser import BytesParser
@@ -2902,6 +2926,21 @@ class Handler(BaseHTTPRequestHandler):
   if not ident:return
   user,csrf,token=ident
   if not hmac.compare_digest(fields.get('csrf',''),csrf):return self.fail(403,'Session verification failed.',user,csrf)
+  if p=='/genesis-forge/create':
+   wid=fields.get('workspace','')
+   try:
+    with db() as c:
+     result=genesis_forge_service_v1.create_preview(c,user['id'],wid,fields.get('name',''),fields.get('industry','general'))
+    return self.redirect('/genesis-forge?w='+urllib.parse.quote(wid,safe='')+'&preview='+urllib.parse.quote(result['id'],safe=''))
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
+  if p=='/genesis-forge/update':
+   wid=fields.get('workspace','')
+   try:
+    selected=fields.get('component','').split(',') if fields.get('component','') else []
+    with db() as c:
+     result=genesis_forge_service_v1.update_preview(c,user['id'],wid,fields.get('preview_id',''),int(fields.get('revision','0')),fields.get('name',''),fields.get('industry','general'),selected)
+    return self.redirect('/genesis-forge?w='+urllib.parse.quote(wid,safe='')+'&preview='+urllib.parse.quote(result['id'],safe=''))
+   except (ValueError,sqlite3.Error) as exc:return self.fail(400,str(exc),user,csrf)
   if p=='/ascension-workflow-create':
    try:
     with db() as c:ascension_workflows.create(c,user['id'],fields.get('action_id',''))
