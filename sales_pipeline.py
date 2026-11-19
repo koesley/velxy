@@ -36,6 +36,44 @@ def set_suppression(c, owner, email, status, reason=""):
     c.execute("""INSERT INTO outreach_suppression_events(owner_id,email,status,reason,created_at)
                  VALUES (?,?,?,?,?)""",(owner,email,status,reason[:500],int(time.time())))
 
+def _apply_import_batch(c, owner, parsed):
+    """Atomically apply validated bounce entries; never downgrade restrictions.
+
+    Duplicate recipients are processed once, with the most restrictive status
+    winning irrespective of input order. Caller receives the parsed row count
+    for backwards compatibility with existing route messages.
+    """
+    rank = {"verified_clear": 0, "hold_for_verification": 1,
+            "suppress_rejected": 2, "suppress_permanent": 3,
+            "do_not_contact": 4}
+    selected = {}
+    for email, status, reason in parsed:
+        if status not in rank:
+            raise ValueError("Unsupported imported suppression status")
+        old = selected.get(email)
+        if old is None or rank[status] > rank[old[0]]:
+            selected[email] = (status, reason)
+    setup(c)
+    # Savepoint also works when a caller has an existing transaction.
+    c.execute("SAVEPOINT suppression_import")
+    try:
+        for email, (status, reason) in selected.items():
+            existing = c.execute(
+                "SELECT status FROM outreach_suppression WHERE owner_id=? AND email=?",
+                (owner, email)).fetchone()
+            if existing and existing[0] in (
+                    "do_not_contact", "suppress_permanent", "suppress_rejected"):
+                continue
+            if existing and existing[0] == "verified_clear" and status == "hold_for_verification":
+                continue
+            set_suppression(c, owner, email, status, reason)
+        c.execute("RELEASE SAVEPOINT suppression_import")
+    except Exception:
+        c.execute("ROLLBACK TO SAVEPOINT suppression_import")
+        c.execute("RELEASE SAVEPOINT suppression_import")
+        raise
+    return len(parsed)
+
 def import_bounce_lines(c, owner, raw):
     """Import pasted recipient|bounce-error lines, no automatic clearance.
 
@@ -60,16 +98,7 @@ def import_bounce_lines(c, owner, raw):
         if status=="needs_manual_review":
             status="hold_for_verification"
         parsed.append((email,status,diagnostic.strip()[:500]))
-    # Never weaken existing permanent suppressions or opt-outs on import.
-    protected={"do_not_contact","suppress_permanent","suppress_rejected"}
-    for email,status,reason in parsed:
-        existing=c.execute("SELECT status FROM outreach_suppression WHERE owner_id=? AND email=?",(owner,email)).fetchone()
-        if existing and existing[0] in protected:
-            continue
-        if existing and existing[0]=="verified_clear" and status=="hold_for_verification":
-            continue
-        set_suppression(c,owner,email,status,reason)
-    return len(parsed)
+    return _apply_import_batch(c, owner, parsed)
 
 def import_gmail_notices(c, owner, raw):
     """Import pasted Gmail delivery notices with explicit recipient and error.
@@ -93,13 +122,7 @@ def import_gmail_notices(c, owner, raw):
         if status=="needs_manual_review":
             status="hold_for_verification"
         parsed.append((email,status,notice[:500]))
-    protected={"do_not_contact","suppress_permanent","suppress_rejected"}
-    for email,status,reason in parsed:
-        existing=c.execute("SELECT status FROM outreach_suppression WHERE owner_id=? AND email=?",(owner,email)).fetchone()
-        if existing and existing[0] in protected:
-            continue
-        set_suppression(c,owner,email,status,reason)
-    return len(parsed)
+    return _apply_import_batch(c, owner, parsed)
 
 def outreach_eligibility(c, owner, email):
     setup(c)
@@ -183,7 +206,7 @@ def dashboard(c, owner, csrf):
         return p
     parts.append('<section class="panel"><h2>Add a lead</h2>'+form()+'</section>')
     parts.append('<section class="panel"><h2>Contact delivery safety</h2><p>All addresses are held by default until independently verified. This page never sends email.</p><form method="post" action="/outreach-suppression"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><label>Email<input name="email" required></label><label>Status<select name="status">'+''.join('<option value="'+x+'">'+esc(x.replace('_',' ').title())+'</option>' for x in ("hold_for_verification","suppress_permanent","suppress_rejected","do_not_contact","verified_clear"))+'</select></label><label>Evidence<input name="reason" maxlength="500"></label><button type="submit">Save status</button></form></section>')
-    parts.append('<section class="panel"><h2>Import Gmail bounce reports</h2><p>Paste one recipient and its exact error per line, separated by |. Example: info@example.com | 550 5.1.1 User does not exist. No emails are sent.</p><form method="post" action="/outreach-bounce-import"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><textarea name="bounce_lines" rows="7" maxlength="30000" required></textarea><button type="submit">Import bounce statuses</button></form></section>')
+    parts.append('<section class="panel"><h2>Import Gmail bounce reports</h2><p>Paste one recipient and its exact error per line, separated by |. Imports are atomic; repeated recipients retain the strictest result. Example: info@example.com | 550 5.1.1 User does not exist. No emails are sent.</p><form method="post" action="/outreach-bounce-import"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><textarea name="bounce_lines" rows="7" maxlength="30000" required></textarea><button type="submit">Import bounce statuses</button></form></section>')
     parts.append('<section class="panel"><h2>Paste Gmail delivery notices</h2><p>Paste the full text of each Gmail bounce notice, separated by a line containing ===. No Gmail access or email sending occurs here.</p><form method="post" action="/outreach-gmail-import"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><textarea name="notices" rows="8" maxlength="60000" required></textarea><button type="submit">Review and import failures</button></form></section>')
     summary=dict(c.execute("SELECT status,COUNT(*) FROM outreach_suppression WHERE owner_id=? GROUP BY status",(owner,)).fetchall())
     held=summary.get("hold_for_verification",0)
