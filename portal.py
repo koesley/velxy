@@ -2683,6 +2683,17 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c: body=operator_v5.render(c,user['id'],csrf)
    return self.respond(200,shell('Business Operator',body,user,csrf))
   if p=='/account':
+   # ?paid=1 is the return from BTCPay after a payment: a hint to look,
+   # never proof. Re-verify against BTCPay first; the confirmation panel
+   # below only ever shows the verified state (or that verification
+   # failed). With no mainnet order at all the parameter is ignored.
+   paid=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('paid',[''])[0]=='1'
+   verify_failed=False
+   if paid and btcpay_mainnet.configured():
+    try:
+     with db() as c:btcpay_mainnet.reconcile(c,user['id'])
+    except RuntimeError:
+     verify_failed=True
    with db() as c: licensed=c.execute('SELECT license_key FROM paid_licenses WHERE user_id=?',(user['id'],)).fetchone()
    state='No redeemed license'
    if licensed:
@@ -2697,6 +2708,14 @@ class Handler(BaseHTTPRequestHandler):
     mainnet_orders=c.execute("SELECT order_id,status,checkout_url,created_at,settled_at FROM btcpay_orders WHERE user_id=? AND network='mainnet' ORDER BY created_at DESC LIMIT 30",(user['id'],)).fetchall()
     orders=c.execute("SELECT order_id,status,created_at,settled_at FROM btcpay_orders WHERE user_id=? AND network='testnet' ORDER BY created_at DESC LIMIT 30",(user['id'],)).fetchall()
    datefmt=lambda ts: datetime.fromtimestamp(ts,timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if ts else '—'
+   confirm=''
+   if paid and mainnet_orders:
+    if verify_failed:
+     confirm='<section class="panel"><h2>Checking your payment</h2><p>We could not reach BTCPay to verify your payment just now. Nothing has been confirmed on your VELXTRIA account yet — use Check payment status below to try again.</p></section>'
+    elif ent['plan']=='pro':
+     confirm='<section class="panel"><h2>Payment received — PRO is active</h2><p>Your $49 Bitcoin payment settled and PRO is active through '+escape(datefmt(ent['end']))+'. You have 50 reports per billing cycle.</p></section>'
+    else:
+     confirm='<section class="panel"><h2>Thanks — your payment is being confirmed</h2><p>BTCPay has your payment and the Bitcoin network is confirming it. PRO activates automatically once it settles — usually within a few minutes. Use Check payment status below to refresh.</p></section>'
    billing='<section class="panel"><h2>Bitcoin billing</h2><p>PRO: '+('Active through '+escape(datefmt(ent['end'])) if ent['plan']=='pro' else 'Not currently active')+'. Payments are Bitcoin only and verified automatically against BTCPay; a browser redirect alone never activates PRO.</p>'
    if btcpay_mainnet.checkout_enabled() and ent['plan']!='pro':
     billing+='<form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Pay $49 with Bitcoin — PRO · 30 days · 50 reports</button></form>'
@@ -2711,7 +2730,7 @@ class Handler(BaseHTTPRequestHandler):
    for oid,status,created,settled in orders:
     billing+='<tr><td>'+escape(oid)+'</td><td>'+escape(datefmt(created))+'</td><td>'+escape(status)+'</td><td>'+escape(datefmt(settled))+'</td></tr>'
    billing+='</tbody></table></div></section>'
-   return self.respond(200,shell('Account',body+billing,user,csrf))
+   return self.respond(200,shell('Account',confirm+body+billing,user,csrf))
   if p=='/report':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
    with db() as c:row=c.execute("SELECT id,filename,created,status,accepted,rejected FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
