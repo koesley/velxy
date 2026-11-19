@@ -92,4 +92,6 @@ def render(c,uid,wid,csrf):
                        ' · Reported payment-to-cost ratio: '+(str(row["reported_payment_to_cost"])+"×" if row["reported_payment_to_cost"] is not None else "N/A")+'</p>')
         out.append('</section>')
     if not rows:out.append('<section class="panel"><p>Add leads with sources to begin comparing acquisition channels.</p></section>')
+    import acquisition_cohorts_v42 as cohorts
+    out.append(cohorts.render(c,uid,wid))
     return ''.join(out)
