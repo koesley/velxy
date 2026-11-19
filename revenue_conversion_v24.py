@@ -23,11 +23,38 @@ def summarize(c, uid, wid):
         "SELECT COUNT(*) FROM vx_followup23 WHERE workspace_id=? AND status='planned' AND due_date<?",
         (wid,date.today().isoformat())
     ).fetchone()[0]
+    # Count leads once per cohort, even if a lead has multiple follow-up records.
+    # These are associations in manually maintained data, not attribution of sales.
+    cohort_rows = c.execute(
+        "SELECT l.status, "
+        "CASE WHEN EXISTS (SELECT 1 FROM vx_followup23 f "
+        "WHERE f.workspace_id=l.workspace_id AND f.lead_id=l.id) "
+        "THEN 'with_followup' ELSE 'without_followup' END, COUNT(*) "
+        "FROM bos59_leads l WHERE l.workspace_id=? "
+        "GROUP BY l.status, CASE WHEN EXISTS (SELECT 1 FROM vx_followup23 f "
+        "WHERE f.workspace_id=l.workspace_id AND f.lead_id=l.id) "
+        "THEN 'with_followup' ELSE 'without_followup' END", (wid,)
+    ).fetchall()
+    cohorts = {"with_followup": {"open": 0, "won": 0, "lost": 0},
+               "without_followup": {"open": 0, "won": 0, "lost": 0}}
+    for stage, cohort, count in cohort_rows:
+        category = "open" if stage in ("new", "contacted") else stage
+        if category in ("open", "won", "lost"):
+            cohorts[cohort][category] += int(count)
+    # Only completed follow-ups are included; these are not verified replies.
+    outcome_rows = c.execute(
+        "SELECT f.status, COUNT(*) FROM vx_followup23 f "
+        "JOIN bos59_leads l ON l.workspace_id=f.workspace_id AND l.id=f.lead_id "
+        "WHERE f.workspace_id=? AND f.status<>'planned' "
+        "GROUP BY f.status", (wid,)
+    ).fetchall()
+    recorded_outcomes = {state: int(count) for state, count in outcome_rows}
     total = sum(item["count"] for item in leads.values())
     won = leads.get("won",{}).get("count",0)
     closed = won + leads.get("lost",{}).get("count",0)
     return {
         "leads": leads, "followups": follow, "total_leads": total,
+        "followup_cohorts": cohorts, "recorded_outcomes": recorded_outcomes,
         "open_leads": sum(leads.get(k,{}).get("count",0) for k in ("new","contacted")),
         "won_leads": won, "closed_leads": closed,
         "closed_win_rate": round(100*won/closed,1) if closed else None,
@@ -56,6 +83,22 @@ def render(c,uid,wid):
     for state in followups.STATES:
         out.append('<tr><td>'+esc(state.title())+'</td><td>'+
                    esc(data["followups"].get(state,0))+'</td></tr>')
+    out.append('<section class="panel"><h2>Lead outcomes by follow-up history</h2>'
+               '<p>Each lead appears once. Having a follow-up does not establish '
+               'that the follow-up caused a win. Stages and follow-ups are '
+               'manually entered and may be incomplete.</p>'
+               '<table><tr><th>Follow-up history</th><th>Open</th><th>Won-marked</th>'
+               '<th>Lost-marked</th><th>Closed win share</th></tr>')
+    for key,label in (("with_followup","At least one follow-up"),
+                      ("without_followup","No recorded follow-up")):
+        cohort=data["followup_cohorts"][key]
+        closed=cohort["won"]+cohort["lost"]
+        share=(str(round(100*cohort["won"]/closed,1))+"%") if closed else "N/A"
+        out.append('<tr><td>'+esc(label)+'</td><td>'+esc(cohort["open"])+
+                   '</td><td>'+esc(cohort["won"])+ '</td><td>'+esc(cohort["lost"])+
+                   '</td><td>'+esc(share)+'</td></tr>')
+    out.append('</table><p>Closed win share excludes open leads. '
+               'Records with other stages are excluded from this breakdown.</p></section>')
     out.append('</table><p>Follow-up outcomes and lead stages are separate manual records; '
                'they are not automatically reconciled.</p>'
                '<p><a href="/revenue-followups?w='+esc(wid)+'">Manage follow-ups</a> · '
