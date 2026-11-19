@@ -455,6 +455,52 @@ def pro_upgrade_html(user,csrf,pending_mainnet=None):
  btc_address=os.getenv('VELXTRIA_BITCOIN_ADDRESS','bc1qxdjxk3kzke0shnlqupkndyel7mf9v6fahfkgx4').strip()
  return '<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Direct Bitcoin payment is available by manual arrangement only. Contact the VELXTRIA operator to confirm the exact BTC amount and payment reference <strong>before sending</strong>. No automatic invoice, exchange-rate quote, payment verification, or access activation is enabled.</p><p>Bitcoin network (BTC) receiving address:</p><p><code style="overflow-wrap:anywhere;word-break:break-all">'+escape(btc_address)+'</code></p><p><strong>Do not send BTC until you receive a confirmed amount and instructions.</strong> Payments to the wrong network or address may be irreversible.</p></section>'
 
+RENEWAL_WINDOW_DAYS=14
+
+def renewal_days_left(ent,now=None):
+ """Whole days until a PRO period ends, or None when not PRO."""
+ if ent['plan']!='pro' or not ent['end']:
+  return None
+ now=int(time.time()) if now is None else now
+ seconds=ent['end']-now
+ if seconds<=0:
+  return 0
+ return (seconds+86399)//86400
+
+def renewal_html(user,csrf,ent,pending_mainnet=None):
+ """Renewal block for a PRO user whose period ends soon.
+
+ Shown only inside the renewal window (14 days): the countdown plus the
+ same BTCPay checkout form new customers get, so renewing is one click.
+ A renewal payment settles into a period that starts when the current one
+ ends — renewing early never loses days (see
+ btcpay_mainnet._claim_and_activate). Outside the window, or without an
+ active PRO period, there is nothing to renew, so this returns ''.
+ """
+ days=renewal_days_left(ent)
+ if days is None or days>RENEWAL_WINDOW_DAYS:
+  return ''
+ if days==0:
+  when='today'
+ elif days==1:
+  when='tomorrow'
+ else:
+  when='in %d days'%days
+ end=datetime.fromtimestamp(ent['end'],timezone.utc).strftime('%Y-%m-%d')
+ head=('<section class="panel"><h2>Renew PRO</h2><p>Your PRO ends '+when+' ('+end
+       +'). Renew now for another 30 days — the new period starts when the '
+       'current one ends, so you lose no days.</p>')
+ if not btcpay_mainnet.checkout_enabled():
+  return head+'<p>Bitcoin checkout is coming soon.</p></section>'
+ if pending_mainnet:
+  link=pending_mainnet.get('checkout_url','')
+  return (head+'<p>Your renewal payment is waiting — '
+          +('<a href="'+escape(link)+'">complete it at BTCPay</a>' if link else 'complete it at BTCPay')
+          +'. PRO extends automatically once it settles.</p></section>')
+ return (head+'<form method="post" action="/btcpay/mainnet/checkout">'
+         '<input type="hidden" name="csrf" value="'+escape(csrf)+'">'
+         '<button>Renew PRO — $49 with Bitcoin</button></form></section>')
+
 def paywall_html(user,csrf,used,pending_mainnet=None):
  """Free-limit page: the moment a user is most likely to pay, show them
  how instead of a bare error. `used` is their lifetime free-report count.
@@ -1295,7 +1341,7 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c:
     reports=c.execute('SELECT id,filename,created,status,accepted,rejected,email_status FROM reports WHERE user_id=? ORDER BY created DESC LIMIT 30',(user['id'],)).fetchall()
     ent,count,remaining=subscriptions.usage(c,user['id'])
-    pending_mainnet=btcpay_mainnet.pending_order(c,user['id']) if ent['plan']!='pro' else None
+    pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
     ref_code=referrals.code_for(c,user['id'])
     ref_stats=referrals.stats(c,user['id'])
    rows=''.join('<tr><td>'+escape(r[1])+'</td><td>'+escape(datetime.fromtimestamp(r[2],timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))+'</td><td>'+escape(r[3])+'</td><td>'+str(r[4])+' / '+str(r[5])+'</td><td><a href="/report?id='+escape(r[0])+'">View</a> · <a href="/download?id='+escape(r[0])+'">Download ZIP</a></td><td>'+escape(r[6])+'</td></tr>' for r in reports)
@@ -1307,6 +1353,7 @@ class Handler(BaseHTTPRequestHandler):
    if os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE: body+='<section class="panel"><h2>Site Studio</h2><a href="/site-studio">Create a company website draft</a></section>'
    body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
    body+=upgrade_html
+   body+=renewal_html(user,csrf,ent,pending_mainnet)
    ref_link=btcpay_mainnet.site_url()+'/?ref='+ref_code
    body+='<section class="panel"><h2>Refer friends — earn free PRO</h2><p>Share your link: <a href="'+escape(ref_link)+'">'+escape(ref_link)+'</a></p><p>When someone signs up with your link and pays $49 for PRO, you get a free month of PRO. Referred signups: '+str(ref_stats['signups'])+' · Paid referrals: '+str(ref_stats['paid'])+' · Free months earned: '+str(ref_stats['months_earned'])+'</p></section>'
    if user['role']=='admin':
@@ -2757,6 +2804,8 @@ class Handler(BaseHTTPRequestHandler):
     else:
      confirm='<section class="panel"><h2>Thanks — your payment is being confirmed</h2><p>BTCPay has your payment and the Bitcoin network is confirming it. PRO activates automatically once it settles — usually within a few minutes. Use Check payment status below to refresh.</p></section>'
    billing='<section class="panel"><h2>Bitcoin billing</h2><p>PRO: '+('Active through '+escape(datefmt(ent['end'])) if ent['plan']=='pro' else 'Not currently active')+'. Payments are Bitcoin only and verified automatically against BTCPay; a browser redirect alone never activates PRO.</p>'
+   pending_acct=next(({'order_id':o[0],'checkout_url':o[2]} for o in mainnet_orders if o[1]=='pending'),None)
+   billing+=renewal_html(user,csrf,ent,pending_acct)
    if btcpay_mainnet.checkout_enabled() and ent['plan']!='pro':
     billing+='<form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Pay $49 with Bitcoin — PRO · 30 days · 50 reports</button></form>'
    if any(o[1]=='pending' for o in mainnet_orders):
@@ -3302,8 +3351,6 @@ class Handler(BaseHTTPRequestHandler):
    if not btcpay_mainnet.checkout_enabled():
     return self.fail(503,'Bitcoin checkout is not available.',user,csrf)
    with db() as c:
-    ent,_,_=subscriptions.usage(c,user['id'])
-    if ent['plan']=='pro':return self.redirect('/account')
     recent=btcpay_mainnet.pending_order(c,user['id'])
     if recent:return self.redirect('/account')
     order_id=btcpay_mainnet.create_order(c,user['id'])
@@ -3362,7 +3409,7 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c:
     ent,count,remaining=subscriptions.usage(c,user['id'])
     if remaining<=0:
-     pending_mainnet=btcpay_mainnet.pending_order(c,user['id']) if ent['plan']!='pro' else None
+     pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
      site_stats.record(c,'paywall_shown','used='+str(count))
      return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
    ident=secrets.token_hex(16);digest=hashlib.sha256(data).hexdigest()
