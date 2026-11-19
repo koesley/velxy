@@ -74,9 +74,9 @@ class AcquisitionTests(unittest.TestCase):
     @patch("acquisition_intelligence_v35.bos.core.access")
     def test_control_characters_rejected(self,access,init):
         with self.assertRaises(ValueError):
-            add(self.c,1,"one","Referral\\nFake","10","")
+            add(self.c,1,"one","Referral"+chr(10)+"Fake","10","")
         with self.assertRaises(ValueError):
-            add(self.c,1,"one","Referral","10","bad\\x00note")
+            add(self.c,1,"one","Referral","10","bad"+chr(0)+"note")
 
     @patch("acquisition_intelligence_v35.attribution.analyze")
     @patch("acquisition_intelligence_v35.bos.init")
