@@ -100,6 +100,7 @@ class SignupPathTests(unittest.TestCase):
         self.assertIn('href="/register">CREATE FREE ACCOUNT', body)
         self.assertIn('href="#try">TRY IT NOW', body)
         self.assertIn('href="/login">SIGN IN', body)
+        self.assertIn('PRO — $49 / 30 DAYS (BITCOIN)', body)
 
     def test_login_page_links_visibly_to_register(self):
         status, _, body = self.fetch('/login')
