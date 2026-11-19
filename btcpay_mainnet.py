@@ -282,6 +282,8 @@ def _claim_and_activate(conn, user_id, order_id, invoice_id):
     log_event('pro_activated', order_id=order_id, invoice_id=invoice_id, user_id=user_id)
     import site_stats
     site_stats.record(conn, 'pro_activated', order_id)
+    import referrals
+    referrals.reward_for_payment(conn, user_id, order_id)
     return True
 
 
