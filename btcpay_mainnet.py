@@ -290,6 +290,10 @@ def _claim_and_activate(conn, user_id, order_id, invoice_id):
     site_stats.record(conn, 'pro_activated', order_id)
     import referrals
     referrals.reward_for_payment(conn, user_id, order_id)
+    import notifications
+    row = conn.execute('SELECT email FROM users WHERE id=?', (user_id,)).fetchone()
+    if row:
+        notifications.queue_pro_confirmation(conn, user_id, row[0], end, order_id)
     return True
 
 
