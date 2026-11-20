@@ -49,7 +49,7 @@ def verify(storage=None, identifier=None):
         # endpoint alone does not establish that deletion occurred.
         try:
             storage.retrieve(owner, identifier, None)
-        except (OSError, RuntimeError):
+        except (OSError, RuntimeError, KeyError):
             pass
         else:
             return 'cleanup_failed'
