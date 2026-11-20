@@ -57,6 +57,20 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(c.execute("SELECT state FROM report_write_journal WHERE report_id='orphan'").fetchone()[0], 'cleaned')
             self.assertEqual(c.execute("SELECT state FROM report_write_journal WHERE report_id='ready'").fetchone()[0], 'pending')
 
+    def test_recovery_claim_blocks_late_commit(self):
+        def competing_remove(owner, identifier):
+            with self.connect() as c:
+                attempted = c.execute(
+                    "UPDATE report_write_journal SET state='committed' "
+                    "WHERE report_id=? AND state='pending'", (identifier,)
+                )
+                self.assertEqual(attempted.rowcount, 0)
+            self.removed.append((owner, identifier))
+        result = reconcile(self.connect, competing_remove, apply=True,
+                           current_time=100000, min_age_seconds=86400)
+        self.assertEqual(result['cleaned'], 1)
+        self.assertEqual(self.removed, [(1, 'orphan')])
+
     def test_failed_cleanup_keeps_pending_for_retry(self):
         def fail(owner, identifier):
             raise RuntimeError('offline')
