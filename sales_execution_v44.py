@@ -6,7 +6,7 @@ import html
 import secrets
 import time
 import urllib.parse
-from datetime import date
+from datetime import date, datetime, timezone
 import business_os_v59 as bos
 import growth_strategy_v42 as strategy
 
@@ -24,6 +24,7 @@ def setup(c):
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, action_id TEXT NOT NULL,
  actor_id INTEGER NOT NULL, previous_stage TEXT NOT NULL,
  next_stage TEXT NOT NULL, note TEXT NOT NULL, created INTEGER NOT NULL)""")
+ c.execute("CREATE INDEX IF NOT EXISTS vx_sales_events44_timeline ON vx_sales_events44(workspace_id,action_id,created DESC,id DESC)")
 
 def _text(value,limit,label):
  value=str(value).strip()
@@ -85,12 +86,36 @@ def snapshot(c,uid,wid,today=None):
          "won_marked":sum(r["stage"]=="won" for r in items),
          "lost_marked":sum(r["stage"]=="lost" for r in items)}
 
+def evidence_timeline(c,uid,wid,action_ids,limit_per_action=5):
+ """Read bounded, workspace-isolated progress evidence for visible actions only."""
+ bos.core.access(c,uid,wid);setup(c)
+ if not isinstance(limit_per_action,int) or not 1<=limit_per_action<=10:
+  raise ValueError("Invalid timeline limit.")
+ if len(action_ids)>200:raise ValueError("Too many actions.")
+ ids=list(dict.fromkeys(action_ids))
+ if not ids:return {}
+ if any(not isinstance(i,str) or len(i)>64 or not i for i in ids):
+  raise ValueError("Invalid action identifier.")
+ placeholders=",".join("?" for _ in ids)
+ rows=c.execute("""SELECT e.action_id,e.previous_stage,e.next_stage,e.note,e.created
+ FROM vx_sales_events44 e
+ JOIN vx_sales_actions44 a ON a.id=e.action_id AND a.workspace_id=e.workspace_id
+ WHERE e.workspace_id=? AND e.action_id IN ("""+placeholders+""")
+ ORDER BY e.action_id,e.created DESC,e.id DESC""",(wid,*ids)).fetchall()
+ result={i:[] for i in ids}
+ for action_id,previous,next_stage,note,created in rows:
+  if len(result[action_id])<limit_per_action:
+   result[action_id].append({"previous":previous,"next":next_stage,"note":note,
+    "when":datetime.fromtimestamp(created,timezone.utc).strftime("%Y-%m-%d %H:%M UTC")})
+ return result
+
 def render(c,uid,wid,csrf):
  bos.core.access(c,uid,wid);setup(c)
  e=lambda v:html.escape(str(v),quote=True)
  data=snapshot(c,uid,wid)
  plans=strategy.analyze(c,uid,wid)
  active=[p for p in plans if p["status"]!="completed"]
+ history=evidence_timeline(c,uid,wid,[item["id"] for item in data["items"]])
  members=c.execute("SELECT user_id FROM empire_members WHERE workspace_id=? ORDER BY user_id",(wid,)).fetchall()
  out=['<section class="panel"><h1>Sales Execution Queue</h1><p>Track manual prospect follow-ups and link each action to a measurable growth strategy. No emails, calls, payments or external actions are sent automatically. Won/lost labels are user-reported, not verified revenue.</p>',
  '<p>Open: '+str(data["open"])+' · Overdue: '+str(data["overdue"])+' · Due today: '+str(data["due_today"])+' · Won-marked: '+str(data["won_marked"])+' · Lost-marked: '+str(data["lost_marked"])+'</p></section>']
@@ -98,8 +123,10 @@ def render(c,uid,wid,csrf):
   out.append('<section class="panel"><h2>Schedule a customer action</h2><form method="post" action="/sales-execution"><input type="hidden" name="csrf" value="'+e(csrf)+'"><input type="hidden" name="workspace" value="'+e(wid)+'"><input type="hidden" name="action" value="create"><label>Strategy<select name="plan_id">'+''.join('<option value="'+e(p["id"])+'">'+e(p["title"])+'</option>' for p in active)+'</select></label><label>Owner<select name="owner">'+''.join('<option value="'+str(m[0])+'"'+(' selected' if m[0]==uid else '')+'>Member #'+str(m[0])+'</option>' for m in members)+'</select></label><label>Prospect or customer label<input name="contact" maxlength="120" required></label><label>Action type<select name="kind">'+''.join('<option>'+e(k)+'</option>' for k in KINDS)+'</select></label><label>Next step<textarea name="summary" maxlength="500" required></textarea></label><label>Follow-up date<input type="date" name="due" required></label><button>Create follow-up</button></form></section>')
  else:out.append('<section class="panel"><p>Create an active <a href="/growth-strategy?w='+urllib.parse.quote(wid,safe='')+'">growth strategy plan</a> before adding customer follow-ups.</p></section>')
  for item in data["items"]:
-  event=c.execute("SELECT note FROM vx_sales_events44 WHERE workspace_id=? AND action_id=? ORDER BY created DESC LIMIT 1",(wid,item["id"])).fetchone()
+  events=history.get(item["id"],[])
   out.append('<section class="panel"><h2>'+e(item["contact"])+'</h2><p>'+e(item["kind"])+' · '+e(item["stage"])+' · due '+e(item["due"])+' · owner #'+str(item["owner"])+'</p><p>Strategy: '+e(item["plan"])+'</p><p>'+e(item["summary"])+'</p><p>Latest evidence: '+e(event[0] if event else "Not recorded")+'</p>')
+  if events:
+   out.append('<details><summary>Progress history ('+str(len(events))+'+ most recent)</summary><ol>'+''.join('<li><time>'+e(v["when"])+'</time> · '+e(v["previous"])+' → '+e(v["next"])+' — '+e(v["note"])+'</li>' for v in events)+'</ol></details>')
   if item["owner"]==uid and item["stage"] not in ("won","lost"):
    out.append('<form method="post" action="/sales-execution"><input type="hidden" name="csrf" value="'+e(csrf)+'"><input type="hidden" name="workspace" value="'+e(wid)+'"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="'+e(item["id"])+'"><label>Progress<select name="stage">'+''.join('<option value="'+e(s)+'"'+(' selected' if s==item["stage"] else '')+'>'+e(s)+'</option>' for s in STAGES)+'</select></label><label>Evidence note<textarea name="note" maxlength="500" required></textarea></label><button>Save progress</button></form>')
   out.append('</section>')
