@@ -263,9 +263,9 @@ class PaywallAnalyticsTests(unittest.TestCase):
             totals, daily, recent = site_stats.summary(c, days=14)
         self.assertEqual(totals['landing_view'], 2)
         self.assertEqual(totals['demo_run'], 1)
-        self.assertEqual(len(daily), 2)
-        self.assertEqual(daily[0][1].get('landing_view'), 2)
-        self.assertEqual(daily[1][1].get('demo_run'), 1)
+        self.assertEqual(len(daily), 14)
+        self.assertEqual(daily[-2][1].get('landing_view'), 2)
+        self.assertEqual(daily[-1][1].get('demo_run'), 1)
         self.assertEqual(len(recent), 3)
 
 
