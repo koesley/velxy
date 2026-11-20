@@ -40,6 +40,34 @@ class NextActionsTests(unittest.TestCase):
         asc.action(self.c,1,lid,"stalled_deal","approved")
         asc.action(self.c,1,lid,"stalled_deal","completed","Manual call")
         self.assertEqual(engine.recommendations(self.c,1,now=self.now)[0]["state"],"awaiting_outcome")
+    def test_many_leads_not_truncated(self):
+        for i in range(510):
+            self.lead(stage="proposal",days=10,business="Cafe %04d" % i)
+        self.assertEqual(len(engine.recommendations(self.c,1,now=self.now)),100)
+
+    def test_latest_action_and_outcome_are_scoped(self):
+        lid=self.lead(owner=1,business="Owner One")
+        other=self.lead(owner=2,business="Owner Two")
+        asc.action(self.c,2,other,"stalled_deal","dismissed")
+        self.assertEqual(len(engine.recommendations(self.c,1,now=self.now)),1)
+        asc.action(self.c,1,lid,"stalled_deal","dismissed")
+        self.assertEqual(engine.recommendations(self.c,1,now=self.now),[])
+
+    def test_suppression_eligibility_matches_existing_helper(self):
+        lid=self.lead()
+        asc.action(self.c,1,lid,"stalled_deal","approved")
+        sales_pipeline.set_suppression(self.c,1,"hello@example.com","verified_clear",
+            "Verified current business contact on public site")
+        self.assertEqual(engine.recommendations(self.c,1,now=self.now)[0]["state"],"approved")
+        sales_pipeline.set_suppression(self.c,1,"hello@example.com","do_not_contact","Opted out")
+        self.assertEqual(engine.recommendations(self.c,1,now=self.now)[0]["state"],"contact_blocked")
+
+    def test_latest_dismissal_wins(self):
+        lid=self.lead()
+        asc.action(self.c,1,lid,"stalled_deal","approved")
+        asc.action(self.c,1,lid,"stalled_deal","dismissed")
+        self.assertEqual(engine.recommendations(self.c,1,now=self.now),[])
+
     def test_html_escaping(self):
         self.lead(business="<script>evil</script>")
         page=engine.dashboard(self.c,1)
