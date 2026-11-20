@@ -143,13 +143,31 @@ class RecoveryTests(unittest.TestCase):
                                   min_age_seconds=86400)
         self.assertEqual(result, {
             'stranded': 3, 'report_present': 1,
-            'object_present': 1, 'storage_unverified': 1
+            'object_present': 1, 'object_confirmed_missing': 0,
+            'storage_unverified': 1
         })
         self.assertEqual(self.removed, [])
         with self.connect() as c:
             self.assertEqual(c.execute(
                 "SELECT COUNT(*) FROM report_write_journal WHERE state='recovering'"
             ).fetchone()[0], 3)
+
+    def test_stranded_audit_distinguishes_404_from_storage_outage(self):
+        import persistent
+        with self.connect() as c:
+            c.execute("INSERT INTO report_write_journal VALUES ('missing',1,100,'recovering')")
+            c.execute("INSERT INTO report_write_journal VALUES ('unreachable',1,100,'recovering')")
+        def retrieve(owner, identifier, root):
+            if identifier == 'missing':
+                raise persistent.StorageObjectNotFound('HTTP 404')
+            raise RuntimeError('Storage unavailable')
+        result = inspect_stranded(
+            self.connect, retrieve, current_time=100000,
+            min_age_seconds=86400,
+            missing_error=persistent.StorageObjectNotFound)
+        self.assertEqual(result['object_confirmed_missing'], 1)
+        self.assertEqual(result['storage_unverified'], 1)
+        self.assertEqual(self.removed, [])
 
     def test_stranded_recovery_is_reported_without_deletion(self):
         with self.connect() as c:
