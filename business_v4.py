@@ -37,9 +37,11 @@ def process(c,uid,fields):
         if not row: raise ValueError('Invoice not found.')
         cid,desc,cents,status=row
         if action=='invoice_issue' and status=='draft':
-            c.execute("UPDATE vx4_invoices SET status='issued' WHERE id=? AND user_id=? AND status='draft'",(ident,uid))
+            if c.execute("UPDATE vx4_invoices SET status='issued' WHERE id=? AND user_id=? AND status='draft'",(ident,uid)).rowcount != 1:
+                raise ValueError('Invoice changed; refresh before retrying.')
         elif action=='invoice_void' and status in ('draft','issued'):
-            c.execute("UPDATE vx4_invoices SET status='void' WHERE id=? AND user_id=? AND status=?",(ident,uid,status))
+            if c.execute("UPDATE vx4_invoices SET status='void' WHERE id=? AND user_id=? AND status=?",(ident,uid,status)).rowcount != 1:
+                raise ValueError('Invoice changed; refresh before retrying.')
         elif action=='invoice_pay' and status=='issued':
             ts=int(time.time())
             changed=c.execute("UPDATE vx4_invoices SET status='paid',paid_at=? WHERE id=? AND user_id=? AND status='issued'",(ts,ident,uid)).rowcount
@@ -57,6 +59,15 @@ def process(c,uid,fields):
         ts=int(time.time())
         rows=c.execute("SELECT id FROM vx4_invoices WHERE user_id=? AND status='issued' AND due_at<?",(uid,ts)).fetchall()
         for (ident,) in rows:
+            # Guarded no-op UPDATE acquires the invoice row lock in PostgreSQL.
+            # A concurrent payment/void must complete before we decide whether
+            # an overdue task is still appropriate.
+            current=c.execute(
+                "UPDATE vx4_invoices SET status=status "
+                "WHERE id=? AND user_id=? AND status='issued' AND due_at<?",
+                (ident,uid,ts)
+            ).rowcount
+            if current != 1: continue
             # UNIQUE event + transaction makes repeated runs safe.
             event=c.execute('SELECT 1 FROM vx4_events WHERE user_id=? AND invoice_id=? AND event_type=?',(uid,ident,'overdue_task')).fetchone()
             if event: continue
