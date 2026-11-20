@@ -172,7 +172,22 @@ def store(user_id, report_id, payload, local_reports):
             parents=True,
             exist_ok=True
         )
-        (target / (str(report_id) + '.zip')).write_bytes(payload)
+        # Atomic local replacement: a crash during writing must not expose a
+        # truncated ZIP as a completed report.
+        import tempfile
+        import os as _os
+        destination = target / (str(report_id) + '.zip')
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=target, prefix='.report-', suffix='.tmp', delete=False) as out:
+                temporary = Path(out.name)
+                out.write(payload)
+                out.flush()
+                _os.fsync(out.fileno())
+            _os.replace(temporary, destination)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 def retrieve(user_id, report_id, local_reports):
