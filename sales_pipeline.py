@@ -144,9 +144,16 @@ def dashboard(c, owner, csrf):
     setup(c)
     rows=c.execute("""SELECT id,business,contact,email,industry,stage,estimated_value,notes
                       FROM sales_pipeline_leads WHERE owner_id=? ORDER BY updated_at DESC LIMIT 200""",(owner,)).fetchall()
-    won=sum(r[6] for r in rows if r[5]=="won")
-    potential=sum(r[6] for r in rows if r[5] not in ("won","lost"))
-    counts={stage:sum(r[5]==stage for r in rows) for stage in STAGES}
+    # Aggregate the entire authorized workspace, not only the 200 most recent
+    # leads displayed below. Values are estimates and never payment evidence.
+    totals=c.execute("""SELECT COUNT(*),
+        COALESCE(SUM(CASE WHEN stage='won' THEN estimated_value ELSE 0 END),0),
+        COALESCE(SUM(CASE WHEN stage NOT IN ('won','lost') THEN estimated_value ELSE 0 END),0)
+        FROM sales_pipeline_leads WHERE owner_id=?""",(owner,)).fetchone()
+    total_leads,won,potential=totals
+    counts=dict.fromkeys(STAGES,0)
+    counts.update(c.execute("""SELECT stage,COUNT(*) FROM sales_pipeline_leads
+        WHERE owner_id=? GROUP BY stage""",(owner,)).fetchall())
     # Only independently verified mainnet settlement records count as received
     # payments. These are account-level payments, NOT attributed to leads.
     # Do not use the manually selected "won" stage as payment evidence.
@@ -170,7 +177,7 @@ def dashboard(c, owner, csrf):
     except Exception:
         pass  # No payment schema yet, or inaccessible: show no verified evidence.
     parts=['<section class="hero"><h1>Sales Pipeline</h1><p>Track outreach, conversations, meetings and deals. Values are manual estimates, not verified revenue.</p></section>',
-           '<section class="panel"><h2>Pipeline overview</h2><p>'+str(len(rows))+' recent leads · '+str(counts["replied"])+' replied · '+str(counts["meeting"])+' meetings · '+str(counts["won"])+' won</p><p>Estimated open opportunities: $'+str(potential)+' · Self-reported won deals: $'+str(won)+'</p></section>']
+           '<section class="panel"><h2>Pipeline overview</h2><p>'+str(total_leads)+' total leads · '+str(min(total_leads,200))+' shown · '+str(counts["replied"])+' replied · '+str(counts["meeting"])+' meetings · '+str(counts["won"])+' won</p><p>Estimated open opportunities: $'+str(potential)+' · Self-reported won deals: $'+str(won)+'</p><p>Workspace totals include every lead; the editable list below shows only the 200 most recently updated leads. Deal values are manually entered estimates, not payments.</p></section>']
     parts.append('<section class="panel"><h2>Payment evidence</h2><p>Currently evidenced mainnet PRO payments: '+str(verified_count)+' · $'+format(verified_cents/100,'.2f')+' USD</p><p>This conservative count includes only the current subscription invoice linked to a settled order. It is not total lifetime revenue, a bank balance, or attribution to any lead. Earlier payments and refunds require separate reconciliation.</p></section>')
     def form(lead=None):
         lead=lead or ("","","","","","new",0,"")
