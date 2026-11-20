@@ -7,6 +7,21 @@ services:
     startCommand: "python portal.py"
     healthCheckPath: /healthz
     envVars:
+      # Never accept paid customer data on Render's ephemeral local SQLite.
+      # Configure a durable PostgreSQL connection before deploying this change.
+      # A missing database intentionally prevents startup rather than silently
+      # losing users, sessions, orders, and reports on instance replacement.
+      - key: VELXTRIA_REQUIRE_PERSISTENCE
+        value: '1'
+      - key: VELXTRIA_DATABASE_URL
+        sync: false
+      # Report ZIPs use private object storage when PostgreSQL is active.
+      - key: VELXTRIA_SUPABASE_URL
+        sync: false
+      - key: VELXTRIA_SUPABASE_SERVICE_KEY
+        sync: false
+      - key: VELXTRIA_SUPABASE_BUCKET
+        value: velxy-reports
       - key: VELXTRIA_ENABLE_BUSINESS_OS_V59
         value: '1'
       - key: VELXTRIA_DEPLOYMENT_MODE
