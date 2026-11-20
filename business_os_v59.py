@@ -643,13 +643,40 @@ def suggested_followup(name,status,days):
         body="Following up on our conversation. Do you have any questions I can help answer, or would you like to discuss the next steps?"
     return greeting+"\\n\\n"+body+"\\n\\nBest regards"
 
-def export_csv(c,uid,wid):
-    data=overview(c,uid,wid)
-    f=io.StringIO()
-    w=csv.writer(f)
-    w.writerow(["id","name","contact","source","value","status","created"])
-    for x in data["leads"]:
-        w.writerow([x[k] for k in ("id","name","contact","source","value","status","created")])
+CRM_EXPORT_LIMIT = 10000
+
+
+def _spreadsheet_safe(value):
+    """Neutralize formulas in human-entered CSV text, including whitespace prefixes."""
+    text = "" if value is None else str(value)
+    if text.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + text
+    return text
+
+
+def export_csv(c, uid, wid):
+    """Export the complete authorized CRM, never the overview's 300-row preview.
+
+    Fail rather than silently producing an incomplete backup when the bounded
+    export limit is exceeded. Values and timestamps remain machine-readable.
+    """
+    core.access(c, uid, wid)
+    init(c)
+    columns = ("id", "name", "contact", "source", "value", "status", "created")
+    rows = c.execute(
+        "SELECT id,name,contact,source,value,status,created "
+        "FROM bos59_leads WHERE workspace_id=? "
+        "ORDER BY created DESC,id DESC LIMIT ?",
+        (wid, CRM_EXPORT_LIMIT + 1),
+    ).fetchall()
+    if len(rows) > CRM_EXPORT_LIMIT:
+        raise ValueError("CRM export exceeds 10,000 leads; narrow or archive records before exporting")
+    f = io.StringIO(newline="")
+    w = csv.writer(f)
+    w.writerow(columns)
+    for lid, name, contact, source, value, status, created in rows:
+        w.writerow((lid, _spreadsheet_safe(name), _spreadsheet_safe(contact),
+                    _spreadsheet_safe(source), value, status, created))
     return f.getvalue()
 
 def customer_search(c,uid,wid,query="",status="all",page=1):
