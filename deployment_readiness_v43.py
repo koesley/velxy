@@ -60,7 +60,12 @@ def inspect(root, environ=None, finder=None):
     # Render's free filesystem is ephemeral. Fail the deployment before
     # accepting real customers without a durable database and report store.
     durable=env.get("VELXTRIA_REQUIRE_PERSISTENCE","0")=="1"
-    if durable:
+    render=env.get("VELXTRIA_DEPLOYMENT_MODE","local")=="render-preview"
+    if render:
+        add("render_persistence_enforced",durable,
+            "Render persistence enforcement enabled" if durable else
+            "Render must set VELXTRIA_REQUIRE_PERSISTENCE=1")
+    if durable or render:
         database=env.get("VELXTRIA_DATABASE_URL","").strip()
         add("durable_database",bool(database) and
             database.startswith(("postgresql://","postgres://")),
