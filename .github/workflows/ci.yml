@@ -42,6 +42,7 @@ jobs:
         run: |
           python -m unittest -v \
             test_invoice_integrity \
+            test_command_surface \
             test_site_stats \
             test_schema_lifecycle \
             test_pg_adapter \
