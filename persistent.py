@@ -235,7 +235,4 @@ def remove(user_id, report_id):
                 raise RuntimeError('Storage deletion returned an unexpected response')
         except (urllib.error.URLError, ValueError, TypeError) as exc:
             raise RuntimeError('Private storage deletion failed') from None
-    else:
-        path = Path(os.getenv('VELXTRIA_DATA_DIR', 'data')) / 'reports' / str(user_id) / (str(report_id) + '.zip')
-        # Local callers currently manage their own cleanup; no-op for backward
-        # compatibility with the existing local report directory conventions.
+    # Local report files remain managed by the caller's local report root.
