@@ -549,7 +549,7 @@ def landing_demo_html():
  report. No account, no email, nothing saved — the file is processed once
  and never stored.
  """
- return '''<section id="try" class="v8-demo"><div class="v8-sectiontop"><span>TRY IT NOW</span><span>NO ACCOUNT. NO WAITING.</span></div><h2>YOUR FILE.<br><em>YOUR NUMBERS. RIGHT NOW.</em></h2><p>Drop in a sales CSV and see the cleaned report instantly — the same engine PRO uses. No account, no email, nothing saved. Your file is processed once and never stored.</p><form method="post" action="/try" enctype="multipart/form-data"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><button class="v8-primary" type="submit">Generate my report</button></form><p class="v8-demo-note">5 MB maximum · 20,000 rows · Your download link works for 10 minutes — create a free account to keep your reports.</p><details><summary>Required column headers</summary><code>'''+escape(', '.join(REQUIRED))+'''</code></details></section>'''
+ return '''<section id="try" class="v8-demo"><div class="v8-sectiontop"><span>TRY IT NOW</span><span>NO ACCOUNT. NO WAITING.</span></div><h2>YOUR FILE.<br><em>YOUR NUMBERS. RIGHT NOW.</em></h2><p>See how VELXTRIA works in minutes. <a href="/sample-sales.csv" download="VELXTRIA_Sample_Sales.csv">Download the sample sales CSV</a>, then select that file below and generate a real report. The sample is fictional and contains intentionally invalid rows to demonstrate data cleaning.</p><p>Already have a supported export? Upload it below instead. Use only sample or non-sensitive data in this preview.</p><form method="post" action="/try" enctype="multipart/form-data"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><button class="v8-primary" type="submit">Generate my report</button></form><p class="v8-demo-note">5 MB maximum · 20,000 rows · Your download link works for 10 minutes — create a free account to keep your reports.</p><details><summary>Required column headers</summary><code>'''+escape(', '.join(REQUIRED))+'''</code></details></section>'''
 
 def demo_result_html(result,token,share_token=None,user=None,csrf=''):
  """The instant demo result: the report summaries on screen, a ZIP download,
@@ -935,6 +935,8 @@ class Handler(BaseHTTPRequestHandler):
    except Exception:
     status='failed'
    return self.respond(200 if status=='connected' else 503,status,'text/plain')
+  if p=='/sample-sales.csv':
+   return self.respond(200,SAMPLE_SALES_CSV,'text/csv; charset=utf-8',headers=[('Content-Disposition','attachment; filename="VELXTRIA_Sample_Sales.csv"'),('Cache-Control','public, max-age=3600')])
   if p=='/robots.txt':
    return self.respond(200,robots_txt(public_base_url(self.headers.get('Host'))),'text/plain',headers=[('Cache-Control','public, max-age=3600')])
   if p=='/sitemap.xml':
