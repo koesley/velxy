@@ -195,7 +195,11 @@ def db():
 def _initialize_schema(c):
  # Serialize schema creation across Render instances and deployments.
  # The transaction-scoped lock releases on commit or rollback, including crashes.
- if persistent.REMOTE:
+ # Guard on the connection itself, not the REMOTE flag: the flag describes
+ # the deployment, but this function can be handed a sqlite connection
+ # while the flag is set (tests, the Render build), and the Postgres-only
+ # lock call crashes on sqlite.
+ if isinstance(c, persistent.PgConnection):
   c.execute('SELECT pg_advisory_xact_lock(871329014, 20261120)')
  if persistent.REMOTE:
   c.execute("""CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', access TEXT NOT NULL DEFAULT 'demo', created INTEGER NOT NULL)""")

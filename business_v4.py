@@ -13,7 +13,11 @@ def amount_cents(raw):
     except (ValueError, InvalidOperation): raise ValueError('Enter a positive amount with at most two decimal places.')
 def setup(c):
     import persistent
-    if persistent.REMOTE: c.execute('SELECT pg_advisory_xact_lock(731245, 921036)')
+    # Guard on the connection itself, not the REMOTE flag: the flag
+    # describes the deployment, but setup can be handed a sqlite
+    # connection while the flag is set (tests, the Render build), and the
+    # Postgres-only lock call crashes on sqlite.
+    if isinstance(c, persistent.PgConnection): c.execute('SELECT pg_advisory_xact_lock(731245, 921036)')
     c.execute('''CREATE TABLE IF NOT EXISTS vx4_invoices (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, contact_id TEXT, description TEXT NOT NULL, amount_cents INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'draft', due_at INTEGER NOT NULL, created_at INTEGER NOT NULL, paid_at INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(user_id) REFERENCES users(id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS vx4_events (id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,invoice_id TEXT NOT NULL,event_type TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(user_id,invoice_id,event_type))''')
     c.execute('CREATE INDEX IF NOT EXISTS vx4_invoices_user ON vx4_invoices(user_id,created_at)')

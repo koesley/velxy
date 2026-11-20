@@ -6,7 +6,11 @@ MODULES=('small_business','online_seller','freelancer','agency')
 def e(v): return html.escape(str(v),quote=True)
 def setup(c):
     import persistent
-    if persistent.REMOTE: c.execute('SELECT pg_advisory_xact_lock(731245, 921035)')
+    # Guard on the connection itself, not the REMOTE flag: the flag
+    # describes the deployment, but setup can be handed a sqlite
+    # connection while the flag is set (tests, the Render build), and the
+    # Postgres-only lock call crashes on sqlite.
+    if isinstance(c, persistent.PgConnection): c.execute('SELECT pg_advisory_xact_lock(731245, 921035)')
     c.execute('''CREATE TABLE IF NOT EXISTS vx3_profiles (user_id INTEGER PRIMARY KEY, business_name TEXT NOT NULL DEFAULT '', business_type TEXT NOT NULL DEFAULT 'small_business', FOREIGN KEY(user_id) REFERENCES users(id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS vx3_contacts (id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,name TEXT NOT NULL,email TEXT NOT NULL DEFAULT '',stage TEXT NOT NULL DEFAULT 'lead',created_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS vx3_entries (id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,kind TEXT NOT NULL,description TEXT NOT NULL,amount_cents INTEGER NOT NULL,created_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id))''')

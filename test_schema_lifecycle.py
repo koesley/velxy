@@ -137,12 +137,18 @@ def setUpModule():
 
 def tearDownModule():
     import portal
-    with portal.db() as c:
-        c.execute(
-            'DELETE FROM sessions WHERE user_id IN '
-            "(SELECT id FROM users WHERE email LIKE 'recovery%@example.test')")
-        c.execute(
-            "DELETE FROM users WHERE email LIKE 'recovery%@example.test'")
+    if not portal.persistent.REMOTE:
+        with portal.db() as c:
+            # Exact emails, not LIKE: a LIKE pattern's % breaks psycopg's
+            # placeholder translation, so this cleanup must stay portable
+            # even though the test itself is local-only.
+            c.execute(
+                'DELETE FROM sessions WHERE user_id IN '
+                "(SELECT id FROM users WHERE email IN "
+                "('recovery@example.test', 'recovery2@example.test'))")
+            c.execute(
+                "DELETE FROM users WHERE email IN "
+                "('recovery@example.test', 'recovery2@example.test')")
     _ENV.stop()
     _TMP.cleanup()
     portal.DATA_ROOT.mkdir(parents=True, exist_ok=True)
@@ -150,6 +156,16 @@ def tearDownModule():
 
 
 class SchemaRecoveryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Local-sqlite behavior only. In remote mode portal.db() connects
+        # to the production Postgres, which this test must never touch
+        # (the Render build runs with VELXTRIA_DATABASE_URL set).
+        import portal
+        if portal.persistent.REMOTE:
+            raise unittest.SkipTest(
+                'schema recovery is a local-sqlite behavior; skipped in remote mode')
+
     def test_schema_recreated_after_database_file_deleted(self):
         import portal
         with portal.db() as c:
