@@ -341,9 +341,19 @@ def validate_csv_upload(filename,data,columns_hint='Expand the required headers 
  if b'\x00' in data:raise ValueError('Invalid CSV file.')
  try:decoded=data.decode('utf-8-sig')
  except UnicodeError:raise ValueError('Could not read this file as UTF-8 text.')
- reader=csv.DictReader(io.StringIO(decoded))
- if reader.fieldnames!=REQUIRED:raise ValueError('Incorrect columns. '+columns_hint)
- if len(decoded.splitlines())>20001:raise ValueError('Limit is 20,000 lines per upload.')
+ # Validate logical CSV records rather than physical lines. Quoted fields may
+ # legitimately contain newlines; malformed quotes and extra cells must not
+ # silently change the meaning of the uploaded sales data.
+ try:
+  reader=csv.reader(io.StringIO(decoded,newline=''),strict=True)
+  header=next(reader,None)
+  if header!=REQUIRED:raise ValueError('Incorrect columns. '+columns_hint)
+  for index,row in enumerate(reader,1):
+   if index>20000:raise ValueError('Limit is 20,000 data rows per upload.')
+   if len(row)!=len(REQUIRED):
+    raise ValueError('CSV row '+str(index+1)+' has '+str(len(row))+' columns; expected '+str(len(REQUIRED))+'.')
+ except csv.Error as exc:
+  raise ValueError('Malformed CSV quoting or structure.') from exc
  return decoded
 
 def run_report_engine(data):
