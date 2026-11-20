@@ -20,13 +20,13 @@ class DurableDeploymentTests(unittest.TestCase):
         self.assertFalse(checks["private_report_storage"]["ok"])
 
     def test_database_alone_is_not_enough_for_reports(self):
-        checks = self.inspect(VELXTRIA_DATABASE_URL="postgresql://example.invalid/db")
+        checks = self.inspect(VELXTRIA_DATABASE_URL="postgresql://user:password@example.invalid/db")
         self.assertTrue(checks["durable_database"]["ok"])
         self.assertFalse(checks["private_report_storage"]["ok"])
 
     def test_both_persistence_services_pass_preflight(self):
         checks = self.inspect(
-            VELXTRIA_DATABASE_URL="postgresql://example.invalid/db",
+            VELXTRIA_DATABASE_URL="postgresql://user:password@example.invalid/db",
             VELXTRIA_SUPABASE_URL="https://example.supabase.co",
             VELXTRIA_SUPABASE_SERVICE_KEY="dummy-for-offline-test")
         self.assertTrue(checks["durable_database"]["ok"])
@@ -36,7 +36,7 @@ class DurableDeploymentTests(unittest.TestCase):
         checks = self.inspect(
             VELXTRIA_DEPLOYMENT_MODE="render-preview",
             VELXTRIA_REQUIRE_PERSISTENCE="0",
-            VELXTRIA_DATABASE_URL="postgresql://example.invalid/db",
+            VELXTRIA_DATABASE_URL="postgresql://user:password@example.invalid/db",
             VELXTRIA_SUPABASE_URL="https://example.supabase.co",
             VELXTRIA_SUPABASE_SERVICE_KEY="offline-test-key")
         self.assertFalse(checks["render_persistence_enforced"]["ok"])

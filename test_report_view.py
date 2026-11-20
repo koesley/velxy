@@ -70,6 +70,9 @@ def tearDownModule():
             "DELETE FROM referrals WHERE user_id IN "
             "(SELECT id FROM users WHERE email LIKE 'rv%@example.test')")
         c.execute(
+            'DELETE FROM report_write_journal WHERE user_id IN '
+            "(SELECT id FROM users WHERE email LIKE 'rv%@example.test')")
+        c.execute(
             'DELETE FROM reports WHERE user_id IN '
             "(SELECT id FROM users WHERE email LIKE 'rv%@example.test')")
         c.execute(
@@ -241,7 +244,7 @@ class ReportViewTests(unittest.TestCase):
                 (ident, uid, 'broken.csv', self.portal.now(), 'ready', 6, 3, 'x'))
         status, _, body = self.get('/report?id=' + ident, cookie)
         self.assertEqual(status, 503)
-        self.assertIn('temporarily unavailable', body)
+        self.assertIn('Report integrity verification failed', body)
 
     def test_download_still_works(self):
         _, cookie, report_id = self.make_user_and_upload()
