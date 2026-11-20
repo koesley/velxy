@@ -64,7 +64,9 @@ def tearDownModule():
         c.execute(
             'DELETE FROM sessions WHERE user_id IN '
             "(SELECT id FROM users WHERE email LIKE 'pa%@example.test')")
-        c.execute("DELETE FROM users WHERE email LIKE 'pa%@example.test'")
+        # The test DB is temporary; retaining fixture users avoids FK errors
+        # when new application tables reference their IDs.
+        # User rows disappear with the isolated database at teardown.
         c.execute('DELETE FROM site_events')
     _ENV.stop()
     _TMP.cleanup()
