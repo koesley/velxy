@@ -3499,7 +3499,7 @@ class Handler(BaseHTTPRequestHandler):
    zip_bytes,_exp,accepted,rejected,filename=entry
    ident=secrets.token_hex(16);digest=hashlib.sha256(zip_bytes).hexdigest()
    try:
-    persistent.store(user['id'],ident,zip_bytes,REPORTS)
+    store_verified_report(user['id'],ident,zip_bytes)
     with db() as c:
      c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',accepted,rejected,digest))
      site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(accepted,rejected))
@@ -3580,7 +3580,7 @@ class Handler(BaseHTTPRequestHandler):
    try:
     report=run_report_engine(data)
     digest=hashlib.sha256(report['zip_bytes']).hexdigest()
-    persistent.store(user['id'],ident,report['zip_bytes'],REPORTS)
+    store_verified_report(user['id'],ident,report['zip_bytes'])
     with db() as c:
      c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',report['accepted'],report['rejected'],digest))
      site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
@@ -3600,6 +3600,19 @@ class Handler(BaseHTTPRequestHandler):
     except Exception:pass
     return self.fail(503,'Your report could not be saved right now. Please try again later.',user,csrf)
   return self.redirect('/report?id='+ident)
+
+def store_verified_report(user_id, report_id, payload):
+ """Persist report ZIP and verify the exact stored bytes before publishing DB metadata.
+
+ This prevents a ready report row from being created when remote storage
+ acknowledges an upload but fails to return intact report content.
+ """
+ persistent.store(user_id,report_id,payload,REPORTS)
+ actual=persistent.retrieve(user_id,report_id,REPORTS)
+ expected_digest=hashlib.sha256(payload).hexdigest()
+ if not hmac.compare_digest(hashlib.sha256(actual).hexdigest(),expected_digest):
+  raise RuntimeError('Report storage integrity verification failed')
+ return expected_digest
 
 def delivery_worker():
  """Local background queue; SMTP only when explicitly configured and user opted in."""
