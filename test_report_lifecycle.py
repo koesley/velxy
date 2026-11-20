@@ -45,6 +45,28 @@ class ReportLifecycleTests(unittest.TestCase):
             self.assertEqual(lifecycle.verify(storage=FakeStorage(corrupt=True), identifier='synthetic'),
                              'integrity_failed')
 
+    def test_storage_network_failure_after_delete_is_not_proof_of_cleanup(self):
+        import persistent
+        storage = FakeStorage()
+        def fail_after_delete(owner, identifier, reports):
+            raise RuntimeError('Storage unreachable')
+        with patch('persistent.REMOTE', True), patch('persistent.URL', 'https://example.supabase.co'), \
+             patch('persistent.KEY', 'test-key'), patch.object(storage, 'retrieve', side_effect=[
+                 lifecycle.synthetic_zip(), RuntimeError('Storage unreachable')
+             ]):
+            self.assertEqual(lifecycle.verify(storage=storage, identifier='synthetic'),
+                             'cleanup_failed')
+
+    def test_explicit_missing_object_after_delete_is_accepted(self):
+        import persistent
+        storage = FakeStorage()
+        with patch('persistent.REMOTE', True), patch('persistent.URL', 'https://example.supabase.co'), \
+             patch('persistent.KEY', 'test-key'), patch.object(storage, 'retrieve', side_effect=[
+                 lifecycle.synthetic_zip(), persistent.StorageObjectNotFound('missing')
+             ]):
+            self.assertEqual(lifecycle.verify(storage=storage, identifier='synthetic'),
+                             'connected')
+
     def test_cleanup_failure_fails_even_after_successful_round_trip(self):
         with patch('persistent.REMOTE', True), patch('persistent.URL', 'https://example.supabase.co'), \
              patch('persistent.KEY', 'test-key'), patch.object(FakeStorage, 'remove', side_effect=OSError):
