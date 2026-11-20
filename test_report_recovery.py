@@ -58,6 +58,46 @@ class RecoveryTests(unittest.TestCase):
             self.assertFalse(portal.abandon_report_write(1, 'ready'))
         remove.assert_not_called()
 
+    def test_abandon_commits_cleaned_only_after_verified_remote_404(self):
+        import portal
+        with patch.object(portal, 'db', self.connect), \
+             patch.object(portal.persistent, 'REMOTE', True), \
+             patch.object(portal.persistent, 'remove') as remove, \
+             patch.object(portal.persistent, 'retrieve',
+                          side_effect=portal.persistent.StorageObjectNotFound('missing')):
+            self.assertTrue(portal.abandon_report_write(1, 'orphan'))
+        remove.assert_called_once_with(1, 'orphan')
+        with self.connect() as c:
+            self.assertEqual(c.execute(
+                "SELECT state FROM report_write_journal WHERE report_id='orphan'"
+            ).fetchone()[0], 'cleaned')
+
+    def test_abandon_keeps_pending_on_remote_readback_failure(self):
+        import portal
+        with patch.object(portal, 'db', self.connect), \
+             patch.object(portal.persistent, 'REMOTE', True), \
+             patch.object(portal.persistent, 'remove') as remove, \
+             patch.object(portal.persistent, 'retrieve',
+                          side_effect=RuntimeError('Storage unavailable')):
+            self.assertFalse(portal.abandon_report_write(1, 'orphan'))
+        remove.assert_called_once_with(1, 'orphan')
+        with self.connect() as c:
+            self.assertEqual(c.execute(
+                "SELECT state FROM report_write_journal WHERE report_id='orphan'"
+            ).fetchone()[0], 'pending')
+
+    def test_abandon_does_not_claim_local_storage_cleanup_success(self):
+        import portal
+        with patch.object(portal, 'db', self.connect), \
+             patch.object(portal.persistent, 'REMOTE', False), \
+             patch.object(portal.persistent, 'remove') as remove:
+            self.assertFalse(portal.abandon_report_write(1, 'orphan'))
+        remove.assert_called_once_with(1, 'orphan')
+        with self.connect() as c:
+            self.assertEqual(c.execute(
+                "SELECT state FROM report_write_journal WHERE report_id='orphan'"
+            ).fetchone()[0], 'pending')
+
     def test_apply_without_verifier_fails_before_deletion(self):
         with self.assertRaisesRegex(ValueError, 'requires an object-absence verifier'):
             reconcile(self.connect, self.remove, apply=True,
