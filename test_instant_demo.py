@@ -233,6 +233,51 @@ class InstantDemoTests(unittest.TestCase):
         self.assertEqual(self.count('reports'), reports_before)
         self.assertEqual(self.count('users'), users_before)
 
+    def test_saved_report_digest_rejects_tampered_download_and_view(self):
+        import hashlib
+        import secrets
+        import portal
+        email = 'integrity-' + secrets.token_hex(5) + '@example.test'
+        password = 'TestPass123456!'
+        form = urllib.parse.urlencode({'email': email, 'password': password}).encode()
+        status, _, _ = self.request('POST', '/register', body=form,
+                                    content_type='application/x-www-form-urlencoded')
+        self.assertEqual(status, 303)
+        status, headers, _ = self.request('POST', '/login', body=form,
+                                          content_type='application/x-www-form-urlencoded')
+        self.assertEqual(status, 303)
+        cookie = headers['Set-Cookie'].split(';')[0]
+        report_id = secrets.token_hex(16)
+        original = portal.run_report_engine(TEST_CSV)['zip_bytes']
+        digest = hashlib.sha256(original).hexdigest()
+        try:
+            with portal.db() as c:
+                uid = c.execute('SELECT id FROM users WHERE email=?', (email,)).fetchone()[0]
+                c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',
+                          (report_id, uid, 'sales.csv', portal.now(), 'ready', 6, 3, digest))
+            portal.persistent.store(uid, report_id, original, portal.REPORTS)
+            headers = {'Cookie': cookie}
+            status, _, _ = self.request('GET', '/download?id=' + report_id, headers=headers)
+            self.assertEqual(status, 200)
+            status, _, _ = self.request('GET', '/report?id=' + report_id, headers=headers)
+            self.assertEqual(status, 200)
+            # Same report identifier, valid ZIP bytes, but a different digest.
+            tampered = portal.run_report_engine(TEST_CSV.replace(b'85.00', b'86.00'))['zip_bytes']
+            portal.persistent.store(uid, report_id, tampered, portal.REPORTS)
+            status, _, body = self.request('GET', '/download?id=' + report_id, headers=headers)
+            self.assertEqual(status, 503)
+            self.assertIn(b'integrity verification failed', body)
+            status, _, body = self.request('GET', '/report?id=' + report_id, headers=headers)
+            self.assertEqual(status, 503)
+            self.assertIn(b'integrity verification failed', body)
+        finally:
+            with portal.db() as c:
+                c.execute('DELETE FROM reports WHERE id=?', (report_id,))
+                c.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email=?)', (email,))
+                c.execute('DELETE FROM users WHERE email=?', (email,))
+            try:portal.persistent.remove(uid, report_id)
+            except Exception:pass
+
     def test_logged_in_dashboard_has_no_demo_form(self):
         data = urllib.parse.urlencode({
             'email': 'demo@example.test',
