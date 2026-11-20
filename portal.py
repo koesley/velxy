@@ -466,8 +466,8 @@ def landing_buy_html(user,csrf):
   if btcpay_mainnet.checkout_enabled():
    return '<form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="v8-primary" type="submit">Get PRO — $49 with Bitcoin</button></form><p class="v8-buy-note">BTCPay creates a secure invoice and PRO activates automatically once the payment settles. Nothing is charged until you pay.</p>'
   return '<button class="v8-primary" type="button" disabled>Get PRO — $49 with Bitcoin</button><p class="v8-buy-note">Bitcoin checkout is coming soon. Create a demo account to try the free reports meanwhile.</p>'
- nxt=urllib.parse.quote('/about',safe='')
- return '<a class="v8-primary" href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a><p class="v8-buy-note">Sign in to continue to secure Bitcoin checkout. New here? <a href="/register?next='+nxt+'">Create a demo account</a> first.</p>'
+ nxt=urllib.parse.quote('/#v8-pricing',safe='')
+ return '<a class="v8-primary" href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a><p class="v8-buy-note">Sign in, then return to pricing to start secure Bitcoin checkout. New here? <a href="/register?next='+nxt+'">Create a free account</a> first. PRO activates only after verified payment.</p>'
 
 def pro_upgrade_html(user,csrf,pending_mainnet=None):
  """PRO upsell block, shared by the dashboard and the paywall page.
@@ -554,7 +554,7 @@ def landing_demo_html():
 def demo_result_html(result,token,share_token=None,user=None,csrf=''):
  """The instant demo result: the report summaries on screen, a ZIP download,
  and the next step (free account to keep reports, PRO for more)."""
- nxt=urllib.parse.quote('/about',safe='')
+ nxt=urllib.parse.quote('/#v8-pricing',safe='')
  share=''
  if share_token:
   link=btcpay_mainnet.site_url()+'/demo/'+share_token
@@ -572,7 +572,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf=''):
   +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>'
   +share
   +keep
-  +'<p class="v8-demo-note">Ready for more? <a href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a>.</p></section></div>')
+  +'<p class="v8-demo-note">Ready for more? <a href="/login?next='+nxt+'">Sign in to see PRO pricing and checkout</a>. Payment is optional and verified before activation.</p></section></div>')
 
 def report_view_html(row,monthly_rows,product_rows,stats):
  """A saved report, viewed on screen: the same monthly + product summaries
