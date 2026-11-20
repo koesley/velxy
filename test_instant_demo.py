@@ -299,6 +299,7 @@ class InstantDemoTests(unittest.TestCase):
                     except Exception:pass
             with portal.db() as c:
                 c.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email=?)', (email,))
+                c.execute('DELETE FROM subscriptions WHERE user_id IN (SELECT id FROM users WHERE email=?)', (email,))
                 c.execute('DELETE FROM users WHERE email=?', (email,))
 
     def test_saved_report_digest_rejects_tampered_download_and_view(self):
