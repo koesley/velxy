@@ -3567,9 +3567,10 @@ class Handler(BaseHTTPRequestHandler):
      pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
      site_stats.record(c,'paywall_shown','used='+str(count))
      return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
-   ident=secrets.token_hex(16);digest=hashlib.sha256(data).hexdigest()
+   ident=secrets.token_hex(16)
    try:
     report=run_report_engine(data)
+    digest=hashlib.sha256(report['zip_bytes']).hexdigest()
     persistent.store(user['id'],ident,report['zip_bytes'],REPORTS)
     with db() as c:
      c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',report['accepted'],report['rejected'],digest))
