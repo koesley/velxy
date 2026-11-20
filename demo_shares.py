@@ -20,6 +20,7 @@ def setup(conn):
       token TEXT PRIMARY KEY, created INTEGER NOT NULL, expires INTEGER NOT NULL,
       monthly_csv TEXT NOT NULL, product_csv TEXT NOT NULL, stats TEXT NOT NULL,
       accepted INTEGER NOT NULL, rejected INTEGER NOT NULL)''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_demo_shares_expires ON demo_shares(expires)')
 
 
 def _rows_to_csv(rows):
@@ -35,8 +36,12 @@ def _csv_to_rows(text):
 def create(conn, report):
     """Store a demo run's summaries and return its public share token."""
     setup(conn)
-    token = secrets.token_urlsafe(24)
+    # Expiration cleanup belongs on writes, never on a public read.
+    # This keeps valid public links accessible on read-only replicas and
+    # prevents every visitor from acquiring a database write lock.
     now = int(time.time())
+    conn.execute('DELETE FROM demo_shares WHERE expires<=?', (now,))
+    token = secrets.token_urlsafe(24)
     conn.execute(
         'INSERT INTO demo_shares'
         '(token,created,expires,monthly_csv,product_csv,stats,accepted,rejected)'
@@ -53,10 +58,9 @@ def get(conn, token):
     """A shared demo's summaries, or None when unknown or expired."""
     setup(conn)
     now = int(time.time())
-    conn.execute('DELETE FROM demo_shares WHERE expires<=?', (now,))
     row = conn.execute(
         'SELECT monthly_csv,product_csv,stats,accepted,rejected'
-        ' FROM demo_shares WHERE token=?', (token,)).fetchone()
+        ' FROM demo_shares WHERE token=? AND expires>?', (token, now)).fetchone()
     if not row:
         return None
     return {
