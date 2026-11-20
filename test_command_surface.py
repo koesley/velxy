@@ -10,6 +10,17 @@ class CommandSurfaceTests(unittest.TestCase):
         cls.css = (ROOT / "style.css").read_text(encoding="utf-8")
         cls.portal = (ROOT / "portal.py").read_text(encoding="utf-8")
 
+    def test_command_palette_indexes_actual_navigation(self):
+        script = (ROOT / "command-palette.js").read_text(encoding="utf-8")
+        self.assertIn("document.querySelectorAll('header nav a[href]')", script)
+        self.assertIn("new Map()", script)
+        self.assertIn("url.startsWith('/')", script)
+        self.assertIn("!url.startsWith('//')", script)
+        self.assertNotIn("['Business OS','/business-os-v59'", script)
+        self.assertIn("event.key === 'ArrowDown'", script)
+        self.assertIn("event.key === 'ArrowUp'", script)
+        self.assertIn("input.focus()", script)
+
     def test_command_palette_is_served_and_linked(self):
         self.assertIn('<script defer src="/command-palette.js"></script>', self.portal)
         self.assertIn("if p=='/command-palette.js':", self.portal)
