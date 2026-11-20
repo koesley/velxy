@@ -144,9 +144,27 @@ def dashboard(c, owner, csrf):
     setup(c)
     rows=c.execute("""SELECT id,business,contact,email,industry,stage,estimated_value,notes
                       FROM sales_pipeline_leads WHERE owner_id=? ORDER BY updated_at DESC LIMIT 200""",(owner,)).fetchall()
-    won=sum(r[6] for r in rows if r[5]=="won")
-    potential=sum(r[6] for r in rows if r[5] not in ("won","lost"))
-    counts={stage:sum(r[5]==stage for r in rows) for stage in STAGES}
+    # Overview must cover the whole owner's pipeline, not just the 200-row edit preview.
+    totals=c.execute("""SELECT stage,COUNT(*),COALESCE(SUM(estimated_value),0)
+        FROM sales_pipeline_leads WHERE owner_id=? GROUP BY stage""",(owner,)).fetchall()
+    counts={stage:0 for stage in STAGES}
+    values={stage:0 for stage in STAGES}
+    for stage,count,amount in totals:
+        if stage in counts:
+            counts[stage]=count
+            values[stage]=amount
+    total_leads=sum(counts.values())
+    won=values["won"]
+    potential=sum(values[stage] for stage in STAGES if stage not in ("won","lost"))
+    # A follow-up prompt is advisory: no messages or tasks are sent or created.
+    cutoff=int(time.time())-14*86400
+    stale=c.execute("""SELECT id,business,stage,updated_at FROM sales_pipeline_leads
+        WHERE owner_id=? AND stage IN ('new','contacted','replied','meeting','proposal')
+          AND updated_at<? ORDER BY updated_at ASC,id ASC LIMIT 10""",
+        (owner,cutoff)).fetchall()
+    stale_count=c.execute("""SELECT COUNT(*) FROM sales_pipeline_leads
+        WHERE owner_id=? AND stage IN ('new','contacted','replied','meeting','proposal')
+          AND updated_at<?""",(owner,cutoff)).fetchone()[0]
     # Only independently verified mainnet settlement records count as received
     # payments. These are account-level payments, NOT attributed to leads.
     # Do not use the manually selected "won" stage as payment evidence.
@@ -170,7 +188,8 @@ def dashboard(c, owner, csrf):
     except Exception:
         pass  # No payment schema yet, or inaccessible: show no verified evidence.
     parts=['<section class="hero"><h1>Sales Pipeline</h1><p>Track outreach, conversations, meetings and deals. Values are manual estimates, not verified revenue.</p></section>',
-           '<section class="panel"><h2>Pipeline overview</h2><p>'+str(len(rows))+' recent leads · '+str(counts["replied"])+' replied · '+str(counts["meeting"])+' meetings · '+str(counts["won"])+' won</p><p>Estimated open opportunities: $'+str(potential)+' · Self-reported won deals: $'+str(won)+'</p></section>']
+           '<section class="panel"><h2>Pipeline overview</h2><p>'+str(total_leads)+' total leads · '+str(counts["replied"])+' replied · '+str(counts["meeting"])+' meetings · '+str(counts["won"])+' won</p><p>Estimated open opportunities: $'+str(potential)+' · Self-reported won deals: $'+str(won)+'</p></section>']
+    parts.append('<section class="panel"><h2>Follow-up review</h2><p>'+str(stale_count)+' open leads have not been updated in at least 14 days. This is a review prompt, not evidence of missed commitments.</p>'+(''.join('<p>'+esc(business)+' · '+esc(stage.title())+' · last updated '+esc(time.strftime("%Y-%m-%d",time.gmtime(updated)))+' UTC</p>' for _id,business,stage,updated in stale) if stale else '<p>No older open leads to review.</p>')+('<p>Showing the 10 oldest of '+str(stale_count)+' records.</p>' if stale_count>10 else '')+'</section>')
     parts.append('<section class="panel"><h2>Payment evidence</h2><p>Currently evidenced mainnet PRO payments: '+str(verified_count)+' · $'+format(verified_cents/100,'.2f')+' USD</p><p>This conservative count includes only the current subscription invoice linked to a settled order. It is not total lifetime revenue, a bank balance, or attribution to any lead. Earlier payments and refunds require separate reconciliation.</p></section>')
     def form(lead=None):
         lead=lead or ("","","","","","new",0,"")
