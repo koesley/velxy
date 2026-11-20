@@ -114,6 +114,18 @@ def render(c,uid,csrf):
          uid, now)
     ).fetchone()
     aging=tuple(int(value or 0) for value in aging)
+    # Surface near-term collection risk before invoices become overdue.
+    due_soon=c.execute(
+        "SELECT COUNT(*),COALESCE(SUM(amount_cents),0) FROM vx4_invoices "
+        "WHERE user_id=? AND status='issued' AND due_at>=? AND due_at<?",
+        (uid,now,now+7*86400)
+    ).fetchone()
+    due_soon_items=c.execute(
+        "SELECT description,amount_cents,due_at FROM vx4_invoices "
+        "WHERE user_id=? AND status='issued' AND due_at>=? AND due_at<? "
+        "ORDER BY due_at ASC, created_at ASC LIMIT 10",
+        (uid,now,now+7*86400)
+    ).fetchall()
     oldest=c.execute(
         "SELECT description,amount_cents,due_at FROM vx4_invoices "
         "WHERE user_id=? AND status='issued' AND due_at<? "
@@ -123,6 +135,12 @@ def render(c,uid,csrf):
     options='<option value="">No linked contact</option>'+''.join('<option value="'+e(cid)+'">'+e(name)+'</option>' for cid,name in contacts)
     body='<section class="panel"><h2>V4 · Revenue command center</h2><p>Issued and paid invoices, overdue risk, and customer-linked workflows. Internal records only; no emails, payment requests or money transfers are sent.</p>'
     body+='<div class="stats"><div><b>'+money(outstanding)+'</b><small>Outstanding invoices</small></div><div><b>'+money(overdue[1])+'</b><small>Overdue · '+str(overdue[0])+' invoices</small></div><div><b>'+money(paid)+'</b><small>Marked paid</small></div></div>'
+    body+='<h3>Due within 7 days</h3><p><strong>'+money(due_soon[1])+'</strong> across '+str(due_soon[0])+' issued invoices. These are not yet overdue.</p>'
+    if due_soon_items:
+        body+='<div class="scroll"><table><tr><th>Invoice</th><th>Amount</th><th>Due (UTC)</th></tr>'
+        for description,cents,due_at in due_soon_items:
+            body+='<tr><td>'+e(description)+'</td><td>'+money(cents)+'</td><td>'+datetime.fromtimestamp(due_at,timezone.utc).strftime('%Y-%m-%d')+'</td></tr>'
+        body+='</table></div>'
     body+='<h3>Overdue receivables by age</h3><div class="stats">'
     for label,amount,count in (
         ('1–7 days overdue',aging[0],aging[3]),
