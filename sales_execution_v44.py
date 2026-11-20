@@ -128,7 +128,7 @@ def render(c,uid,wid,csrf):
   events=history.get(item["id"],[])
   out.append('<section class="panel"><h2>'+e(item["contact"])+'</h2><p>'+e(item["kind"])+' · '+e(item["stage"])+' · due '+e(item["due"])+' · owner #'+str(item["owner"])+'</p><p>Strategy: '+e(item["plan"])+'</p><p>'+e(item["summary"])+'</p><p>Latest evidence: '+e(events[0]["note"] if events else "Not recorded")+'</p>')
   if events:
-   out.append('<details><summary>Progress history ('+str(len(events))+ most recent)</summary><ol>'+''.join('<li><time>'+e(v["when"])+'</time> · '+e(v["previous"])+' → '+e(v["next"])+' — '+e(v["note"])+'</li>' for v in events)+'</ol></details>')
+   out.append('<details><summary>Progress history ('+str(len(events))+' most recent)</summary><ol>'+''.join('<li><time>'+e(v["when"])+'</time> · '+e(v["previous"])+' → '+e(v["next"])+' — '+e(v["note"])+'</li>' for v in events)+'</ol></details>')
   if item["owner"]==uid and item["stage"] not in ("won","lost"):
    out.append('<form method="post" action="/sales-execution"><input type="hidden" name="csrf" value="'+e(csrf)+'"><input type="hidden" name="workspace" value="'+e(wid)+'"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="'+e(item["id"])+'"><label>Progress<select name="stage">'+''.join('<option value="'+e(s)+'"'+(' selected' if s==item["stage"] else '')+'>'+e(s)+'</option>' for s in STAGES)+'</select></label><label>Evidence note<textarea name="note" maxlength="500" required></textarea></label><button>Save progress</button></form>')
   out.append('</section>')
