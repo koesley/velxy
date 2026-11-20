@@ -270,7 +270,7 @@ class InstantDemoTests(unittest.TestCase):
                 '--' + boundary + '--',
                 '',
             ]
-            payload = '\\r\\n'.join(parts).encode()
+            payload = '\r\n'.join(parts).encode()
             status, headers, _ = self.request(
                 'POST', '/upload', body=payload,
                 content_type='multipart/form-data; boundary=' + boundary,
