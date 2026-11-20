@@ -62,6 +62,18 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
                 self.assertEqual(totals['landing_view'], 1)
                 self.assertEqual(recent[0][1], 'landing_view')
                 self.assertTrue(daily)
+                self.assertEqual(daily[0][1]['landing_view'], 1)
+                adapter.execute(
+                    "INSERT INTO site_events(created,event,detail) VALUES (?,?,?)",
+                    (2000000050, 'landing_view', '<img src=x onerror=alert(1)>')
+                )
+                totals, daily, recent = site_stats.summary(adapter, days=36500)
+                self.assertEqual(totals['landing_view'], 2)
+                self.assertEqual(len(daily), 1)
+                self.assertEqual(daily[0][1]['landing_view'], 2)
+                page = site_stats.stats_html(totals, daily, recent)
+                self.assertNotIn('<img src=x', page)
+                self.assertIn('&lt;img', page)
 
     def test_insert_read_update_and_delete(self):
         from sql_params import translate_qmark
