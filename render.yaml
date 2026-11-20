@@ -3,7 +3,7 @@ services:
     name: velxtria-private-preview
     runtime: python
     plan: free
-    buildCommand: "python -m pip install -r requirements.txt && python -m compileall -q . && python -m unittest -q test_site_stats test_schema_lifecycle test_pg_adapter test_sql_params test_deployment_database_url test_verify_database test_verify_storage test_verify_readiness && python deployment_readiness_v43.py"
+    buildCommand: "python -m pip install -r requirements.txt && python -m compileall -q . && python -m unittest -q test_invoice_integrity test_site_stats test_schema_lifecycle test_pg_adapter test_sql_params test_deployment_database_url test_verify_database test_verify_storage test_verify_readiness && python deployment_readiness_v43.py"
     startCommand: "python -u portal.py"
     healthCheckPath: /health/ready
     envVars:
