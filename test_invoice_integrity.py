@@ -12,14 +12,18 @@ class InvoiceIntegrityTests(unittest.TestCase):
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY)")
         self.db.execute("INSERT INTO users VALUES (1)")
-        self.db.execute("CREATE TABLE vx3_contacts (id TEXT PRIMARY KEY, user_id INTEGER, name TEXT, stage TEXT)")
+        self.db.execute("CREATE TABLE vx3_contacts (id TEXT PRIMARY KEY, user_id INTEGER, name TEXT, stage TEXT, created_at INTEGER)")
         self.db.execute("CREATE TABLE vx3_entries (id TEXT PRIMARY KEY, user_id INTEGER, kind TEXT, description TEXT, amount_cents INTEGER, created_at INTEGER)")
         self.db.execute("CREATE TABLE vx3_tasks (id TEXT PRIMARY KEY, user_id INTEGER, title TEXT, status TEXT, created_at INTEGER)")
         business_v4.setup(self.db)
         self.db.execute(
             "INSERT INTO vx4_invoices(id,user_id,description,amount_cents,status,due_at,created_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            ("invoice1", 1, "Consulting", 12500, "issued", int(time.time()) - 100, int(time.time()) - 1000),
+            # Due yesterday: overdue under the calendar-day rule (due_at
+            # must be before today's midnight). A due_at of "a few seconds
+            # ago" is due today, not overdue, so the reminder tests that
+            # expect an overdue invoice would see zero tasks.
+            ("invoice1", 1, "Consulting", 12500, "issued", int(time.time()) - 86400, int(time.time()) - 1000),
         )
         self.db.commit()
 
