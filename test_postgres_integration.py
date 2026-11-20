@@ -52,6 +52,24 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
             "SELECT count(*) FROM velxtria_integration_probe WHERE id=2"
         ).fetchone(), (0,))
 
+    def test_schema_lock_serializes_concurrent_instances(self):
+        """A second process cannot enter schema setup until first commits."""
+        import psycopg
+        first = psycopg.connect(TEST_URL)
+        second = psycopg.connect(TEST_URL)
+        try:
+            first.execute("SELECT pg_advisory_xact_lock(871329014, 20261120)")
+            second.execute("SET lock_timeout = '250ms'")
+            with self.assertRaises(psycopg.errors.LockNotAvailable):
+                second.execute("SELECT pg_advisory_xact_lock(871329014, 20261120)")
+            second.rollback()
+            first.commit()
+            second.execute("SELECT pg_advisory_xact_lock(871329014, 20261120)")
+            second.commit()
+        finally:
+            first.close()
+            second.close()
+
     def test_quoted_question_marks_survive_execution(self):
         from sql_params import translate_qmark
         result = self.conn.execute(translate_qmark(
