@@ -53,9 +53,15 @@ class SchemaLifecycleTests(unittest.TestCase):
         tree = ast.parse(pathlib.Path(__file__).with_name('portal.py').read_text(encoding='utf-8'))
         function = next(node for node in tree.body
                         if isinstance(node, ast.FunctionDef) and node.name == '_initialize_schema')
-        statements = [node for node in ast.walk(function)
-                      if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                      and node.func.attr == 'execute']
+        # ast.walk is breadth-first, so a nested call (the advisory lock,
+        # inside `if persistent.REMOTE:`) sorts after the top-level calls
+        # even though it comes first in the source. Sort by line number so
+        # the order tested is the order the code actually runs in.
+        statements = sorted(
+            (node for node in ast.walk(function)
+             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+             and node.func.attr == 'execute'),
+            key=lambda node: node.lineno)
         sql = [node.args[0].value for node in statements
                if node.args and isinstance(node.args[0], ast.Constant)
                and isinstance(node.args[0].value, str)]
