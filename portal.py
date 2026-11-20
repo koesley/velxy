@@ -466,8 +466,8 @@ def landing_buy_html(user,csrf):
   if btcpay_mainnet.checkout_enabled():
    return '<form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="v8-primary" type="submit">Get PRO — $49 with Bitcoin</button></form><p class="v8-buy-note">BTCPay creates a secure invoice and PRO activates automatically once the payment settles. Nothing is charged until you pay.</p>'
   return '<button class="v8-primary" type="button" disabled>Get PRO — $49 with Bitcoin</button><p class="v8-buy-note">Bitcoin checkout is coming soon. Create a demo account to try the free reports meanwhile.</p>'
- nxt=urllib.parse.quote('/#v8-pricing',safe='')
- return '<a class="v8-primary" href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a><p class="v8-buy-note">Sign in, then return to pricing to start secure Bitcoin checkout. New here? <a href="/register?next='+nxt+'">Create a free account</a> first. PRO activates only after verified payment.</p>'
+ nxt=urllib.parse.quote('/account#billing',safe='')
+ return '<a class="v8-primary" href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a><p class="v8-buy-note">Sign in, then open your account billing section to start secure Bitcoin checkout. New here? <a href="/register?next='+nxt+'">Create a free account</a> first. PRO activates only after verified payment.</p>'
 
 def pro_upgrade_html(user,csrf,pending_mainnet=None):
  """PRO upsell block, shared by the dashboard and the paywall page.
@@ -554,7 +554,7 @@ def landing_demo_html():
 def demo_result_html(result,token,share_token=None,user=None,csrf=''):
  """The instant demo result: the report summaries on screen, a ZIP download,
  and the next step (free account to keep reports, PRO for more)."""
- nxt=urllib.parse.quote('/#v8-pricing',safe='')
+ nxt=urllib.parse.quote('/account#billing',safe='')
  share=''
  if share_token:
   link=btcpay_mainnet.site_url()+'/demo/'+share_token
@@ -572,7 +572,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf=''):
   +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>'
   +share
   +keep
-  +'<p class="v8-demo-note">Ready for more? <a href="/login?next='+nxt+'">Sign in to see PRO pricing and checkout</a>. Payment is optional and verified before activation.</p></section></div>')
+  +'<p class="v8-demo-note">Ready for more? <a href="/login?next='+nxt+'">Sign in to open PRO billing and checkout</a>. Payment is optional and verified before activation.</p></section></div>')
 
 def report_view_html(row,monthly_rows,product_rows,stats):
  """A saved report, viewed on screen: the same monthly + product summaries
@@ -2885,7 +2885,7 @@ class Handler(BaseHTTPRequestHandler):
      confirm='<section class="panel"><h2>Payment received — PRO is active</h2><p>Your $49 Bitcoin payment settled and PRO is active through '+escape(datefmt(ent['end']))+'. You have 50 reports per billing cycle.</p></section>'
     else:
      confirm='<section class="panel"><h2>Thanks — your payment is being confirmed</h2><p>BTCPay has your payment and the Bitcoin network is confirming it. PRO activates automatically once it settles — usually within a few minutes. Use Check payment status below to refresh.</p></section>'
-   billing='<section class="panel"><h2>Bitcoin billing</h2><p>PRO: '+('Active through '+escape(datefmt(ent['end'])) if ent['plan']=='pro' else 'Not currently active')+'. Payments are Bitcoin only and verified automatically against BTCPay; a browser redirect alone never activates PRO.</p>'
+   billing='<section class="panel" id="billing"><h2>Bitcoin billing</h2><p>PRO: '+('Active through '+escape(datefmt(ent['end'])) if ent['plan']=='pro' else 'Not currently active')+'. Payments are Bitcoin only and verified automatically against BTCPay; a browser redirect alone never activates PRO.</p>'
    pending_acct=next(({'order_id':o[0],'checkout_url':o[2]} for o in mainnet_orders if o[1]=='pending'),None)
    billing+=renewal_html(user,csrf,ent,pending_acct)
    if btcpay_mainnet.checkout_enabled() and ent['plan']!='pro':
