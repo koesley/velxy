@@ -43,15 +43,31 @@ def ensure(conn):
 
 
 def record(conn, event, detail='', created=None):
-    """Append one event. Never raises: analytics must not break the
-    request it is logging."""
+    """Best-effort analytics without poisoning the caller's transaction.
+
+    PostgreSQL marks a transaction aborted after a SQL error. A SAVEPOINT
+    allows optional analytics writes to fail without rolling back the
+    caller's business operation. Never commit here: the caller owns the
+    transaction.
+    """
+    savepoint = False
     try:
+        conn.execute('SAVEPOINT vx_site_stats_record')
+        savepoint = True
         ensure(conn)
         conn.execute(
             'INSERT INTO site_events (created, event, detail) VALUES (?,?,?)',
             (int(created if created is not None else time.time()),
              event, str(detail)[:240]))
-    except Exception as exc:  # noqa: BLE001 - analytics must not fail a request
+        conn.execute('RELEASE SAVEPOINT vx_site_stats_record')
+        savepoint = False
+    except Exception as exc:  # optional telemetry must not break business writes
+        if savepoint:
+            try:
+                conn.execute('ROLLBACK TO SAVEPOINT vx_site_stats_record')
+                conn.execute('RELEASE SAVEPOINT vx_site_stats_record')
+            except Exception:
+                pass
         print('site_stats record failed:', type(exc).__name__, flush=True)
 
 
