@@ -21,6 +21,32 @@ class SiteStatsTests(unittest.TestCase):
         self.assertEqual(daily[0][1]['landing_view'], 2)
         self.assertEqual(daily[0][0] % 86400, 0)
 
+    def test_failed_analytics_write_preserves_business_transaction(self):
+        self.conn.execute("CREATE TABLE business_orders (id INTEGER PRIMARY KEY)")
+        self.conn.execute("INSERT INTO business_orders VALUES (1)")
+        # Simulate an analytics-only database failure.
+        self.conn.execute("DROP TABLE site_events")
+        self.conn.execute(
+            "CREATE TABLE site_events (created INTEGER NOT NULL, event TEXT NOT NULL "
+            "CHECK (event='never'), detail TEXT NOT NULL)"
+        )
+        site_stats.record(self.conn, 'landing_view')
+        self.conn.execute("INSERT INTO business_orders VALUES (2)")
+        self.conn.commit()
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM business_orders"
+        ).fetchone()[0], 2)
+
+    def test_successful_analytics_stays_in_caller_transaction(self):
+        site_stats.record(self.conn, 'landing_view')
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM site_events"
+        ).fetchone()[0], 1)
+        self.conn.rollback()
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM site_events"
+        ).fetchone()[0], 0)
+
     def test_html_escapes_event_details(self):
         payload = '<img src=x onerror=alert(1)>'
         site_stats.record(self.conn, 'landing_view', payload)
