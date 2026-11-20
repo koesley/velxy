@@ -42,6 +42,22 @@ class RecoveryTests(unittest.TestCase):
                 main(['--apply'])
         self.assertEqual(error.exception.code, 2)
 
+    def test_abandon_never_deletes_committed_customer_report(self):
+        import portal
+        with self.connect() as c:
+            c.execute("UPDATE report_write_journal SET state='committed' WHERE report_id='ready'")
+        with patch.object(portal, 'db', self.connect), \
+             patch.object(portal.persistent, 'remove') as remove:
+            self.assertFalse(portal.abandon_report_write(1, 'ready'))
+        remove.assert_not_called()
+
+    def test_abandon_never_deletes_when_report_exists_even_if_pending(self):
+        import portal
+        with patch.object(portal, 'db', self.connect), \
+             patch.object(portal.persistent, 'remove') as remove:
+            self.assertFalse(portal.abandon_report_write(1, 'ready'))
+        remove.assert_not_called()
+
     def test_apply_without_verifier_fails_before_deletion(self):
         with self.assertRaisesRegex(ValueError, 'requires an object-absence verifier'):
             reconcile(self.connect, self.remove, apply=True,
