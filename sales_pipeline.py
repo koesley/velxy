@@ -140,6 +140,60 @@ def save(c, owner, data):
     c.execute("INSERT INTO sales_pipeline_leads VALUES (?,?,?,?,?,?,?,?,?,?,?)",
               (lead_id,owner,business,contact,email,industry,stage,value,notes,now,now))
     return lead_id
+
+def delivery_readiness(c, owner, limit=20):
+    """Read-only, owner-scoped review of contact eligibility; never sends messages."""
+    setup(c)
+    if not isinstance(limit, int) or not 1 <= limit <= 100:
+        raise ValueError("Review limit must be between 1 and 100")
+    # Every lead is counted, but only a bounded preview is displayed.
+    # A verified-clear address is evidence of manual review, not consent to send.
+    summary=c.execute("""SELECT
+        COUNT(*),
+        SUM(CASE WHEN TRIM(l.email)='' THEN 1 ELSE 0 END),
+        SUM(CASE WHEN TRIM(l.email)<>'' AND s.status='verified_clear' THEN 1 ELSE 0 END),
+        SUM(CASE WHEN TRIM(l.email)<>'' AND s.status IN
+            ('do_not_contact','suppress_permanent','suppress_rejected') THEN 1 ELSE 0 END),
+        SUM(CASE WHEN TRIM(l.email)<>'' AND
+            (s.status IS NULL OR s.status='hold_for_verification') THEN 1 ELSE 0 END)
+        FROM sales_pipeline_leads l
+        LEFT JOIN outreach_suppression s
+          ON s.owner_id=l.owner_id AND s.email=LOWER(TRIM(l.email))
+        WHERE l.owner_id=? AND l.stage NOT IN ('won','lost')""",(owner,)).fetchone()
+    rows=c.execute("""SELECT l.business,l.email,l.stage,
+        CASE WHEN TRIM(l.email)='' THEN 'missing_email'
+             WHEN s.status IS NULL THEN 'unreviewed'
+             ELSE s.status END AS review_status
+        FROM sales_pipeline_leads l
+        LEFT JOIN outreach_suppression s
+          ON s.owner_id=l.owner_id AND s.email=LOWER(TRIM(l.email))
+        WHERE l.owner_id=? AND l.stage NOT IN ('won','lost')
+          AND (TRIM(l.email)='' OR s.status IS NULL OR s.status<>'verified_clear')
+        ORDER BY l.updated_at DESC,l.id DESC LIMIT ?""",(owner,limit)).fetchall()
+    return {"open":summary[0] or 0,"missing":summary[1] or 0,
+            "reviewed":summary[2] or 0,"suppressed":summary[3] or 0,
+            "held":summary[4] or 0,"preview":rows}
+
+def delivery_readiness_html(c, owner):
+    report=delivery_readiness(c,owner)
+    output=['<section class="panel"><h2>Lead contact readiness</h2>',
+            '<p>'+str(report["open"])+' open opportunities · '+
+            str(report["reviewed"])+' manually verified · '+
+            str(report["held"])+' awaiting verification · '+
+            str(report["suppressed"])+' suppressed · '+
+            str(report["missing"])+' missing email</p>',
+            '<p>Review status is advisory. Verification is not permission to contact; no messages are sent.</p>']
+    if report["preview"]:
+        output.append('<h3>Contacts needing review (newest 20)</h3><ul>')
+        for business,email,stage,status in report["preview"]:
+            output.append('<li>'+esc(business)+' — '+esc(email or 'No email')+
+                          ' · '+esc(stage)+' · '+esc(status.replace('_',' '))+'</li>')
+        output.append('</ul>')
+    else:
+        output.append('<p>No outstanding contact-readiness issues among open leads.</p>')
+    output.append('</section>')
+    return ''.join(output)
+
 def dashboard(c, owner, csrf):
     setup(c)
     rows=c.execute("""SELECT id,business,contact,email,industry,stage,estimated_value,notes
@@ -193,6 +247,7 @@ def dashboard(c, owner, csrf):
     statuses=c.execute("SELECT email,status FROM outreach_suppression WHERE owner_id=? ORDER BY updated_at DESC LIMIT 100",(owner,)).fetchall()
     parts.append('<section class="panel"><h2>Delivery status register</h2>'+''.join('<p>'+esc(email)+' — '+esc(status)+'</p>' for email,status in statuses)+'</section>')
 
+    parts.append(delivery_readiness_html(c,owner))
     for lead in rows:
         parts.append('<section class="panel"><h3>'+esc(lead[1])+'</h3><p>'+esc(lead[5].title())+' · $'+str(lead[6])+' estimated · '+esc(lead[2])+'</p><details><summary>Edit lead</summary>'+form(lead)+'</details></section>')
     return ''.join(parts)
