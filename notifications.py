@@ -4,18 +4,27 @@ Report delivery has its own queue (the deliveries table, keyed by
 report). Everything else the site emails — a PRO-activation confirmation,
 a password-reset link, a PRO renewal reminder — goes through this outbox
 instead: queue() inserts a row, the delivery worker picks it up and sends
-it with the same SMTP settings. A dedupe_key makes each notification
-send at most once (one confirmation per order, one reminder per PRO
-period), and the same retry/backoff rules as report delivery apply.
+it. A dedupe_key makes each notification send at most once (one
+confirmation per order, one reminder per PRO period), and the same
+retry/backoff rules as report delivery apply.
 
-Nothing is sent unless SMTP is configured (VELXTRIA_SMTP_HOST); rows
-simply wait queued until it is.
+Delivery path: SendGrid's HTTPS API first (VELXTRIA_SENDGRID_API_KEY),
+because Render's free tier blocks outbound SMTP ports 25/465/587, so a
+direct SMTP connection never leaves Render (it fails with
+OSError: [Errno 101] Network is unreachable). Plain SMTP
+(VELXTRIA_SMTP_HOST et al) is the fallback for hosts where SMTP works.
+Nothing is sent unless one of the two is configured; rows simply wait
+queued until then.
 """
+import base64
 import hashlib
+import json
 import os
 import secrets
 import smtplib
 import time
+import urllib.error
+import urllib.request
 from email.message import EmailMessage
 
 RENEWAL_REMINDER_DAYS = 3
@@ -34,13 +43,80 @@ def smtp_configured():
     return bool(os.getenv('VELXTRIA_SMTP_HOST', '').strip())
 
 
-def send_mail(recipient, subject, body):
-    """Send one plain-text email with the configured SMTP settings."""
+SENDGRID_API_URL = 'https://api.sendgrid.com/v3/mail/send'
+
+
+def sendgrid_configured():
+    return bool(os.getenv('VELXTRIA_SENDGRID_API_KEY', '').strip())
+
+
+def email_configured():
+    """True when any delivery path is configured (SendGrid or SMTP)."""
+    return sendgrid_configured() or smtp_configured()
+
+
+def send_via_sendgrid(recipient, subject, body, attachment=None):
+    """Send one plain-text email through SendGrid's HTTPS API.
+
+    attachment is (filename, data_bytes, mimetype). Raises RuntimeError
+    with the API's status and message on a non-202 response, so the
+    outbox retry/backoff treats it like any other send failure."""
+    sender = os.environ.get('VELXTRIA_SMTP_FROM', '').strip()
+    if not sender:
+        raise RuntimeError('VELXTRIA_SMTP_FROM is not set (it must match '
+                           'the verified SendGrid sender)')
+    payload = {
+        'personalizations': [{'to': [{'email': recipient}]}],
+        'from': {'email': sender},
+        'subject': subject,
+        'content': [{'type': 'text/plain', 'value': body}],
+    }
+    if attachment is not None:
+        filename, data, mimetype = attachment
+        payload['attachments'] = [{
+            'content': base64.b64encode(data).decode('ascii'),
+            'filename': filename,
+            'type': mimetype,
+            'disposition': 'attachment',
+        }]
+    req = urllib.request.Request(
+        SENDGRID_API_URL,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={'Authorization': 'Bearer ' + os.environ['VELXTRIA_SENDGRID_API_KEY'],
+                 'Content-Type': 'application/json'},
+        method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            if resp.status != 202:
+                raise RuntimeError('SendGrid %s' % resp.status)
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode('utf-8', 'replace')[:160]
+        except Exception:
+            detail = ''
+        raise RuntimeError('SendGrid %s: %s' % (exc.code, detail or exc.msg))
+
+
+def send_mail(recipient, subject, body, attachment=None):
+    """Send one plain-text email.
+
+    SendGrid's HTTPS API first when its key is set (Render's free tier
+    blocks outbound SMTP, so SMTP can never work there); plain SMTP
+    otherwise. attachment is (filename, data_bytes, mimetype)."""
+    if sendgrid_configured():
+        send_via_sendgrid(recipient, subject, body, attachment)
+        return
     msg = EmailMessage()
     msg['Subject'] = subject
     msg['From'] = os.environ['VELXTRIA_SMTP_FROM']
     msg['To'] = recipient
     msg.set_content(body)
+    if attachment is not None:
+        filename, data, mimetype = attachment
+        maintype, _, subtype = mimetype.partition('/')
+        msg.add_attachment(data, maintype=maintype or 'application',
+                           subtype=subtype or 'octet-stream',
+                           filename=filename)
     host = os.environ['VELXTRIA_SMTP_HOST']
     port = int(os.getenv('VELXTRIA_SMTP_PORT', '587'))
     with smtplib.SMTP(host, port, timeout=20) as smtp:

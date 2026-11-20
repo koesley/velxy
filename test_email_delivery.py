@@ -1,8 +1,10 @@
 """Tests for email delivery: the notifications outbox (PRO confirmation,
-renewal reminders), password reset, and the SMTP send path (mocked).
+renewal reminders), password reset, the SMTP send path (mocked), and the
+SendGrid HTTPS API path (mocked).
 Run with: python -m unittest test_email_delivery -v
 """
 import http.client
+import json
 import os
 import re
 import sqlite3
@@ -30,6 +32,11 @@ SMTP_ENV = {
     'VELXTRIA_SMTP_PASSWORD': 'app-password-16',
 }
 
+SENDGRID_ENV = {
+    'VELXTRIA_SENDGRID_API_KEY': 'SG.test-key',
+    'VELXTRIA_SMTP_FROM': 'vincenthalay2005@gmail.com',
+}
+
 MAINNET_ENV = {
     'VELXTRIA_BTCPAY_MAINNET_URL': 'https://btcpay.example.com',
     'VELXTRIA_BTCPAY_MAINNET_STORE_ID': 'store123',
@@ -51,6 +58,9 @@ def settled_invoice(invoice_id, order_id):
 
 class NotificationUnitTests(unittest.TestCase):
     def setUp(self):
+        # A SendGrid key in the ambient environment would flip every
+        # SMTP-path test to the API path; keep it absent by default.
+        os.environ.pop('VELXTRIA_SENDGRID_API_KEY', None)
         self.conn = sqlite3.connect(':memory:')
         self.conn.execute('CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL)')
         self.conn.execute("INSERT INTO users(id,email) VALUES (1,'a@example.test')")
@@ -106,6 +116,96 @@ class NotificationUnitTests(unittest.TestCase):
         row = self.conn.execute(
             "SELECT status,attempts,last_error FROM email_outbox").fetchone()
         self.assertEqual(row, ('retry', 1, 'down'))
+
+    def _sendgrid_response(self):
+        mock_resp = MagicMock()
+        mock_resp.status = 202
+        mock_ctx = MagicMock()
+        mock_ctx.__enter__.return_value = mock_resp
+        return mock_ctx
+
+    def test_send_mail_prefers_sendgrid_over_smtp(self):
+        notifications.queue(self.conn, 'a@example.test', 'Hi', 'Body', 'test',
+                            user_id=1)
+        env = dict(SMTP_ENV)
+        env.update(SENDGRID_ENV)
+        with patch.dict(os.environ, env, clear=True):
+            with patch('urllib.request.urlopen',
+                       return_value=self._sendgrid_response()) as mock_open:
+                with patch('smtplib.SMTP') as mock_smtp_cls:
+                    self.assertTrue(notifications.process_one(self.conn))
+        mock_smtp_cls.assert_not_called()
+        req = mock_open.call_args[0][0]
+        self.assertEqual(req.full_url, notifications.SENDGRID_API_URL)
+        self.assertEqual(req.get_header('Authorization'), 'Bearer SG.test-key')
+        payload = json.loads(req.data.decode('utf-8'))
+        self.assertEqual(payload['from']['email'],
+                         'vincenthalay2005@gmail.com')
+        self.assertEqual(payload['personalizations'][0]['to'][0]['email'],
+                         'a@example.test')
+        self.assertEqual(payload['subject'], 'Hi')
+        self.assertEqual(payload['content'][0]['value'], 'Body')
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM email_outbox").fetchone()[0],
+            'sent')
+
+    def test_send_mail_sendgrid_attachment(self):
+        import base64
+        with patch.dict(os.environ, SENDGRID_ENV, clear=True):
+            with patch('urllib.request.urlopen',
+                       return_value=self._sendgrid_response()) as mock_open:
+                notifications.send_mail(
+                    'a@example.test', 'Report', 'Attached',
+                    attachment=('VELXTRIA_Report.zip', b'ZIPBYTES',
+                                'application/zip'))
+        payload = json.loads(mock_open.call_args[0][0].data.decode('utf-8'))
+        att = payload['attachments'][0]
+        self.assertEqual(att['filename'], 'VELXTRIA_Report.zip')
+        self.assertEqual(att['type'], 'application/zip')
+        self.assertEqual(base64.b64decode(att['content']), b'ZIPBYTES')
+
+    def test_send_mail_sendgrid_error_retries(self):
+        import urllib.error
+        notifications.queue(self.conn, 'a@example.test', 'Hi', 'Body', 'test',
+                            user_id=1)
+        err = urllib.error.HTTPError(
+            notifications.SENDGRID_API_URL, 401, 'Unauthorized', {}, None)
+        with patch.dict(os.environ, SENDGRID_ENV, clear=True):
+            with patch('urllib.request.urlopen', side_effect=err):
+                with self.assertRaises(RuntimeError) as ctx:
+                    notifications.process_one(self.conn)
+        self.assertIn('SendGrid 401', str(ctx.exception))
+        row = self.conn.execute(
+            "SELECT status,attempts,last_error FROM email_outbox").fetchone()
+        self.assertEqual(row[0], 'retry')
+        self.assertEqual(row[1], 1)
+        self.assertIn('SendGrid 401', row[2])
+
+    def test_send_mail_falls_back_to_smtp_without_key(self):
+        notifications.queue(self.conn, 'a@example.test', 'Hi', 'Body', 'test',
+                            user_id=1)
+        with patch.dict(os.environ, SMTP_ENV, clear=True):
+            with patch('urllib.request.urlopen') as mock_open:
+                with patch('smtplib.SMTP') as mock_smtp_cls:
+                    mock_ctx = MagicMock()
+                    mock_smtp_cls.return_value = mock_ctx
+                    self.assertTrue(notifications.process_one(self.conn))
+        mock_open.assert_not_called()
+        mock_smtp_cls.assert_called_once()
+
+    def test_email_configured(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(notifications.email_configured())
+        with patch.dict(os.environ, {'VELXTRIA_SMTP_HOST': 'smtp.gmail.com'},
+                        clear=True):
+            self.assertTrue(notifications.email_configured())
+            self.assertTrue(notifications.smtp_configured())
+            self.assertFalse(notifications.sendgrid_configured())
+        with patch.dict(os.environ, {'VELXTRIA_SENDGRID_API_KEY': 'SG.x'},
+                        clear=True):
+            self.assertTrue(notifications.email_configured())
+            self.assertFalse(notifications.smtp_configured())
+            self.assertTrue(notifications.sendgrid_configured())
 
     def test_renewal_reminder_scan(self):
         now = int(time.time())
@@ -236,6 +336,9 @@ def tearDownModule():
 
 class EmailFlowTests(unittest.TestCase):
     def setUp(self):
+        # Keep the no-email-config test deterministic: a SendGrid key in
+        # the ambient environment would make /forgot offer email.
+        os.environ.pop('VELXTRIA_SENDGRID_API_KEY', None)
         import portal
         self.portal = portal
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), portal.Handler)
