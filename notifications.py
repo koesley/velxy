@@ -218,6 +218,13 @@ def process_one(conn):
             ' WHERE id=?',
             ('retry' if retry else 'failed', str(exc)[:160],
              int(time.time()) + min(3600, 60 * 2 ** attempts), ident))
+        # Commit before re-raising: the delivery worker calls process_one
+        # inside a transaction that rolls back when the error propagates,
+        # which would undo this retry/backoff UPDATE and leave the row
+        # 'queued' with 0 attempts, so the worker retries it every loop
+        # instead of backing off (observed live: a Brevo 401 retried
+        # every ~7s for 13 minutes). Committing first keeps the backoff.
+        conn.commit()
         raise
     conn.execute("UPDATE email_outbox SET status='sent',last_error=''"
                  " WHERE id=?", (ident,))

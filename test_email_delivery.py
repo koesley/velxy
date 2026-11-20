@@ -123,6 +123,28 @@ class NotificationUnitTests(unittest.TestCase):
             "SELECT status,attempts,last_error FROM email_outbox").fetchone()
         self.assertEqual(row, ('retry', 1, 'down'))
 
+    def test_process_one_failure_survives_caller_rollback(self):
+        """A failed send keeps its retry/backoff row even when the caller
+        rolls back. The delivery worker runs process_one inside a
+        transaction that rolls back on the re-raised error; without an
+        explicit commit in process_one the retry UPDATE is undone, the
+        row stays 'queued' with 0 attempts, and the worker retries it
+        every loop instead of backing off."""
+        notifications.queue(self.conn, 'a@example.test', 'Hi', 'Body', 'test',
+                            user_id=1)
+        with patch.dict(os.environ, SMTP_ENV):
+            with patch('smtplib.SMTP', side_effect=RuntimeError('down')):
+                # Simulate the delivery worker: process_one runs inside a
+                # transaction that rolls back when the error re-raises.
+                try:
+                    with self.conn:
+                        notifications.process_one(self.conn)
+                except RuntimeError:
+                    pass
+        row = self.conn.execute(
+            "SELECT status,attempts,last_error FROM email_outbox").fetchone()
+        self.assertEqual(row, ('retry', 1, 'down'))
+
     def _sendgrid_response(self):
         mock_resp = MagicMock()
         mock_resp.status = 202
