@@ -38,6 +38,7 @@ class SiteStatsTests(unittest.TestCase):
         ).fetchone()[0], 2)
 
     def test_successful_analytics_stays_in_caller_transaction(self):
+        self.conn.execute("BEGIN")
         site_stats.record(self.conn, 'landing_view')
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM site_events"
