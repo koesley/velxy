@@ -21,6 +21,9 @@ on:
       - 'test_demo_shares.py'
       - 'test_paywall_analytics.py'
       - 'test_email_delivery.py'
+      - 'test_durable_deployment.py'
+      - 'deployment_readiness_v43.py'
+      - 'render.yaml'
       - '.github/workflows/customer-journey.yml'
   pull_request:
     paths:
@@ -75,4 +78,5 @@ jobs:
             test_instant_demo \
             test_demo_shares \
             test_paywall_analytics \
-            test_email_delivery
+            test_email_delivery \
+            test_durable_deployment
