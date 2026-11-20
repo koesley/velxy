@@ -2924,7 +2924,7 @@ class Handler(BaseHTTPRequestHandler):
     return self.fail(503,'Report integrity verification failed. Please contact support.',user,csrf)
    try:monthly_rows,product_rows,stats=read_report_summaries(report_bytes)
    except ValueError:return self.fail(503,'Report file temporarily unavailable.',user,csrf)
-   return self.respond(200,shell('Report',report_view_html(row,monthly_rows,product_rows,stats),user,csrf),headers=[('Cache-Control','no-store')])
+   return self.respond(200,shell('Report',report_view_html(row[:6],monthly_rows,product_rows,stats),user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
    with db() as c:row=c.execute("SELECT id,digest FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
