@@ -9,6 +9,7 @@ database, and a failed write never breaks the request it was logging.
 """
 
 import time
+import html
 from datetime import datetime, timezone
 
 EVENTS = ('landing_view', 'about_view', 'demo_run', 'signup',
@@ -70,7 +71,7 @@ def summary(conn, days=14):
     since = int(time.time()) - days * 86400
     by_day = {}
     for event, day, n in conn.execute(
-            'SELECT event, created/86400, count(*) FROM site_events '
+            'SELECT event, CAST(created / 86400 AS INTEGER), count(*) FROM site_events '
             'WHERE created>=? GROUP BY event, created/86400 '
             'ORDER BY created/86400',
             (since,)):
