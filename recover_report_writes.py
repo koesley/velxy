@@ -42,11 +42,33 @@ def reconcile(connection_factory, remove, *, apply=False, min_age_seconds=86400,
                 if c.execute('SELECT id FROM reports WHERE id=?', (report_id,)).fetchone():
                     results['protected'] += 1
                     continue
-            remove(user_id, report_id)
+            # Claim the stale entry atomically. A concurrent writer must
+            # not be able to commit its report while cleanup is underway.
+            with connection_factory() as c:
+                claim = c.execute(
+                    "UPDATE report_write_journal SET state='recovering' "
+                    "WHERE report_id=? AND user_id=? AND state='pending' AND created<? "
+                    "AND NOT EXISTS (SELECT 1 FROM reports WHERE id=?)",
+                    (report_id, user_id, cutoff, report_id)
+                )
+                claimed = claim.rowcount == 1
+            if not claimed:
+                results['protected'] += 1
+                continue
+            try:
+                remove(user_id, report_id)
+            except Exception:
+                with connection_factory() as c:
+                    c.execute(
+                        "UPDATE report_write_journal SET state='pending' "
+                        "WHERE report_id=? AND user_id=? AND state='recovering'",
+                        (report_id, user_id)
+                    )
+                raise
             with connection_factory() as c:
                 c.execute(
                     "UPDATE report_write_journal SET state='cleaned' "
-                    "WHERE report_id=? AND user_id=? AND state='pending'",
+                    "WHERE report_id=? AND user_id=? AND state='recovering'",
                     (report_id, user_id)
                 )
             results['cleaned'] += 1
