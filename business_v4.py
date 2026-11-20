@@ -1,5 +1,5 @@
 """VELXTRIA V4: tenant-scoped invoice workflows and actionable insights. No external sends."""
-import html, secrets, time
+import html, secrets, time, re
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 
@@ -17,6 +17,32 @@ def amount_cents(raw):
         if not d.is_finite() or d<=0 or d>100000000 or d.as_tuple().exponent < -2: raise ValueError()
         return int(d*100)
     except (ValueError, InvalidOperation): raise ValueError('Enter a positive amount with at most two decimal places.')
+def _invoice_text(value, label, maximum, required=False):
+    """Reject hidden control characters and oversized input before persistence."""
+    if not isinstance(value, str):
+        raise ValueError(label + ' must be text.')
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        raise ValueError(label + ' contains unsupported control characters.')
+    value = value.strip()
+    if (required and not value) or len(value) > maximum:
+        raise ValueError(label + ' must be ' + ('1–' if required else 'at most ') + str(maximum) + ' characters.')
+    return value
+
+
+def _invoice_date(value):
+    """Accept only canonical UTC calendar dates, without timestamp coercion."""
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', value):
+        raise ValueError('Choose a valid due date.')
+    try:
+        due = datetime.strptime(value, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+        due_at = int(due.timestamp())
+    except (ValueError, OverflowError):
+        raise ValueError('Choose a valid due date.')
+    if not 0 <= due_at <= 4102444800:
+        raise ValueError('Choose a valid due date.')
+    return due_at
+
+
 def setup(c):
     import persistent
     # Guard on the connection itself, not the REMOTE flag: the flag
@@ -44,15 +70,15 @@ def setup(c):
 def process(c,uid,fields):
     action=fields.get('action','')
     if action=='invoice_create':
-        desc=fields.get('description','').strip(); cid=fields.get('contact_id','').strip() or None
-        if not 1<=len(desc)<=180: raise ValueError('Invoice description must be 1–180 characters.')
-        if cid and not c.execute('SELECT 1 FROM vx3_contacts WHERE id=? AND user_id=?',(cid,uid)).fetchone(): raise ValueError('Customer not found.')
-        try:
-            due=datetime.strptime(fields.get('due_date',''),'%Y-%m-%d').replace(tzinfo=timezone.utc)
-            due_at=int(due.timestamp())
-            if due_at<0 or due_at>4102444800: raise ValueError()
-        except (ValueError,OverflowError): raise ValueError('Choose a valid due date.')
-        c.execute('INSERT INTO vx4_invoices(id,user_id,contact_id,description,amount_cents,due_at,created_at) VALUES (?,?,?,?,?,?,?)',(secrets.token_hex(16),uid,cid,desc,amount_cents(fields.get('amount','')),due_at,int(time.time())))
+        desc=_invoice_text(fields.get('description',''), 'Invoice description', 180, required=True)
+        cid=_invoice_text(fields.get('contact_id',''), 'Customer identifier', 128) or None
+        # Validate every field before any invoice write. A customer belongs to the
+        # authenticated workspace; an ID from another workspace is not accepted.
+        cents=amount_cents(fields.get('amount',''))
+        due_at=_invoice_date(fields.get('due_date',''))
+        if cid and not c.execute('SELECT 1 FROM vx3_contacts WHERE id=? AND user_id=?',(cid,uid)).fetchone():
+            raise ValueError('Customer not found.')
+        c.execute('INSERT INTO vx4_invoices(id,user_id,contact_id,description,amount_cents,due_at,created_at) VALUES (?,?,?,?,?,?,?)',(secrets.token_hex(16),uid,cid,desc,cents,due_at,int(time.time())))
     elif action in ('invoice_issue','invoice_pay','invoice_void'):
         ident=fields.get('id','')
         row=c.execute('SELECT contact_id,description,amount_cents,status FROM vx4_invoices WHERE id=? AND user_id=?',(ident,uid)).fetchone()
