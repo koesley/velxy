@@ -8,13 +8,15 @@ it. A dedupe_key makes each notification send at most once (one
 confirmation per order, one reminder per PRO period), and the same
 retry/backoff rules as report delivery apply.
 
-Delivery path: SendGrid's HTTPS API first (VELXTRIA_SENDGRID_API_KEY),
+Delivery path: Brevo's HTTPS API first (VELXTRIA_BREVO_API_KEY),
 because Render's free tier blocks outbound SMTP ports 25/465/587, so a
 direct SMTP connection never leaves Render (it fails with
-OSError: [Errno 101] Network is unreachable). Plain SMTP
-(VELXTRIA_SMTP_HOST et al) is the fallback for hosts where SMTP works.
-Nothing is sent unless one of the two is configured; rows simply wait
-queued until then.
+OSError: [Errno 101] Network is unreachable). SendGrid's HTTPS API is
+kept as a second path (its signup's human check blocked the cloud
+browser and the owner's phone in Nov 2026, so no SendGrid account
+exists). Plain SMTP (VELXTRIA_SMTP_HOST et al) is the fallback for
+hosts where SMTP works. Nothing is sent unless one of the three is
+configured; rows simply wait queued until then.
 """
 import base64
 import hashlib
@@ -50,9 +52,59 @@ def sendgrid_configured():
     return bool(os.getenv('VELXTRIA_SENDGRID_API_KEY', '').strip())
 
 
+BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email'
+
+
+def brevo_configured():
+    return bool(os.getenv('VELXTRIA_BREVO_API_KEY', '').strip())
+
+
 def email_configured():
-    """True when any delivery path is configured (SendGrid or SMTP)."""
-    return sendgrid_configured() or smtp_configured()
+    """True when any delivery path is configured (Brevo, SendGrid, SMTP)."""
+    return brevo_configured() or sendgrid_configured() or smtp_configured()
+
+
+def send_via_brevo(recipient, subject, body, attachment=None):
+    """Send one plain-text email through Brevo's HTTPS API.
+
+    attachment is (filename, data_bytes, mimetype). Raises RuntimeError
+    with the API's status and message on a non-201 response, so the
+    outbox retry/backoff treats it like any other send failure. Brevo
+    answers 201 with a messageId on success; the sender must be a
+    verified Brevo sender or the API rejects the send."""
+    sender = os.environ.get('VELXTRIA_SMTP_FROM', '').strip()
+    if not sender:
+        raise RuntimeError('VELXTRIA_SMTP_FROM is not set (it must match '
+                           'the verified Brevo sender)')
+    payload = {
+        'sender': {'email': sender, 'name': 'VELXTRIA'},
+        'to': [{'email': recipient}],
+        'subject': subject,
+        'textContent': body,
+    }
+    if attachment is not None:
+        filename, data, _mimetype = attachment
+        payload['attachment'] = [{
+            'content': base64.b64encode(data).decode('ascii'),
+            'name': filename,
+        }]
+    req = urllib.request.Request(
+        BREVO_API_URL,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={'api-key': os.environ['VELXTRIA_BREVO_API_KEY'],
+                 'Content-Type': 'application/json',
+                 'accept': 'application/json'},
+        method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            if resp.status != 201:
+                raise RuntimeError('Brevo %s' % resp.status)
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode('utf-8', 'replace')[:160]
+        except Exception:
+            detail = ''
+        raise RuntimeError('Brevo %s: %s' % (exc.code, detail or exc.msg))
 
 
 def send_via_sendgrid(recipient, subject, body, attachment=None):
@@ -100,9 +152,13 @@ def send_via_sendgrid(recipient, subject, body, attachment=None):
 def send_mail(recipient, subject, body, attachment=None):
     """Send one plain-text email.
 
-    SendGrid's HTTPS API first when its key is set (Render's free tier
-    blocks outbound SMTP, so SMTP can never work there); plain SMTP
-    otherwise. attachment is (filename, data_bytes, mimetype)."""
+    Brevo's HTTPS API first when its key is set (Render's free tier
+    blocks outbound SMTP, so SMTP can never work there); SendGrid's
+    HTTPS API second; plain SMTP otherwise. attachment is
+    (filename, data_bytes, mimetype)."""
+    if brevo_configured():
+        send_via_brevo(recipient, subject, body, attachment)
+        return
     if sendgrid_configured():
         send_via_sendgrid(recipient, subject, body, attachment)
         return

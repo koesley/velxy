@@ -49,8 +49,12 @@ services:
       # Email delivery on Render Free: outbound SMTP ports 25/465/587 are
       # blocked on this tier, so Gmail SMTP can never send from the service
       # (every attempt fails with OSError: [Errno 101] Network is
-      # unreachable, no matter how correct the credentials are). SendGrid's
-      # HTTPS API is the delivery path instead — the key is entered in the
+      # unreachable, no matter how correct the credentials are). Brevo's
+      # HTTPS API is the delivery path instead (SendGrid's signup human
+      # check blocked both the cloud browser and the owner's phone in Nov
+      # 2026, so no SendGrid account exists) — the key is entered in the
       # Render dashboard and never committed. See SMTP_SETUP.md.
+      - key: VELXTRIA_BREVO_API_KEY
+        sync: false
       - key: VELXTRIA_SENDGRID_API_KEY
         sync: false
