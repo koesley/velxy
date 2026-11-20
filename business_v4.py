@@ -47,9 +47,22 @@ def process(c,uid,fields):
         if action=='invoice_issue' and status=='draft':
             if c.execute("UPDATE vx4_invoices SET status='issued' WHERE id=? AND user_id=? AND status='draft'",(ident,uid)).rowcount != 1:
                 raise ValueError('Invoice changed; refresh before retrying.')
+            c.execute(
+                "INSERT INTO vx4_events(id,user_id,invoice_id,event_type,created_at) VALUES (?,?,?,?,?)",
+                (secrets.token_hex(16),uid,ident,'issued',int(time.time()))
+            )
         elif action=='invoice_void' and status in ('draft','issued'):
             if c.execute("UPDATE vx4_invoices SET status='void' WHERE id=? AND user_id=? AND status=?",(ident,uid,status)).rowcount != 1:
                 raise ValueError('Invoice changed; refresh before retrying.')
+            c.execute(
+                "INSERT INTO vx4_events(id,user_id,invoice_id,event_type,created_at) VALUES (?,?,?,?,?)",
+                (secrets.token_hex(16),uid,ident,'voided',int(time.time()))
+            )
+            # A voided invoice must not leave an actionable overdue task.
+            c.execute(
+                "UPDATE vx3_tasks SET status='done' WHERE user_id=? AND title=? AND status='open'",
+                (uid,'Invoice follow-up ['+ident+']')
+            )
         elif action=='invoice_pay' and status=='issued':
             ts=int(time.time())
             changed=c.execute("UPDATE vx4_invoices SET status='paid',paid_at=? WHERE id=? AND user_id=? AND status='issued'",(ts,ident,uid)).rowcount
