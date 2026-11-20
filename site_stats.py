@@ -126,7 +126,7 @@ def stats_html(totals, daily, recent):
             '<section class="panel"><h2>Totals</h2><table><thead><tr>'
             '<th>Event</th><th>All time</th></tr></thead><tbody>' +
             totals_rows + '</tbody></table></section>'
-            '<section class="panel"><h2>Daily activity (UTC)</h2><table><thead><tr>'
+            '<section class="panel"><h2>Last 14 days (UTC)</h2><table><thead><tr>'
             '<th>Day (UTC)</th>' + day_header + '</tr></thead><tbody>' +
             (day_rows or '<tr><td colspan="7">No events yet.</td></tr>') +
             '</tbody></table></section>'
