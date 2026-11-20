@@ -145,9 +145,20 @@ def render(c,uid,csrf):
         "ORDER BY due_at ASC, created_at ASC LIMIT 10",
         (uid,now)
     ).fetchall()
+    recent_events=c.execute(
+        "SELECT i.description,e.event_type,e.created_at FROM vx4_events e "
+        "JOIN vx4_invoices i ON i.id=e.invoice_id AND i.user_id=e.user_id "
+        "WHERE e.user_id=? ORDER BY e.created_at DESC LIMIT 20",
+        (uid,)
+    ).fetchall()
     options='<option value="">No linked contact</option>'+''.join('<option value="'+e(cid)+'">'+e(name)+'</option>' for cid,name in contacts)
     body='<section class="panel"><h2>V4 · Revenue command center</h2><p>Issued and paid invoices, overdue risk, and customer-linked workflows. Internal records only; no emails, payment requests or money transfers are sent.</p>'
     body+='<div class="stats"><div><b>'+money(outstanding)+'</b><small>Outstanding invoices</small></div><div><b>'+money(overdue[1])+'</b><small>Overdue · '+str(overdue[0])+' invoices</small></div><div><b>'+money(paid)+'</b><small>Marked paid</small></div></div>'
+    if recent_events:
+        body+='<h3>Invoice activity</h3><div class="scroll"><table><tr><th>When (UTC)</th><th>Invoice</th><th>Action</th></tr>'
+        for description,event_type,created_at in recent_events:
+            body+='<tr><td>'+datetime.fromtimestamp(created_at,timezone.utc).strftime('%Y-%m-%d %H:%M')+'</td><td>'+e(description)+'</td><td>'+e(event_type.replace('_',' '))+'</td></tr>'
+        body+='</table></div>'
     body+='<h3>Due within 7 days</h3><p><strong>'+money(due_soon[1])+'</strong> across '+str(due_soon[0])+' issued invoices. These are not yet overdue.</p>'
     if due_soon_items:
         body+='<div class="scroll"><table><tr><th>Invoice</th><th>Amount</th><th>Due (UTC)</th></tr>'
