@@ -24,6 +24,26 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         self.conn.rollback()
         self.conn.close()
 
+    def test_analytics_error_does_not_abort_business_transaction(self):
+        """PostgreSQL must allow the business write after telemetry fails."""
+        import persistent
+        import site_stats
+        from unittest.mock import patch
+        with patch.object(persistent, 'DATABASE_URL', TEST_URL):
+            with persistent.PgConnection() as adapter:
+                adapter.execute(
+                    "CREATE TEMP TABLE site_events "
+                    "(created INTEGER NOT NULL, event TEXT NOT NULL "
+                    "CHECK (event='never'), detail TEXT NOT NULL)"
+                )
+                adapter.execute("CREATE TEMP TABLE vx_business_probe (id INTEGER PRIMARY KEY)")
+                adapter.execute("INSERT INTO vx_business_probe VALUES (?)", (1,))
+                site_stats.record(adapter, 'landing_view')
+                adapter.execute("INSERT INTO vx_business_probe VALUES (?)", (2,))
+                self.assertEqual(adapter.execute(
+                    "SELECT count(*) FROM vx_business_probe"
+                ).fetchone(), (2,))
+
     def test_real_adapter_iteration_and_rowcount(self):
         """Exercise the actual PgConnection wrapper, not only psycopg."""
         import persistent
