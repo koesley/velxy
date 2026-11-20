@@ -607,9 +607,11 @@ def landing_sample_html():
  return '''<section id="v8-sample" class="v8-sample"><div class="v8-sectiontop"><span>03 / SAMPLE REPORT</span><span>SEE WHAT YOU GET.</span></div><h2>A REAL REPORT.<br><em>FROM SAMPLE DATA.</em></h2><p>This sample was built by the same report engine that processes your uploads, from a small sample sales file — not a real business. It accepted the clean rows, flagged the messy ones, and summarized the rest.</p>'''+body+'''</section>'''
 
 def landing_page(user=None,csrf=''):
+ # A local-only preparation path for customers whose exports use different headers.
  return """<div class="v8">
  <div class="v8-orbit v8-orbit-a"></div><div class="v8-orbit v8-orbit-b"></div>
  <section class="v8-hero">
+  <p style="padding:1rem"><a href="/csv-mapper">Different CSV column names? Map them privately before trying the demo</a></p>
   <div class="v8-copy">
    <div class="v8-status"><span class="v8-live"></span> VELXTRIA / INTELLIGENT REPORTING <span class="v8-status-right">PRIVATE PREVIEW</span></div>
    <h1>RUN YOUR BUSINESS.<br><span>WITH MORE</span><br><i>CLARITY.</i></h1>
@@ -939,6 +941,9 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,robots_txt(public_base_url(self.headers.get('Host'))),'text/plain',headers=[('Cache-Control','public, max-age=3600')])
   if p=='/sitemap.xml':
    return self.respond(200,sitemap_xml(public_base_url(self.headers.get('Host'))),'application/xml',headers=[('Cache-Control','public, max-age=3600')])
+  if p=='/csv-mapper':
+   import csv_mapper
+   return self.respond(200,shell('CSV Column Mapper',csv_mapper.page(REQUIRED)))
   if p=='/terms':
    return self.respond(200,shell('Terms of Service',trust_pages.TERMS_HTML))
   if p=='/privacy':
