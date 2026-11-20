@@ -42,7 +42,9 @@ def process(c,uid,fields):
             c.execute("UPDATE vx4_invoices SET status='void' WHERE id=? AND user_id=? AND status=?",(ident,uid,status))
         elif action=='invoice_pay' and status=='issued':
             ts=int(time.time())
-            c.execute("UPDATE vx4_invoices SET status='paid',paid_at=? WHERE id=? AND user_id=? AND status='issued'",(ts,ident,uid))
+            changed=c.execute("UPDATE vx4_invoices SET status='paid',paid_at=? WHERE id=? AND user_id=? AND status='issued'",(ts,ident,uid)).rowcount
+            if changed != 1:
+                raise ValueError('Invoice was already changed; refresh before retrying.')
             c.execute('INSERT INTO vx3_entries(id,user_id,kind,description,amount_cents,created_at) VALUES (?,?,?,?,?,?)',(secrets.token_hex(16),uid,'income','Invoice paid: '+desc,cents,ts))
             if cid:
                 c.execute("UPDATE vx3_contacts SET stage='won' WHERE id=? AND user_id=? AND stage NOT IN ('won','lost')",(cid,uid))
@@ -58,8 +60,15 @@ def process(c,uid,fields):
             # UNIQUE event + transaction makes repeated runs safe.
             event=c.execute('SELECT 1 FROM vx4_events WHERE user_id=? AND invoice_id=? AND event_type=?',(uid,ident,'overdue_task')).fetchone()
             if event: continue
+            # Claim the unique event before creating a task. Concurrent workers
+            # must not both create a reminder for the same invoice.
+            claimed=c.execute(
+                "INSERT INTO vx4_events(id,user_id,invoice_id,event_type,created_at) "
+                "VALUES (?,?,?,?,?) ON CONFLICT(user_id,invoice_id,event_type) DO NOTHING",
+                (secrets.token_hex(16),uid,ident,'overdue_task',ts)
+            ).rowcount
+            if claimed != 1: continue
             c.execute('INSERT INTO vx3_tasks(id,user_id,title,status,created_at) VALUES (?,?,?,?,?)',(secrets.token_hex(16),uid,'Invoice follow-up ['+ident+']','open',ts))
-            c.execute('INSERT INTO vx4_events(id,user_id,invoice_id,event_type,created_at) VALUES (?,?,?,?,?)',(secrets.token_hex(16),uid,ident,'overdue_task',ts))
     else: raise ValueError('Unknown V4 action.')
 
 def render(c,uid,csrf):
