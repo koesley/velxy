@@ -19,7 +19,13 @@ def reconcile(connection_factory, remove, *, apply=False, min_age_seconds=86400,
             "WHERE state='pending' AND created<? ORDER BY created LIMIT 100",
             (cutoff,)
         ).fetchall()
-    results = {'stale': len(candidates), 'cleaned': 0, 'protected': 0, 'failed': 0}
+    with connection_factory() as c:
+        stranded = c.execute(
+            "SELECT COUNT(*) FROM report_write_journal "
+            "WHERE state='recovering' AND created<?", (cutoff,)
+        ).fetchone()[0]
+    results = {'stale': len(candidates), 'recovering_needs_review': stranded,
+               'cleaned': 0, 'protected': 0, 'failed': 0}
     for report_id, user_id in candidates:
         with connection_factory() as c:
             report = c.execute(
@@ -91,7 +97,7 @@ def main(argv=None):
     result = reconcile(portal.db, persistent.remove, apply=args.apply,
                        min_age_seconds=args.min_age_hours * 3600)
     print('Report write recovery:', result)
-    return 1 if result['failed'] else 0
+    return 1 if result['failed'] or result['recovering_needs_review'] else 0
 
 
 if __name__ == '__main__':
