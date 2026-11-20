@@ -50,6 +50,41 @@ class DemoShareUnitTests(unittest.TestCase):
         self.assertEqual(shared['accepted'], 2)
         self.assertEqual(shared['rejected'], 1)
 
+    def test_rejects_oversized_rows_without_inserting(self):
+        report = dict(SAMPLE_REPORT, monthly_rows=[['x']] * (demo_shares.MAX_ROWS + 1))
+        with self.assertRaises(ValueError):
+            demo_shares.create(self.conn, report)
+        self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM demo_shares').fetchone()[0], 0)
+
+    def test_rejects_invalid_counters_and_inconsistent_columns(self):
+        for report in (
+            dict(SAMPLE_REPORT, accepted=True),
+            dict(SAMPLE_REPORT, rejected=-1),
+            dict(SAMPLE_REPORT, product_rows=[['Product', 'Revenue'], ['missing']]),
+        ):
+            with self.subTest(report=report):
+                with self.assertRaises(ValueError):
+                    demo_shares.create(self.conn, report)
+
+    def test_rejects_oversized_cells_and_multiline_stats(self):
+        for report in (
+            dict(SAMPLE_REPORT, product_rows=[['x' * (demo_shares.MAX_CELL_CHARS + 1)]]),
+            dict(SAMPLE_REPORT, stats=['first\\nsecond']),
+        ):
+            with self.assertRaises(ValueError):
+                demo_shares.create(self.conn, report)
+
+    def test_create_removes_expired_shares(self):
+        expired = demo_shares.create(self.conn, SAMPLE_REPORT)
+        self.conn.execute('UPDATE demo_shares SET expires=0 WHERE token=?', (expired,))
+        current = demo_shares.create(self.conn, SAMPLE_REPORT)
+        self.assertIsNone(self.conn.execute('SELECT 1 FROM demo_shares WHERE token=?', (expired,)).fetchone())
+        self.assertIsNotNone(demo_shares.get(self.conn, current))
+
+    def test_invalid_tokens_do_not_query_database(self):
+        for token in (None, '', '../other', 'a' * 129, 123):
+            self.assertIsNone(demo_shares.get(self.conn, token))
+
     def test_unknown_token_returns_none(self):
         self.assertIsNone(demo_shares.get(self.conn, 'no-such-token'))
 
