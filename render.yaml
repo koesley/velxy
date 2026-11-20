@@ -5,7 +5,7 @@ services:
     plan: free
     buildCommand: "python -m pip install -r requirements.txt && python -m compileall -q . && python -m unittest -q test_deployment_database_url && python deployment_readiness_v43.py"
     startCommand: "python -u portal.py"
-    healthCheckPath: /healthz
+    healthCheckPath: /health/ready
     envVars:
       # Never accept paid customer data on Render's ephemeral local SQLite.
       # Configure a durable PostgreSQL connection before deploying this change.
