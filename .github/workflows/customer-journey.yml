@@ -9,6 +9,8 @@ on:
       - 'test_landing_page.py'
       - 'test_seo.py'
       - 'test_btcpay_mainnet.py'
+      - 'test_payment_confirmation.py'
+      - 'test_demo_claim.py'
       - 'btcpay_mainnet.py'
       - '.github/workflows/customer-journey.yml'
   pull_request:
@@ -41,4 +43,4 @@ jobs:
         env:
           VELXTRIA_DEPLOYMENT_MODE: local
           VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT: '0'
-        run: python -m unittest -v test_signup_path test_landing_page test_seo test_btcpay_mainnet
+        run: python -m unittest -v test_signup_path test_landing_page test_seo test_btcpay_mainnet test_payment_confirmation test_demo_claim
