@@ -31,27 +31,24 @@ def verify(storage=None, identifier=None):
     # Reserved namespace, never a real customer ID.
     owner = '_velxtria_storage_probe'
     payload = synthetic_zip()
-    created = False
+    outcome = 'failed'
+    # Always attempt cleanup, even if the upload reports an error after
+    # the remote service has already accepted the object.
     try:
-        # Mark created before writing: a successful remote upload may still
-        # surface a client-side exception while reading its response.
-        created = True
         storage.store(owner, identifier, payload, None)
         retrieved = storage.retrieve(owner, identifier, None)
         if hashlib.sha256(retrieved).digest() != hashlib.sha256(payload).digest():
-            return 'integrity_failed'
-        return 'connected'
+            outcome = 'integrity_failed'
+        else:
+            outcome = 'connected'
     except Exception:
-        return 'failed'
-    finally:
-        if created:
-            try:
-                remove_probe_object(persistent.URL, persistent.KEY,
-                                    persistent.BUCKET, owner, identifier)
-            except Exception:
-                # A failed cleanup is explicitly reported by the CLI wrapper
-                # through its separate status check below.
-                pass
+        outcome = 'failed'
+    try:
+        remove_probe_object(persistent.URL, persistent.KEY,
+                            persistent.BUCKET, owner, identifier)
+    except Exception:
+        return 'cleanup_failed'
+    return outcome
 
 
 def remove_probe_object(url, key, bucket, owner, identifier, opener=None):
