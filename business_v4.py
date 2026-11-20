@@ -161,6 +161,21 @@ def render(c,uid,csrf):
         "ORDER BY due_at ASC, created_at ASC LIMIT 10",
         (uid,today)
     ).fetchall()
+    # Full-workspace, tenant-scoped receivables grouped by linked customer.
+    # Unlinked invoices remain visible in a separate group.
+    customer_receivables=c.execute(
+        "SELECT i.contact_id, COALESCE(ct.name,'Unlinked customer'), "
+        "COUNT(*),COALESCE(SUM(i.amount_cents),0),"
+        "COALESCE(SUM(CASE WHEN i.due_at<? THEN 1 ELSE 0 END),0),"
+        "COALESCE(SUM(CASE WHEN i.due_at<? THEN i.amount_cents ELSE 0 END),0),"
+        "MIN(CASE WHEN i.due_at<? THEN i.due_at ELSE NULL END) "
+        "FROM vx4_invoices i "
+        "LEFT JOIN vx3_contacts ct ON ct.id=i.contact_id AND ct.user_id=i.user_id "
+        "WHERE i.user_id=? AND i.status='issued' "
+        "GROUP BY i.contact_id,ct.name "
+        "ORDER BY 6 DESC,4 DESC,2 ASC LIMIT 20",
+        (today,today,today,uid)
+    ).fetchall()
     recent_events=c.execute(
         "SELECT i.description,e.event_type,e.created_at FROM vx4_events e "
         "JOIN vx4_invoices i ON i.id=e.invoice_id AND i.user_id=e.user_id "
@@ -175,6 +190,16 @@ def render(c,uid,csrf):
         for description,event_type,created_at in recent_events:
             body+='<tr><td>'+datetime.fromtimestamp(created_at,timezone.utc).strftime('%Y-%m-%d %H:%M')+'</td><td>'+e(description)+'</td><td>'+e(event_type.replace('_',' '))+'</td></tr>'
         body+='</table></div>'
+    body+='<h3>Customers with outstanding invoices</h3><p><small>Top 20 customer groups by overdue amount, then outstanding balance. All issued invoices are considered, including those outside the recent invoice list. Internal records only; no reminders are sent.</small></p>'
+    if customer_receivables:
+        body+='<div class="scroll"><table><tr><th>Customer</th><th>Issued invoices</th><th>Outstanding</th><th>Overdue</th><th>Oldest overdue (days)</th></tr>'
+        for contact_id,name,count,total,late_count,late_total,oldest_due in customer_receivables:
+            customer_name=name if contact_id else 'Unlinked customer'
+            days=str(max(1,(today-int(oldest_due))//86400)) if oldest_due is not None else '—'
+            body+='<tr><td>'+e(customer_name)+'</td><td>'+str(count)+'</td><td>'+money(total)+'</td><td>'+str(late_count)+' · '+money(late_total)+'</td><td>'+days+'</td></tr>'
+        body+='</table></div>'
+    else:
+        body+='<p>No issued invoices recorded.</p>'
     body+='<h3>Due within 7 days</h3><p><strong>'+money(due_soon[1])+'</strong> across '+str(due_soon[0])+' issued invoices. These are not yet overdue.</p>'
     if due_soon_items:
         body+='<div class="scroll"><table><tr><th>Invoice</th><th>Amount</th><th>Due (UTC)</th></tr>'
