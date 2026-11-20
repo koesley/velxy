@@ -21,11 +21,11 @@ def _invoice_text(value, label, maximum, required=False):
     """Reject hidden control characters and oversized input before persistence."""
     if not isinstance(value, str):
         raise ValueError(label + ' must be text.')
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        raise ValueError(label + ' contains unsupported control characters.')
     value = value.strip()
     if (required and not value) or len(value) > maximum:
         raise ValueError(label + ' must be ' + ('1–' if required else 'at most ') + str(maximum) + ' characters.')
-    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
-        raise ValueError(label + ' contains unsupported control characters.')
     return value
 
 
