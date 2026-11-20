@@ -4,7 +4,7 @@
   // Discover real destinations from the current page's navigation.
   // This prevents stale shortcuts and respects logged-out navigation.
   const links = Array.from(document.querySelectorAll('header nav a[href]'))
-    .map(a => [a.textContent.trim().replace(/^✦\\s*/, ''), a.getAttribute('href')])
+    .map(a => [a.textContent.trim().replace(/^✦\s*/, ''), a.getAttribute('href')])
     .filter(([title, url]) => title && url && url.startsWith('/') && !url.startsWith('//'));
   const unique = new Map();
   links.forEach(([title,url]) => { if (!unique.has(url)) unique.set(url,title); });
@@ -48,13 +48,23 @@
   openButton.addEventListener('click', open);
   input.addEventListener('input', render);
   input.addEventListener('keydown', event => {
-    if (event.key === 'Enter') {
-      const first = results.querySelector('a');
-      if (first) {
-        event.preventDefault();
-        window.location.assign(first.href);
-      }
+    const items = Array.from(results.querySelectorAll('a'));
+    if (event.key === 'ArrowDown' && items.length) {
+      event.preventDefault();
+      items[0].focus();
+    } else if (event.key === 'Enter' && items.length) {
+      event.preventDefault();
+      window.location.assign(items[0].href);
     }
+  });
+  results.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const items = Array.from(results.querySelectorAll('a'));
+    const current = items.indexOf(document.activeElement);
+    if (current < 0) return;
+    event.preventDefault();
+    if (event.key === 'ArrowUp' && current === 0) input.focus();
+    else items[(current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
   });
   document.addEventListener('keydown', event => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
