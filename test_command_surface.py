@@ -10,6 +10,12 @@ class CommandSurfaceTests(unittest.TestCase):
         cls.css = (ROOT / "style.css").read_text(encoding="utf-8")
         cls.portal = (ROOT / "portal.py").read_text(encoding="utf-8")
 
+    def test_production_css_cascade_applies_design_last(self):
+        route = self.portal.split("if p=='/style.css':return self.respond(200,",1)[1].split("\n",1)[0]
+        self.assertLess(route.index("LANDING_CSS+WORKSPACE_CSS"), route.index("(ROOT/'site-studio.css').read_bytes()"))
+        self.assertLess(route.index("(ROOT/'site-studio.css').read_bytes()"), route.index("(ROOT/'style.css').read_bytes()"))
+        self.assertIn("+b'\\n'+", route)
+
     def test_command_palette_indexes_actual_navigation(self):
         script = (ROOT / "command-palette.js").read_text(encoding="utf-8")
         self.assertIn("document.querySelectorAll('header nav a[href]')", script)
