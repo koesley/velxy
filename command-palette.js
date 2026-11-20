@@ -7,10 +7,10 @@
     .map(a => [a.textContent.trim().replace(/^✦\s*/, ''), a.getAttribute('href')])
     .filter(([title, url]) => title && url && url.startsWith('/') && !url.startsWith('//'));
   // Show the user's current position throughout the shared navigation.
-  const currentPath = window.location.pathname.replace(/\\/$/, '') || '/';
+  const currentPath = window.location.pathname.replace(/\/$/, '') || '/';
   document.querySelectorAll('header nav a[href]').forEach(link => {
     const href = link.getAttribute('href');
-    if (href && (href.replace(/\\/$/, '') || '/') === currentPath) {
+    if (href && (href.replace(/\/$/, '') || '/') === currentPath) {
       link.setAttribute('aria-current', 'page');
     }
   });
