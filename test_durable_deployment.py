@@ -32,6 +32,21 @@ class DurableDeploymentTests(unittest.TestCase):
         self.assertTrue(checks["durable_database"]["ok"])
         self.assertTrue(checks["private_report_storage"]["ok"])
 
+    def test_render_rejects_disabled_persistence_even_with_database(self):
+        checks = self.inspect(
+            VELXTRIA_DEPLOYMENT_MODE="render-preview",
+            VELXTRIA_REQUIRE_PERSISTENCE="0",
+            VELXTRIA_DATABASE_URL="postgresql://example.invalid/db",
+            VELXTRIA_SUPABASE_URL="https://example.supabase.co",
+            VELXTRIA_SUPABASE_SERVICE_KEY="offline-test-key")
+        self.assertFalse(checks["render_persistence_enforced"]["ok"])
+
+    def test_render_requires_both_storage_services(self):
+        checks = self.inspect(VELXTRIA_DEPLOYMENT_MODE="render-preview")
+        self.assertTrue(checks["render_persistence_enforced"]["ok"])
+        self.assertFalse(checks["durable_database"]["ok"])
+        self.assertFalse(checks["private_report_storage"]["ok"])
+
     def test_local_development_does_not_require_remote_storage(self):
         env = {"VELXTRIA_REQUIRE_PERSISTENCE": "0",
                "VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT": "0"}
