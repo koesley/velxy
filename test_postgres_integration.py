@@ -24,6 +24,26 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         self.conn.rollback()
         self.conn.close()
 
+    def test_postgres_daily_buckets_do_not_round_up(self):
+        """A PostgreSQL numeric cast used to shift afternoons into tomorrow."""
+        import persistent
+        import site_stats
+        from unittest.mock import patch
+        midnight = 2000000000 - (2000000000 % 86400)
+        with patch.object(persistent, 'DATABASE_URL', TEST_URL):
+            with persistent.PgConnection() as adapter:
+                adapter.execute(
+                    "CREATE TEMP TABLE site_events "
+                    "(created INTEGER NOT NULL, event TEXT NOT NULL, detail TEXT NOT NULL)"
+                )
+                for seconds in (1, 43201, 86399):
+                    adapter.execute(
+                        "INSERT INTO site_events(created,event,detail) VALUES (?,?,?)",
+                        (midnight + seconds, 'landing_view', 'boundary')
+                    )
+                _, daily, _ = site_stats.summary(adapter, days=36500)
+                self.assertEqual(daily, [(midnight, {'landing_view': 3})])
+
     def test_analytics_error_does_not_abort_business_transaction(self):
         """PostgreSQL must allow the business write after telemetry fails."""
         import persistent
