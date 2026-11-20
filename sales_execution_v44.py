@@ -70,20 +70,27 @@ def update(c,uid,wid,action_id,stage,note):
 def snapshot(c,uid,wid,today=None):
  bos.core.access(c,uid,wid);setup(c)
  today=today or date.today().isoformat()
+ # Aggregate across the entire workspace; the 200-row list is only a preview.
+ totals=c.execute("""SELECT
+ COUNT(*),
+ COALESCE(SUM(CASE WHEN stage NOT IN ('won','lost') THEN 1 ELSE 0 END),0),
+ COALESCE(SUM(CASE WHEN stage NOT IN ('won','lost') AND due < ? THEN 1 ELSE 0 END),0),
+ COALESCE(SUM(CASE WHEN stage NOT IN ('won','lost') AND due = ? THEN 1 ELSE 0 END),0),
+ COALESCE(SUM(CASE WHEN stage='won' THEN 1 ELSE 0 END),0),
+ COALESCE(SUM(CASE WHEN stage='lost' THEN 1 ELSE 0 END),0)
+ FROM vx_sales_actions44 WHERE workspace_id=?""",(today,today,wid)).fetchone()
  rows=c.execute("""SELECT a.id,a.plan_id,a.owner_id,a.contact_label,a.action_kind,
  a.summary,a.due,a.stage,p.title FROM vx_sales_actions44 a
  JOIN vx_growth_strategy42 p ON p.workspace_id=a.workspace_id AND p.id=a.plan_id
  WHERE a.workspace_id=? ORDER BY
  CASE WHEN a.stage IN ('won','lost') THEN 1 ELSE 0 END,
- a.due,a.created DESC LIMIT 200""",(wid,)).fetchall()
+ a.due,a.created DESC,a.id LIMIT 200""",(wid,)).fetchall()
  keys=("id","plan_id","owner","contact","kind","summary","due","stage","plan")
  items=[dict(zip(keys,row)) for row in rows]
- open_items=[r for r in items if r["stage"] not in ("won","lost")]
- return {"items":items,"open":len(open_items),
-         "overdue":sum(r["due"]<today for r in open_items),
-         "due_today":sum(r["due"]==today for r in open_items),
-         "won_marked":sum(r["stage"]=="won" for r in items),
-         "lost_marked":sum(r["stage"]=="lost" for r in items)}
+ return {"items":items,"total":totals[0],"open":totals[1],
+         "overdue":totals[2],"due_today":totals[3],
+         "won_marked":totals[4],"lost_marked":totals[5],
+         "preview_limited":totals[0]>len(items)}
 
 def render(c,uid,wid,csrf):
  bos.core.access(c,uid,wid);setup(c)
@@ -93,7 +100,7 @@ def render(c,uid,wid,csrf):
  active=[p for p in plans if p["status"]!="completed"]
  members=c.execute("SELECT user_id FROM empire_members WHERE workspace_id=? ORDER BY user_id",(wid,)).fetchall()
  out=['<section class="panel"><h1>Sales Execution Queue</h1><p>Track manual prospect follow-ups and link each action to a measurable growth strategy. No emails, calls, payments or external actions are sent automatically. Won/lost labels are user-reported, not verified revenue.</p>',
- '<p>Open: '+str(data["open"])+' · Overdue: '+str(data["overdue"])+' · Due today: '+str(data["due_today"])+' · Won-marked: '+str(data["won_marked"])+' · Lost-marked: '+str(data["lost_marked"])+'</p></section>']
+ '<p>Open: '+str(data["open"])+' · Overdue: '+str(data["overdue"])+' · Due today: '+str(data["due_today"])+' · Won-marked: '+str(data["won_marked"])+' · Lost-marked: '+str(data["lost_marked"])+'</p><p>Showing up to 200 actions; counts cover the full workspace.</p></section>']
  if active:
   out.append('<section class="panel"><h2>Schedule a customer action</h2><form method="post" action="/sales-execution"><input type="hidden" name="csrf" value="'+e(csrf)+'"><input type="hidden" name="workspace" value="'+e(wid)+'"><input type="hidden" name="action" value="create"><label>Strategy<select name="plan_id">'+''.join('<option value="'+e(p["id"])+'">'+e(p["title"])+'</option>' for p in active)+'</select></label><label>Owner<select name="owner">'+''.join('<option value="'+str(m[0])+'"'+(' selected' if m[0]==uid else '')+'>Member #'+str(m[0])+'</option>' for m in members)+'</select></label><label>Prospect or customer label<input name="contact" maxlength="120" required></label><label>Action type<select name="kind">'+''.join('<option>'+e(k)+'</option>' for k in KINDS)+'</select></label><label>Next step<textarea name="summary" maxlength="500" required></textarea></label><label>Follow-up date<input type="date" name="due" required></label><button>Create follow-up</button></form></section>')
  else:out.append('<section class="panel"><p>Create an active <a href="/growth-strategy?w='+urllib.parse.quote(wid,safe='')+'">growth strategy plan</a> before adding customer follow-ups.</p></section>')
