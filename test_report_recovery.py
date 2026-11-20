@@ -42,6 +42,18 @@ class RecoveryTests(unittest.TestCase):
                 main(['--apply'])
         self.assertEqual(error.exception.code, 2)
 
+    def test_stranded_recovery_is_reported_without_deletion(self):
+        with self.connect() as c:
+            c.execute("INSERT INTO report_write_journal VALUES ('stranded',1,100,'recovering')")
+        result = reconcile(self.connect, self.remove, apply=True,
+                           current_time=100000, min_age_seconds=86400)
+        self.assertEqual(result['recovering_needs_review'], 1)
+        self.assertNotIn((1, 'stranded'), self.removed)
+        with self.connect() as c:
+            self.assertEqual(c.execute(
+                "SELECT state FROM report_write_journal WHERE report_id='stranded'"
+            ).fetchone()[0], 'recovering')
+
     def test_dry_run_never_deletes(self):
         result = reconcile(self.connect, self.remove, current_time=100000, min_age_seconds=86400)
         self.assertEqual(result['stale'], 2)
