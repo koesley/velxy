@@ -233,6 +233,26 @@ class InstantDemoTests(unittest.TestCase):
         self.assertEqual(self.count('reports'), reports_before)
         self.assertEqual(self.count('users'), users_before)
 
+    def test_verified_report_storage_detects_corruption(self):
+        import hashlib
+        import portal
+        payload = b'zip bytes for verification'
+        with patch.object(portal.persistent, 'store') as store, \
+             patch.object(portal.persistent, 'retrieve', return_value=payload + b'tampered'):
+            with self.assertRaisesRegex(RuntimeError, 'integrity verification failed'):
+                portal.store_verified_report(123, 'synthetic', payload)
+            store.assert_called_once()
+
+    def test_verified_report_storage_returns_sha256(self):
+        import hashlib
+        import portal
+        payload = b'zip bytes for verification'
+        with patch.object(portal.persistent, 'store') as store, \
+             patch.object(portal.persistent, 'retrieve', return_value=payload):
+            self.assertEqual(portal.store_verified_report(123, 'synthetic', payload),
+                             hashlib.sha256(payload).hexdigest())
+            store.assert_called_once()
+
     def test_authenticated_upload_storage_failure_returns_safe_503(self):
         import secrets
         import portal
