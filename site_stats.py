@@ -110,8 +110,8 @@ def stats_html(totals, daily, recent):
     recent_rows = ''.join(
         '<tr><td>' + datetime.fromtimestamp(
             r[0], timezone.utc).strftime('%Y-%m-%d %H:%M UTC') +
-        '</td><td>' + LABELS.get(r[1], r[1]) +
-        '</td><td>' + (r[2] or '') + '</td></tr>'
+        '</td><td>' + html.escape(str(LABELS.get(r[1], r[1])), quote=True) +
+        '</td><td>' + html.escape(str(r[2] or ''), quote=True) + '</td></tr>'
         for r in recent)
     return ('<section class="panel"><h2>Funnel</h2><p>All-time counts; '
             'conversion is against the previous step.</p><table><thead><tr>'
