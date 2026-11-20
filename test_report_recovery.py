@@ -3,7 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from recover_report_writes import reconcile, main, inspect_stranded
+from recover_report_writes import reconcile, main, inspect_stranded, verify_storage_absent
 from unittest.mock import patch
 
 
@@ -41,6 +41,31 @@ class RecoveryTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as error:
                 main(['--apply'])
         self.assertEqual(error.exception.code, 2)
+
+    def test_absence_verification_accepts_only_explicit_missing(self):
+        class Missing(FileNotFoundError):
+            pass
+        def missing(owner, identifier, root):
+            raise Missing('not found')
+        verify_storage_absent(missing, Missing, 1, 'orphan')
+        def unavailable(owner, identifier, root):
+            raise RuntimeError('storage unavailable')
+        with self.assertRaises(RuntimeError):
+            verify_storage_absent(unavailable, Missing, 1, 'orphan')
+        with self.assertRaises(RuntimeError):
+            verify_storage_absent(lambda *args: b'existing', Missing, 1, 'orphan')
+
+    def test_recovery_does_not_mark_cleaned_when_object_remains(self):
+        result = reconcile(self.connect, self.remove, apply=True,
+                           current_time=100000, min_age_seconds=86400,
+                           verify_absent=lambda owner, identifier: (_ for _ in ()).throw(
+                               RuntimeError('object still exists')))
+        self.assertEqual(result['failed'], 1)
+        self.assertEqual(result['cleaned'], 0)
+        with self.connect() as c:
+            self.assertEqual(c.execute(
+                "SELECT state FROM report_write_journal WHERE report_id='orphan'"
+            ).fetchone()[0], 'pending')
 
     def test_stranded_audit_is_read_only_and_conservative(self):
         with self.connect() as c:
