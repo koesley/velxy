@@ -89,7 +89,7 @@ def snapshot(c,uid,wid,today=None):
 def evidence_timeline(c,uid,wid,action_ids,limit_per_action=5):
  """Read bounded, workspace-isolated progress evidence for visible actions only."""
  bos.core.access(c,uid,wid);setup(c)
- if not isinstance(limit_per_action,int) or not 1<=limit_per_action<=10:
+ if type(limit_per_action) is not int or not 1<=limit_per_action<=10:
   raise ValueError("Invalid timeline limit.")
  if len(action_ids)>200:raise ValueError("Too many actions.")
  ids=list(dict.fromkeys(action_ids))
@@ -97,11 +97,13 @@ def evidence_timeline(c,uid,wid,action_ids,limit_per_action=5):
  if any(not isinstance(i,str) or len(i)>64 or not i for i in ids):
   raise ValueError("Invalid action identifier.")
  placeholders=",".join("?" for _ in ids)
- rows=c.execute("""SELECT e.action_id,e.previous_stage,e.next_stage,e.note,e.created
+ rows=c.execute("""SELECT action_id,previous_stage,next_stage,note,created FROM (
+ SELECT e.action_id,e.previous_stage,e.next_stage,e.note,e.created,
+ ROW_NUMBER() OVER (PARTITION BY e.action_id ORDER BY e.created DESC,e.id DESC) AS rank
  FROM vx_sales_events44 e
  JOIN vx_sales_actions44 a ON a.id=e.action_id AND a.workspace_id=e.workspace_id
- WHERE e.workspace_id=? AND e.action_id IN ("""+placeholders+""")
- ORDER BY e.action_id,e.created DESC,e.id DESC""",(wid,*ids)).fetchall()
+ WHERE e.workspace_id=? AND e.action_id IN ("""+placeholders+"""))
+ WHERE rank<=? ORDER BY action_id,created DESC""",(wid,*ids,limit_per_action)).fetchall()
  result={i:[] for i in ids}
  for action_id,previous,next_stage,note,created in rows:
   if len(result[action_id])<limit_per_action:
@@ -124,9 +126,9 @@ def render(c,uid,wid,csrf):
  else:out.append('<section class="panel"><p>Create an active <a href="/growth-strategy?w='+urllib.parse.quote(wid,safe='')+'">growth strategy plan</a> before adding customer follow-ups.</p></section>')
  for item in data["items"]:
   events=history.get(item["id"],[])
-  out.append('<section class="panel"><h2>'+e(item["contact"])+'</h2><p>'+e(item["kind"])+' · '+e(item["stage"])+' · due '+e(item["due"])+' · owner #'+str(item["owner"])+'</p><p>Strategy: '+e(item["plan"])+'</p><p>'+e(item["summary"])+'</p><p>Latest evidence: '+e(event[0] if event else "Not recorded")+'</p>')
+  out.append('<section class="panel"><h2>'+e(item["contact"])+'</h2><p>'+e(item["kind"])+' · '+e(item["stage"])+' · due '+e(item["due"])+' · owner #'+str(item["owner"])+'</p><p>Strategy: '+e(item["plan"])+'</p><p>'+e(item["summary"])+'</p><p>Latest evidence: '+e(events[0]["note"] if events else "Not recorded")+'</p>')
   if events:
-   out.append('<details><summary>Progress history ('+str(len(events))+'+ most recent)</summary><ol>'+''.join('<li><time>'+e(v["when"])+'</time> · '+e(v["previous"])+' → '+e(v["next"])+' — '+e(v["note"])+'</li>' for v in events)+'</ol></details>')
+   out.append('<details><summary>Progress history ('+str(len(events))+ most recent)</summary><ol>'+''.join('<li><time>'+e(v["when"])+'</time> · '+e(v["previous"])+' → '+e(v["next"])+' — '+e(v["note"])+'</li>' for v in events)+'</ol></details>')
   if item["owner"]==uid and item["stage"] not in ("won","lost"):
    out.append('<form method="post" action="/sales-execution"><input type="hidden" name="csrf" value="'+e(csrf)+'"><input type="hidden" name="workspace" value="'+e(wid)+'"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="'+e(item["id"])+'"><label>Progress<select name="stage">'+''.join('<option value="'+e(s)+'"'+(' selected' if s==item["stage"] else '')+'>'+e(s)+'</option>' for s in STAGES)+'</select></label><label>Evidence note<textarea name="note" maxlength="500" required></textarea></label><button>Save progress</button></form>')
   out.append('</section>')
