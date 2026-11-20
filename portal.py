@@ -3738,7 +3738,7 @@ if __name__=='__main__':
  print(f'VELXTRIA V4 {mode} portal on {host}:{port}; database={"postgresql" if persistent.REMOTE else "sqlite-local"}; storage={"private-supabase" if persistent.REMOTE else "local"}')
  if DELIVERY_ENABLED:
   Thread(target=delivery_worker,daemon=True).start()
-  print('Email delivery queue enabled (' + ('SendGrid' if notifications.sendgrid_configured() else 'SMTP') + ')')
+  print('Email delivery queue enabled (' + ('Brevo' if notifications.brevo_configured() else 'SendGrid' if notifications.sendgrid_configured() else 'SMTP') + ')')
  else:print('Email not configured: reports available for download only')
  print('PRIVATE TEST ONLY — not production ready; no real customer data or payments.')
  ThreadingHTTPServer((host,port),Handler).serve_forever()

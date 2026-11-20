@@ -37,6 +37,11 @@ SENDGRID_ENV = {
     'VELXTRIA_SMTP_FROM': 'vincenthalay2005@gmail.com',
 }
 
+BREVO_ENV = {
+    'VELXTRIA_BREVO_API_KEY': 'xkeysib-test-key',
+    'VELXTRIA_SMTP_FROM': 'vincenthalay2005@gmail.com',
+}
+
 MAINNET_ENV = {
     'VELXTRIA_BTCPAY_MAINNET_URL': 'https://btcpay.example.com',
     'VELXTRIA_BTCPAY_MAINNET_STORE_ID': 'store123',
@@ -58,8 +63,9 @@ def settled_invoice(invoice_id, order_id):
 
 class NotificationUnitTests(unittest.TestCase):
     def setUp(self):
-        # A SendGrid key in the ambient environment would flip every
-        # SMTP-path test to the API path; keep it absent by default.
+        # A Brevo or SendGrid key in the ambient environment would flip
+        # every SMTP-path test to an API path; keep them absent by default.
+        os.environ.pop('VELXTRIA_BREVO_API_KEY', None)
         os.environ.pop('VELXTRIA_SENDGRID_API_KEY', None)
         self.conn = sqlite3.connect(':memory:')
         self.conn.execute('CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL)')
@@ -181,6 +187,84 @@ class NotificationUnitTests(unittest.TestCase):
         self.assertEqual(row[1], 1)
         self.assertIn('SendGrid 401', row[2])
 
+    def _brevo_response(self):
+        mock_resp = MagicMock()
+        mock_resp.status = 201
+        mock_ctx = MagicMock()
+        mock_ctx.__enter__.return_value = mock_resp
+        return mock_ctx
+
+    def test_send_mail_prefers_brevo_over_sendgrid_and_smtp(self):
+        notifications.queue(self.conn, 'a@example.test', 'Hi', 'Body', 'test',
+                            user_id=1)
+        env = dict(SMTP_ENV)
+        env.update(SENDGRID_ENV)
+        env.update(BREVO_ENV)
+        with patch.dict(os.environ, env, clear=True):
+            with patch('urllib.request.urlopen',
+                       return_value=self._brevo_response()) as mock_open:
+                with patch('smtplib.SMTP') as mock_smtp_cls:
+                    self.assertTrue(notifications.process_one(self.conn))
+        mock_smtp_cls.assert_not_called()
+        req = mock_open.call_args[0][0]
+        self.assertEqual(req.full_url, notifications.BREVO_API_URL)
+        self.assertEqual(req.get_header('Api-key'), 'xkeysib-test-key')
+        payload = json.loads(req.data.decode('utf-8'))
+        self.assertEqual(payload['sender']['email'],
+                         'vincenthalay2005@gmail.com')
+        self.assertEqual(payload['to'][0]['email'], 'a@example.test')
+        self.assertEqual(payload['subject'], 'Hi')
+        self.assertEqual(payload['textContent'], 'Body')
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM email_outbox").fetchone()[0],
+            'sent')
+
+    def test_send_mail_brevo_attachment(self):
+        import base64
+        with patch.dict(os.environ, BREVO_ENV, clear=True):
+            with patch('urllib.request.urlopen',
+                       return_value=self._brevo_response()) as mock_open:
+                notifications.send_mail(
+                    'a@example.test', 'Report', 'Attached',
+                    attachment=('VELXTRIA_Report.zip', b'ZIPBYTES',
+                                'application/zip'))
+        payload = json.loads(mock_open.call_args[0][0].data.decode('utf-8'))
+        att = payload['attachment'][0]
+        self.assertEqual(att['name'], 'VELXTRIA_Report.zip')
+        self.assertEqual(base64.b64decode(att['content']), b'ZIPBYTES')
+
+    def test_send_mail_brevo_error_retries(self):
+        import urllib.error
+        notifications.queue(self.conn, 'a@example.test', 'Hi', 'Body', 'test',
+                            user_id=1)
+        err = urllib.error.HTTPError(
+            notifications.BREVO_API_URL, 401, 'Unauthorized', {}, None)
+        with patch.dict(os.environ, BREVO_ENV, clear=True):
+            with patch('urllib.request.urlopen', side_effect=err):
+                with self.assertRaises(RuntimeError) as ctx:
+                    notifications.process_one(self.conn)
+        self.assertIn('Brevo 401', str(ctx.exception))
+        row = self.conn.execute(
+            "SELECT status,attempts,last_error FROM email_outbox").fetchone()
+        self.assertEqual(row[0], 'retry')
+        self.assertEqual(row[1], 1)
+        self.assertIn('Brevo 401', row[2])
+
+    def test_send_mail_falls_back_to_sendgrid_without_brevo_key(self):
+        notifications.queue(self.conn, 'a@example.test', 'Hi', 'Body', 'test',
+                            user_id=1)
+        env = dict(SMTP_ENV)
+        env.update(SENDGRID_ENV)
+        with patch.dict(os.environ, env, clear=True):
+            with patch('urllib.request.urlopen',
+                       return_value=self._sendgrid_response()) as mock_open:
+                with patch('smtplib.SMTP') as mock_smtp_cls:
+                    self.assertTrue(notifications.process_one(self.conn))
+        mock_smtp_cls.assert_not_called()
+        req = mock_open.call_args[0][0]
+        self.assertEqual(req.full_url, notifications.SENDGRID_API_URL)
+        self.assertEqual(req.get_header('Authorization'), 'Bearer SG.test-key')
+
     def test_send_mail_falls_back_to_smtp_without_key(self):
         notifications.queue(self.conn, 'a@example.test', 'Hi', 'Body', 'test',
                             user_id=1)
@@ -206,6 +290,13 @@ class NotificationUnitTests(unittest.TestCase):
             self.assertTrue(notifications.email_configured())
             self.assertFalse(notifications.smtp_configured())
             self.assertTrue(notifications.sendgrid_configured())
+            self.assertFalse(notifications.brevo_configured())
+        with patch.dict(os.environ, {'VELXTRIA_BREVO_API_KEY': 'xkeysib-x'},
+                        clear=True):
+            self.assertTrue(notifications.email_configured())
+            self.assertFalse(notifications.smtp_configured())
+            self.assertFalse(notifications.sendgrid_configured())
+            self.assertTrue(notifications.brevo_configured())
 
     def test_renewal_reminder_scan(self):
         now = int(time.time())
@@ -336,8 +427,9 @@ def tearDownModule():
 
 class EmailFlowTests(unittest.TestCase):
     def setUp(self):
-        # Keep the no-email-config test deterministic: a SendGrid key in
-        # the ambient environment would make /forgot offer email.
+        # Keep the no-email-config test deterministic: a Brevo or SendGrid
+        # key in the ambient environment would make /forgot offer email.
+        os.environ.pop('VELXTRIA_BREVO_API_KEY', None)
         os.environ.pop('VELXTRIA_SENDGRID_API_KEY', None)
         import portal
         self.portal = portal
