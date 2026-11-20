@@ -947,6 +947,15 @@ class Handler(BaseHTTPRequestHandler):
    except Exception:
     status='failed'
    return self.respond(200 if status=='connected' else 503,status,'text/plain')
+  if p=='/health/storage':
+   if os.getenv('VELXTRIA_DEPLOYMENT_MODE') != 'render-preview':
+    return self.respond(404,'Not found','text/plain')
+   try:
+    import verify_storage
+    status=verify_storage.check()
+   except Exception:
+    status='failed'
+   return self.respond(200 if status=='connected' else 503,status,'text/plain')
   if p=='/sample-sales.csv':
    return self.respond(200,SAMPLE_SALES_CSV,'text/csv; charset=utf-8',headers=[('Content-Disposition','attachment; filename="VELXTRIA_Sample_Sales.csv"'),('Cache-Control','public, max-age=3600')])
   if p=='/robots.txt':
