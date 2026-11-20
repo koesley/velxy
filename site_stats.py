@@ -12,19 +12,20 @@ import time
 import html
 from datetime import datetime, timezone
 
-EVENTS = ('landing_view', 'about_view', 'demo_run', 'signup',
-          'report_generated', 'checkout_started', 'paywall_shown',
+EVENTS = ('landing_view', 'about_view', 'demo_run', 'demo_email_sent',
+          'signup', 'report_generated', 'checkout_started', 'paywall_shown',
           'pro_activated')
 
 # The funnel, in order: each step's conversion is measured against the
 # one before it on the stats page.
-FUNNEL = ('landing_view', 'demo_run', 'signup', 'report_generated',
-          'checkout_started', 'pro_activated')
+FUNNEL = ('landing_view', 'demo_run', 'demo_email_sent', 'signup',
+          'report_generated', 'checkout_started', 'pro_activated')
 
 LABELS = {
     'landing_view': 'Landing page views',
     'about_view': 'About page views',
     'demo_run': 'Demo reports generated',
+    'demo_email_sent': 'Demo reports emailed',
     'signup': 'Accounts created',
     'report_generated': 'Reports generated (signed in)',
     'checkout_started': 'BTCPay checkouts started',
