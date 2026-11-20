@@ -26,6 +26,32 @@ class InvoiceIntegrityTests(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
+    def test_issue_and_void_create_audit_events(self):
+        self.db.execute("UPDATE vx4_invoices SET status='draft' WHERE id='invoice1'")
+        business_v4.process(self.db, 1, {"action": "invoice_issue", "id": "invoice1"})
+        business_v4.process(self.db, 1, {"action": "invoice_void", "id": "invoice1"})
+        events = [row[0] for row in self.db.execute(
+            "SELECT event_type FROM vx4_events ORDER BY created_at, rowid"
+        ).fetchall()]
+        self.assertEqual(events, ["issued", "voided"])
+        page = business_v4.render(self.db, 1, "csrf")
+        self.assertIn("Invoice activity", page)
+        self.assertIn("voided", page)
+
+    def test_void_closes_only_matching_system_reminder(self):
+        business_v4.process(self.db, 1, {"action": "invoice_reminders"})
+        self.db.execute(
+            "INSERT INTO vx3_tasks(id,user_id,title,status,created_at) VALUES (?,?,?,?,?)",
+            ("personal", 1, "Personal follow-up", "open", int(time.time()))
+        )
+        business_v4.process(self.db, 1, {"action": "invoice_void", "id": "invoice1"})
+        self.assertEqual(self.db.execute(
+            "SELECT status FROM vx3_tasks WHERE title='Invoice follow-up [invoice1]'"
+        ).fetchone()[0], "done")
+        self.assertEqual(self.db.execute(
+            "SELECT status FROM vx3_tasks WHERE id='personal'"
+        ).fetchone()[0], "open")
+
     def test_invoice_dashboard_escapes_untrusted_descriptions(self):
         from unittest.mock import patch
         payload = '<img src=x onerror=alert(1)>'
