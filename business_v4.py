@@ -18,6 +18,10 @@ def setup(c):
     c.execute('''CREATE TABLE IF NOT EXISTS vx4_events (id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,invoice_id TEXT NOT NULL,event_type TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(user_id,invoice_id,event_type))''')
     c.execute('CREATE INDEX IF NOT EXISTS vx4_invoices_user ON vx4_invoices(user_id,created_at)')
     c.execute('CREATE INDEX IF NOT EXISTS vx4_events_user ON vx4_events(user_id,invoice_id)')
+    # Supports overdue scans and outstanding invoice totals per tenant.
+    c.execute('CREATE INDEX IF NOT EXISTS vx4_invoices_due ON vx4_invoices(user_id,status,due_at)')
+    # Supports customer history without scanning unrelated tenants.
+    c.execute('CREATE INDEX IF NOT EXISTS vx4_invoices_contact ON vx4_invoices(user_id,contact_id,created_at)')
 
 def process(c,uid,fields):
     action=fields.get('action','')
