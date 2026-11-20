@@ -17,6 +17,7 @@ import btcpay_mainnet
 import referrals
 import demo_shares
 import demo_leads
+import charts
 import trust_pages
 import notifications
 import password_reset
@@ -344,10 +345,28 @@ def _csv_table_html(path):
 def _read_csv_rows(path):
  with path.open(encoding='utf-8-sig',newline='') as f:return list(csv.reader(f))
 
+def _report_charts_html(monthly_rows, product_rows):
+ """Inline SVG revenue charts above the summary tables, or '' when
+ neither table has chartable revenue. One helper so the demo result,
+ share page, report view and landing sample all get the same charts."""
+ monthly = charts.monthly_chart(monthly_rows)
+ product = charts.product_chart(product_rows)
+ if not monthly and not product:
+  return ''
+ out = ['<div class="vx-charts">']
+ if monthly:
+  out.append('<div><h4>Revenue by month</h4>' + monthly + '</div>')
+ if product:
+  out.append('<div><h4>Revenue by product</h4>' + product + '</div>')
+ out.append('</div>')
+ return ''.join(out)
+
+
 def report_summaries_html(monthly_rows,product_rows,stats):
  """Monthly + product summary tables with the headline stats, as shown on
  the landing page sample report and the instant demo result."""
- return ('<div class="v8-sample-tables"><div><h4>Monthly summary</h4>'+_csv_rows_html(monthly_rows)+'</div><div><h4>Product summary</h4>'+_csv_rows_html(product_rows)+'</div></div><p class="v8-sample-stats">'+' · '.join(escape(l) for l in stats)+'</p>')
+ return (_report_charts_html(monthly_rows, product_rows)
+  +'<div class="v8-sample-tables"><div><h4>Monthly summary</h4>'+_csv_rows_html(monthly_rows)+'</div><div><h4>Product summary</h4>'+_csv_rows_html(product_rows)+'</div></div><p class="v8-sample-stats">'+' · '.join(escape(l) for l in stats)+'</p>')
 
 def sample_report_html():
  """Render the public sample report with the real report engine.
