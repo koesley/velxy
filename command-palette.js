@@ -6,6 +6,14 @@
   const links = Array.from(document.querySelectorAll('header nav a[href]'))
     .map(a => [a.textContent.trim().replace(/^✦\s*/, ''), a.getAttribute('href')])
     .filter(([title, url]) => title && url && url.startsWith('/') && !url.startsWith('//'));
+  // Show the user's current position throughout the shared navigation.
+  const currentPath = window.location.pathname.replace(/\\/$/, '') || '/';
+  document.querySelectorAll('header nav a[href]').forEach(link => {
+    const href = link.getAttribute('href');
+    if (href && (href.replace(/\\/$/, '') || '/') === currentPath) {
+      link.setAttribute('aria-current', 'page');
+    }
+  });
   const unique = new Map();
   links.forEach(([title,url]) => { if (!unique.has(url)) unique.set(url,title); });
   const destinations = Array.from(unique, ([url,title]) => [title,url]);
