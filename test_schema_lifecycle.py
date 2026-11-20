@@ -46,6 +46,21 @@ class SchemaLifecycleTests(unittest.TestCase):
         env['_initialize_schema'] = initializer
         return env, connections
 
+    def test_postgres_schema_lock_precedes_table_creation(self):
+        """Protect the cross-instance lock ordering in the real initializer."""
+        tree = ast.parse(pathlib.Path(__file__).with_name('portal.py').read_text(encoding='utf-8'))
+        function = next(node for node in tree.body
+                        if isinstance(node, ast.FunctionDef) and node.name == '_initialize_schema')
+        statements = [node for node in ast.walk(function)
+                      if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                      and node.func.attr == 'execute']
+        sql = [node.args[0].value for node in statements
+               if node.args and isinstance(node.args[0], ast.Constant)
+               and isinstance(node.args[0].value, str)]
+        self.assertTrue(sql)
+        self.assertIn('pg_advisory_xact_lock', sql[0])
+        self.assertTrue(any('CREATE TABLE' in statement for statement in sql[1:]))
+
     def test_multiple_requests_initialize_once(self):
         calls = []
         env, connections = self.make_environment(lambda c: calls.append(c))
