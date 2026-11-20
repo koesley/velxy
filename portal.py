@@ -583,7 +583,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf=''):
   +'<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
   +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
   +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>'
-  +share
+  +(share if share_token else '<p class="v8-demo-note" role="status">Public sharing is unavailable for this report. Your ZIP download is still ready; try a smaller CSV if you need a shareable summary.</p>')
   +keep
   +'<p class="v8-demo-note">Ready for more? <a href="/login?next='+nxt+'">Sign in to open PRO billing and checkout</a>. Payment is optional and verified before activation.</p></section></div>')
 
@@ -3073,9 +3073,15 @@ class Handler(BaseHTTPRequestHandler):
    except ValueError as exc:return self.demo_fail(str(exc))
    except Exception as exc:return self.demo_fail('Could not process this file: '+str(exc)[:240])
    token=store_demo_zip(report['zip_bytes'],report['accepted'],report['rejected'],filename)
-   with db() as c:
-    site_stats.record(c,'demo_run','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
-    share_token=demo_shares.create(c,report)
+   # Sharing is optional. Never discard a successfully generated ZIP because
+   # a public-link insert fails or the summary exceeds sharing limits.
+   share_token=None
+   try:
+    with db() as c:
+     site_stats.record(c,'demo_run','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
+     share_token=demo_shares.create(c,report)
+   except (ValueError, sqlite3.Error, OverflowError) as exc:
+    print('Demo public-share unavailable (%s)' % type(exc).__name__,flush=True)
    user,csrf,_=self.identity()
    headers=[('Set-Cookie',DEMO_COOKIE+'='+token+'; Path=/; Max-Age=600; SameSite=Lax')]
    return self.respond(200,shell('Your demo report',demo_result_html(report,token,share_token,user,csrf)),headers=headers)
