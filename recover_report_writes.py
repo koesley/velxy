@@ -83,9 +83,44 @@ def reconcile(connection_factory, remove, *, apply=False, min_age_seconds=86400,
     return results
 
 
+def inspect_stranded(connection_factory, retrieve, *, min_age_seconds=86400, current_time=None):
+    """Read-only audit of interrupted recovery, with no customer data in output.
+
+    A 404-like exception is not trusted as proof of absence here: storage
+    failures and authorization errors can be indistinguishable in adapters.
+    Only a successful read is classified as object_present; all failures
+    require manual investigation before any destructive action.
+    """
+    cutoff = int(time.time() if current_time is None else current_time) - min_age_seconds
+    result = {'stranded': 0, 'report_present': 0, 'object_present': 0,
+              'storage_unverified': 0}
+    with connection_factory() as c:
+        rows = c.execute(
+            "SELECT report_id,user_id FROM report_write_journal "
+            "WHERE state='recovering' AND created<? ORDER BY created LIMIT 100",
+            (cutoff,)
+        ).fetchall()
+    result['stranded'] = len(rows)
+    for report_id, user_id in rows:
+        with connection_factory() as c:
+            exists = c.execute(
+                'SELECT id FROM reports WHERE id=?', (report_id,)
+            ).fetchone()
+        if exists:
+            result['report_present'] += 1
+            continue
+        try:
+            retrieve(user_id, report_id, None)
+            result['object_present'] += 1
+        except Exception:
+            result['storage_unverified'] += 1
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Audit or reconcile stale report-write journal entries')
     parser.add_argument('--apply', action='store_true', help='Delete orphan objects; run only with report writers stopped')
+    parser.add_argument('--inspect-stranded', action='store_true', help='Read-only inspect stranded recovery objects')
     parser.add_argument('--min-age-hours', type=int, default=24)
     args = parser.parse_args(argv)
     if args.min_age_hours < 24:
@@ -94,6 +129,12 @@ def main(argv=None):
         parser.error('--apply requires VELXTRIA_REPORT_RECOVERY_MAINTENANCE=I_HAVE_STOPPED_REPORT_WRITERS after stopping report writers')
     import portal
     import persistent
+    if args.inspect_stranded:
+        summary = inspect_stranded(portal.db, persistent.retrieve,
+                                   min_age_seconds=args.min_age_hours * 3600)
+        print('Stranded recovery audit:', summary)
+        if summary['stranded']:
+            return 1
     result = reconcile(portal.db, persistent.remove, apply=args.apply,
                        min_age_seconds=args.min_age_hours * 3600)
     print('Report write recovery:', result)
