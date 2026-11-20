@@ -16,6 +16,12 @@ class CommandSurfaceTests(unittest.TestCase):
         self.assertLess(route.index("(ROOT/'site-studio.css').read_bytes()"), route.index("(ROOT/'style.css').read_bytes()"))
         self.assertIn("+b'\\n'+", route)
 
+    def test_active_page_navigation_and_style(self):
+        script = (ROOT / "command-palette.js").read_text(encoding="utf-8")
+        self.assertIn("window.location.pathname", script)
+        self.assertIn("link.setAttribute('aria-current', 'page')", script)
+        self.assertIn('.velx-nav a[aria-current="page"]', self.css)
+
     def test_command_palette_indexes_actual_navigation(self):
         script = (ROOT / "command-palette.js").read_text(encoding="utf-8")
         self.assertIn("document.querySelectorAll('header nav a[href]')", script)
