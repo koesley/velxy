@@ -5,42 +5,74 @@ on:
     paths:
       - 'portal.py'
       - 'subscriptions.py'
+      - 'persistent.py'
+      - 'automate.py'
+      - 'btcpay_mainnet.py'
+      - 'demo_shares.py'
+      - 'payhip_integration.py'
+      - 'requirements.txt'
       - 'test_signup_path.py'
       - 'test_landing_page.py'
       - 'test_seo.py'
       - 'test_btcpay_mainnet.py'
       - 'test_payment_confirmation.py'
       - 'test_demo_claim.py'
-      - 'btcpay_mainnet.py'
+      - 'test_instant_demo.py'
+      - 'test_demo_shares.py'
+      - 'test_paywall_analytics.py'
+      - 'test_email_delivery.py'
       - '.github/workflows/customer-journey.yml'
   pull_request:
     paths:
       - 'portal.py'
       - 'subscriptions.py'
-      - 'test_signup_path.py'
-      - 'test_landing_page.py'
-      - 'test_seo.py'
-      - 'test_btcpay_mainnet.py'
+      - 'persistent.py'
+      - 'automate.py'
       - 'btcpay_mainnet.py'
+      - 'demo_shares.py'
+      - 'payhip_integration.py'
+      - 'requirements.txt'
+      - 'test_*.py'
       - '.github/workflows/customer-journey.yml'
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: customer-journey-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   customer-journey:
+    name: Customer journey (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    env:
+      VELXTRIA_DEPLOYMENT_MODE: local
+      VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT: '0'
+      PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
+          cache: pip
       - name: Install application dependencies
         run: python -m pip install -r requirements.txt
       - name: Check Python syntax
         run: python -m compileall -q .
-      - name: Test public landing, signup, and SEO
-        env:
-          VELXTRIA_DEPLOYMENT_MODE: local
-          VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT: '0'
-        run: python -m unittest -v test_signup_path test_landing_page test_seo test_btcpay_mainnet test_payment_confirmation test_demo_claim
+      - name: Test complete customer conversion journey
+        run: |
+          python -m unittest -v \
+            test_signup_path \
+            test_landing_page \
+            test_seo \
+            test_btcpay_mainnet \
+            test_payment_confirmation \
+            test_demo_claim \
+            test_instant_demo \
+            test_demo_shares \
+            test_paywall_analytics \
+            test_email_delivery
