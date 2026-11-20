@@ -186,6 +186,25 @@ class InstantDemoTests(unittest.TestCase):
             summary = z.read('run_summary.txt').decode('utf-8')
         self.assertIn('Paid revenue (accepted Paid orders only): $800.00', summary)
 
+    def test_failed_claim_can_restore_demo_until_original_expiry(self):
+        import portal
+        token = portal.store_demo_zip(b'zip-data', 2, 1, 'sales.csv')
+        entry = portal.claim_demo_zip(token)
+        self.assertIsNotNone(entry)
+        self.assertIsNone(portal.peek_demo_zip(token))
+        self.assertTrue(portal.restore_demo_zip(token, entry))
+        self.assertEqual(portal.take_demo_zip(token), b'zip-data')
+        self.assertFalse(portal.restore_demo_zip(token, entry))
+        self.assertEqual(portal.claim_demo_zip(token), entry)
+
+    def test_expired_claim_is_not_restored(self):
+        import portal
+        token = portal.store_demo_zip(b'zip-data', 1, 0, 'sales.csv')
+        entry = portal.claim_demo_zip(token)
+        expired = (entry[0], 0, *entry[2:])
+        self.assertFalse(portal.restore_demo_zip(token, expired))
+        self.assertIsNone(portal.peek_demo_zip(token))
+
     def test_demo_download_unknown_token_404(self):
         status, _, body = self.get('/try-download?token=does-not-exist')
         self.assertEqual(status, 404)
