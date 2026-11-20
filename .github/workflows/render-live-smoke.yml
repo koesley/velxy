@@ -39,4 +39,29 @@ jobs:
             fi
             echo "$path denies unauthenticated access (HTTP $code)"
           done
-          echo "Smoke verification passed. This checks reachability and access controls, not deployed commit identity or authenticated behavior."
+          echo "Checking public first-time customer journey"
+          for path in / /login /register /sample-sales.csv; do
+            status=$(curl --silent --show-error --location --max-time 30 --output /tmp/velxtria-public --write-out '%{http_code}' "$base$path")
+            if [ "$status" != 200 ]; then
+              echo "::error::$path returned HTTP $status; expected 200"
+              exit 1
+            fi
+            if [ "$path" = "/" ] && ! grep -q '/sample-sales.csv' /tmp/velxtria-public; then
+              echo "::error::Landing page does not advertise the downloadable sample"
+              exit 1
+            fi
+            if [ "$path" = "/login" ] && ! grep -q 'name="email"' /tmp/velxtria-public; then
+              echo "::error::Login form is missing"
+              exit 1
+            fi
+            if [ "$path" = "/register" ] && ! grep -q 'name="password"' /tmp/velxtria-public; then
+              echo "::error::Registration form is missing"
+              exit 1
+            fi
+            if [ "$path" = "/sample-sales.csv" ] && ! head -n 1 /tmp/velxtria-public | grep -q 'Order ID,Order Date,Customer,Product,Quantity,Unit Price,Status,Region'; then
+              echo "::error::Sample sales CSV does not have the expected import schema"
+              exit 1
+            fi
+            echo "$path is serving the expected public customer experience"
+          done
+          echo "Smoke verification passed: public onboarding and access controls. Authenticated payments and deployed commit identity are not verified."
