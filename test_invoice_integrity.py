@@ -26,6 +26,14 @@ class InvoiceIntegrityTests(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
+    def test_overdue_query_uses_tenant_status_due_index(self):
+        plan = self.db.execute(
+            "EXPLAIN QUERY PLAN SELECT id FROM vx4_invoices "
+            "WHERE user_id=? AND status='issued' AND due_at<?",
+            (1, int(time.time()))
+        ).fetchall()
+        self.assertTrue(any("vx4_invoices_due" in str(row) for row in plan), plan)
+
     def test_other_tenant_cannot_pay_or_void_invoice(self):
         self.db.execute("INSERT INTO users VALUES (2)")
         for action in ("invoice_pay", "invoice_void", "invoice_issue"):
