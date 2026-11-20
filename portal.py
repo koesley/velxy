@@ -3596,6 +3596,10 @@ def delivery_worker():
      c.execute("UPDATE deliveries SET status='sending', attempts=attempts+1 WHERE report_id=?",(report_id,))
    if row:
     report_bytes=persistent.retrieve(user_id,report_id,REPORTS)
+    with db() as c:
+     stored=c.execute("SELECT digest FROM reports WHERE id=? AND user_id=? AND status='ready'",(report_id,user_id)).fetchone()
+    if not stored or not hmac.compare_digest(hashlib.sha256(report_bytes).hexdigest(),stored[0]):
+     raise RuntimeError('Report integrity verification failed; email attachment withheld')
     msg=EmailMessage();msg['Subject']='Your VELXTRIA report is ready';msg['From']=os.environ['VELXTRIA_SMTP_FROM'];msg['To']=recipient
     msg.set_content('Your requested VELXTRIA report is attached. This is a local demonstration. Do not send sensitive business information.')
     msg.add_attachment(report_bytes,maintype='application',subtype='zip',filename='VELXTRIA_Report.zip')
