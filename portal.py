@@ -2916,19 +2916,23 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,shell('Account',confirm+body+billing,user,csrf))
   if p=='/report':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
-   with db() as c:row=c.execute("SELECT id,filename,created,status,accepted,rejected FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
+   with db() as c:row=c.execute("SELECT id,filename,created,status,accepted,rejected,digest FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
    if not row:return self.fail(404,'Report not found.',user,csrf)
    try: report_bytes=persistent.retrieve(user['id'],ident,REPORTS)
    except (OSError,RuntimeError):return self.fail(503,'Report file temporarily unavailable.',user,csrf)
+   if not hmac.compare_digest(hashlib.sha256(report_bytes).hexdigest(),row[6]):
+    return self.fail(503,'Report integrity verification failed. Please contact support.',user,csrf)
    try:monthly_rows,product_rows,stats=read_report_summaries(report_bytes)
    except ValueError:return self.fail(503,'Report file temporarily unavailable.',user,csrf)
    return self.respond(200,shell('Report',report_view_html(row,monthly_rows,product_rows,stats),user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
-   with db() as c:row=c.execute("SELECT id FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
+   with db() as c:row=c.execute("SELECT id,digest FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
    if not row:return self.fail(404,'Report not found.',user,csrf)
    try: report_bytes=persistent.retrieve(user['id'],ident,REPORTS)
    except (OSError,RuntimeError):return self.fail(503,'Report file temporarily unavailable.',user,csrf)
+   if not hmac.compare_digest(hashlib.sha256(report_bytes).hexdigest(),row[1]):
+    return self.fail(503,'Report integrity verification failed. Please contact support.',user,csrf)
    return self.respond(200,report_bytes,'application/zip',[('Content-Disposition','attachment; filename="VELXTRIA_Report.zip"')])
   return self.fail(404,'Page not found.',user,csrf)
  def redirect(self,path,headers=()):return self.respond(303,b'','text/plain',[('Location',path),*headers])
