@@ -207,8 +207,17 @@ def process_one(conn):
     if not row:
         return False
     ident, recipient, subject, body, attempts = row
-    conn.execute("UPDATE email_outbox SET status='sending', attempts=attempts+1"
-                 " WHERE id=?", (ident,))
+    # Claim only if the row is still eligible. Multiple workers can read the
+    # same candidate; only one may transition it to sending.
+    claimed_at = int(time.time())
+    cur = conn.execute(
+        "UPDATE email_outbox SET status='sending', attempts=attempts+1,"
+        " next_attempt=? WHERE id=? AND status IN ('queued','retry')"
+        " AND next_attempt<=? AND attempts<3",
+        (claimed_at, ident, claimed_at))
+    changed = cur.cursor.rowcount if hasattr(cur, 'cursor') else cur.rowcount
+    if changed != 1:
+        return False
     try:
         send_mail(recipient, subject, body)
     except Exception as exc:
