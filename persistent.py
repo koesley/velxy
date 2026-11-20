@@ -7,6 +7,7 @@ import json
 import urllib.request
 import urllib.parse
 import urllib.error
+from sql_params import translate_qmark
 from pathlib import Path
 
 DATABASE_URL = os.getenv('VELXTRIA_DATABASE_URL', '')
@@ -34,8 +35,8 @@ class PgConnection:
         self.cursor = None
 
     def execute(self, sql, args=()):
-        # The existing application uses SQLite question-mark placeholders.
-        sql = sql.replace('?', '%s')
+        # Translate placeholders only outside SQL strings and comments.
+        sql = translate_qmark(sql)
         self.cursor = self.conn.execute(sql, args)
         return self
 
