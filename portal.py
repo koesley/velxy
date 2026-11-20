@@ -176,6 +176,10 @@ def db():
  return c
 
 def _initialize_schema(c):
+ # Serialize schema creation across Render instances and deployments.
+ # The transaction-scoped lock releases on commit or rollback, including crashes.
+ if persistent.REMOTE:
+  c.execute('SELECT pg_advisory_xact_lock(871329014, 20261120)')
  if persistent.REMOTE:
   c.execute("""CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', access TEXT NOT NULL DEFAULT 'demo', created INTEGER NOT NULL)""")
  else:
