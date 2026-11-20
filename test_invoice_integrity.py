@@ -40,6 +40,21 @@ class InvoiceIntegrityTests(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT count(*) FROM vx3_tasks").fetchone()[0], 1)
         self.assertEqual(self.db.execute("SELECT count(*) FROM vx4_events WHERE event_type='overdue_task'").fetchone()[0], 1)
 
+    def test_void_invoice_cannot_create_overdue_reminder(self):
+        business_v4.process(self.db, 1, {"action": "invoice_void", "id": "invoice1"})
+        business_v4.process(self.db, 1, {"action": "invoice_reminders"})
+        self.assertEqual(self.db.execute("SELECT count(*) FROM vx3_tasks").fetchone()[0], 0)
+
+    def test_issue_and_void_require_current_status(self):
+        with self.assertRaises(ValueError):
+            business_v4.process(self.db, 1, {"action": "invoice_issue", "id": "invoice1"})
+        business_v4.process(self.db, 1, {"action": "invoice_void", "id": "invoice1"})
+        with self.assertRaises(ValueError):
+            business_v4.process(self.db, 1, {"action": "invoice_void", "id": "invoice1"})
+        self.assertEqual(self.db.execute(
+            "SELECT status FROM vx4_invoices WHERE id='invoice1'"
+        ).fetchone()[0], "void")
+
     def test_paid_invoice_cannot_create_overdue_reminder(self):
         business_v4.process(self.db, 1, {"action": "invoice_pay", "id": "invoice1"})
         business_v4.process(self.db, 1, {"action": "invoice_reminders"})
