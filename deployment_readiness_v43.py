@@ -8,10 +8,32 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 REQUIRED_PACKAGES={"cryptography":"cryptography","psycopg":"psycopg"}
 MAINNET_KEYS=("VELXTRIA_BTCPAY_MAINNET_URL","VELXTRIA_BTCPAY_MAINNET_STORE_ID",
               "VELXTRIA_BTCPAY_MAINNET_API_KEY","VELXTRIA_BTCPAY_MAINNET_WEBHOOK_SECRET")
+
+def valid_postgres_url(value):
+    """Validate URL structure offline without exposing credentials or connecting."""
+    if not isinstance(value, str) or not value or value != value.strip():
+        return False
+    if any(ord(ch) < 33 or ord(ch) == 127 for ch in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme not in ("postgresql", "postgres"):
+            return False
+        if not parsed.hostname or not parsed.username or not parsed.password:
+            return False
+        if parsed.port is not None and not (1 <= parsed.port <= 65535):
+            return False
+        if parsed.query and any(key.lower() in ("password", "pass", "pwd") for key in
+                                (part.split("=", 1)[0] for part in parsed.query.split("&"))):
+            return False
+        return parsed.path in ("", "/") or parsed.path.startswith("/") and len(parsed.path) > 1
+    except (ValueError, TypeError):
+        return False
 
 def inspect(root, environ=None, finder=None):
     root=Path(root)
@@ -67,10 +89,9 @@ def inspect(root, environ=None, finder=None):
             "Render must set VELXTRIA_REQUIRE_PERSISTENCE=1")
     if durable or render:
         database=env.get("VELXTRIA_DATABASE_URL","").strip()
-        add("durable_database",bool(database) and
-            database.startswith(("postgresql://","postgres://")),
-            "Persistent PostgreSQL configured" if database else
-            "Persistent mode requires VELXTRIA_DATABASE_URL")
+        add("durable_database",valid_postgres_url(database),
+            "PostgreSQL URL structure valid (connectivity not checked)" if valid_postgres_url(database) else
+            "Persistent mode requires a valid PostgreSQL URL (host, user, password, database)")
         storage=bool(env.get("VELXTRIA_SUPABASE_URL","").strip() and
                      env.get("VELXTRIA_SUPABASE_SERVICE_KEY","").strip())
         add("private_report_storage",storage,
