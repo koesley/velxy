@@ -11,7 +11,7 @@ import sys
 import time
 
 
-def reconcile(connection_factory, remove, *, apply=False, min_age_seconds=86400, current_time=None):
+def reconcile(connection_factory, remove, *, apply=False, min_age_seconds=86400, current_time=None, verify_absent=None):
     cutoff = int(time.time() if current_time is None else current_time) - min_age_seconds
     with connection_factory() as c:
         candidates = c.execute(
@@ -63,6 +63,11 @@ def reconcile(connection_factory, remove, *, apply=False, min_age_seconds=86400,
                 continue
             try:
                 remove(user_id, report_id)
+                # A successful delete API response alone is not proof the
+                # object disappeared. Production passes an authenticated
+                # read-back verifier that only accepts explicit HTTP 404.
+                if verify_absent is not None:
+                    verify_absent(user_id, report_id)
             except Exception:
                 with connection_factory() as c:
                     c.execute(
@@ -81,6 +86,15 @@ def reconcile(connection_factory, remove, *, apply=False, min_age_seconds=86400,
         except Exception:
             results['failed'] += 1
     return results
+
+
+def verify_storage_absent(retrieve, missing_error, user_id, report_id):
+    """Fail closed unless authenticated storage explicitly reports not found."""
+    try:
+        retrieve(user_id, report_id, None)
+    except missing_error:
+        return
+    raise RuntimeError('Storage object absence was not verified')
 
 
 def inspect_stranded(connection_factory, retrieve, *, min_age_seconds=86400, current_time=None):
@@ -135,8 +149,15 @@ def main(argv=None):
         print('Stranded recovery audit:', summary)
         if summary['stranded']:
             return 1
-    result = reconcile(portal.db, persistent.remove, apply=args.apply,
-                       min_age_seconds=args.min_age_hours * 3600)
+    if args.apply and not persistent.REMOTE:
+        parser.error('--apply requires configured remote storage; local deletion is unsupported')
+    result = reconcile(
+        portal.db, persistent.remove, apply=args.apply,
+        min_age_seconds=args.min_age_hours * 3600,
+        verify_absent=(lambda owner, identifier: verify_storage_absent(
+            persistent.retrieve, persistent.StorageObjectNotFound, owner, identifier
+        )) if args.apply else None
+    )
     print('Report write recovery:', result)
     return 1 if result['failed'] or result['recovering_needs_review'] else 0
 
