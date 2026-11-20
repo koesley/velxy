@@ -3610,7 +3610,9 @@ def begin_report_write(user_id, report_id):
 
 def complete_report_write(c, report_id, user_id):
  """Finalize the journal in the same transaction as the ready report row."""
- c.execute("UPDATE report_write_journal SET state='committed' WHERE report_id=? AND user_id=? AND state='pending'",(report_id,user_id))
+ updated=c.execute("UPDATE report_write_journal SET state='committed' WHERE report_id=? AND user_id=? AND state='pending'",(report_id,user_id))
+ if updated.rowcount != 1:
+  raise RuntimeError('Report write is no longer pending; refusing to publish ready report')
 
 def abandon_report_write(user_id, report_id):
  """Only mark abandoned after successful best-effort object cleanup."""
