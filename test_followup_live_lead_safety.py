@@ -48,7 +48,7 @@ class LiveLeadSafetyTests(unittest.TestCase):
 
     def test_control_characters_rejected(self):
         with self.assertRaisesRegex(ValueError, "500 characters"):
-            followups.create(self.c, 1, "one", "open", "2026-12-01", "hello\\x00")
+            followups.create(self.c, 1, "one", "open", "2026-12-01", "hello" + chr(0))
         self.assertEqual(self.c.execute("SELECT COUNT(*) FROM vx_followup23").fetchone()[0], 0)
 
     def test_escaped_customer_name(self):
