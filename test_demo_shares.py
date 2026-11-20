@@ -58,6 +58,11 @@ class DemoShareUnitTests(unittest.TestCase):
         self.conn.execute('UPDATE demo_shares SET expires=? WHERE token=?',
                           (int(time.time()) - 1, token))
         self.assertIsNone(demo_shares.get(self.conn, token))
+        # Expired records are invisible immediately, but cleanup occurs on
+        # the next write rather than mutating storage during a public GET.
+        self.assertIsNotNone(self.conn.execute(
+            'SELECT 1 FROM demo_shares WHERE token=?', (token,)).fetchone())
+        demo_shares.create(self.conn, SAMPLE_REPORT)
         self.assertIsNone(self.conn.execute(
             'SELECT 1 FROM demo_shares WHERE token=?', (token,)).fetchone())
 
