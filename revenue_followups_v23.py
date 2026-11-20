@@ -23,7 +23,7 @@ def create(c, uid, wid, lid, due_date, note):
             raise ValueError()
     except (TypeError, ValueError):
         raise ValueError("Enter a valid follow-up date (YYYY-MM-DD).")
-    if not isinstance(note,str) or len(note.strip()) > 500:
+    if not isinstance(note,str) or len(note.strip()) > 500 or any(ord(ch)<32 and ch not in "\n\t" for ch in note):
         raise ValueError("Note must be at most 500 characters.")
     lead = c.execute("SELECT status FROM bos59_leads WHERE workspace_id=? AND id=?",
                      (wid,lid)).fetchone()
@@ -43,19 +43,28 @@ def change_status(c, uid, wid, identifier, status):
     setup(c)
     if status not in STATES[1:]:
         raise ValueError("Invalid follow-up outcome.")
-    row=c.execute("SELECT status FROM vx_followup23 WHERE workspace_id=? AND id=?",
-                  (wid,identifier)).fetchone()
+    row=c.execute("""SELECT f.status,l.status FROM vx_followup23 f
+        LEFT JOIN bos59_leads l ON l.id=f.lead_id AND l.workspace_id=f.workspace_id
+        WHERE f.workspace_id=? AND f.id=?""",(wid,identifier)).fetchone()
     if not row or row[0]!="planned":
         raise ValueError("Only planned follow-ups can be completed.")
-    c.execute("UPDATE vx_followup23 SET status=?,updated=? WHERE workspace_id=? AND id=? AND status='planned'",
-              (status,int(time.time()),wid,identifier))
+    if row[1] not in ("new","contacted"):
+        raise ValueError("This lead is no longer open. Review the lead before recording an outcome.")
+    result=c.execute("""UPDATE vx_followup23 SET status=?,updated=?
+        WHERE workspace_id=? AND id=? AND status='planned'
+        AND EXISTS (SELECT 1 FROM bos59_leads l WHERE l.id=vx_followup23.lead_id
+                    AND l.workspace_id=vx_followup23.workspace_id
+                    AND l.status IN ('new','contacted'))""",
+        (status,int(time.time()),wid,identifier))
+    if result.rowcount != 1:
+        raise ValueError("Follow-up changed or lead closed; reload and try again.")
 
 def render(c,uid,wid,csrf):
     bos.core.access(c,uid,wid)
     setup(c)
     esc=lambda v:html.escape(str(v),quote=True)
     leads=c.execute("SELECT id,name FROM bos59_leads WHERE workspace_id=? AND status IN ('new','contacted') ORDER BY updated DESC LIMIT 300",(wid,)).fetchall()
-    rows=c.execute("""SELECT f.id,l.name,f.due_date,f.status,f.note FROM vx_followup23 f
+    rows=c.execute("""SELECT f.id,l.name,f.due_date,f.status,f.note,l.status FROM vx_followup23 f
         JOIN bos59_leads l ON l.id=f.lead_id AND l.workspace_id=f.workspace_id
         WHERE f.workspace_id=? ORDER BY CASE WHEN f.status='planned' THEN 0 ELSE 1 END,
         f.due_date ASC,f.created DESC LIMIT 100""",(wid,)).fetchall()
@@ -75,11 +84,13 @@ def render(c,uid,wid,csrf):
                    '<label>Due date<input type="date" name="due_date" required></label>'
                    '<label>Internal note<input name="note" maxlength="500"></label>'
                    '<button>Schedule internal follow-up</button></form></section>')
-    for identifier,name,due,status,note in rows:
+    for identifier,name,due,status,note,lead_status in rows:
         out.append('<section class="panel"><h3>'+esc(name)+'</h3><p>Due '+esc(due)+
                    ' · '+esc(status)+(' · Overdue' if status=="planned" and due<today else '')+
                    '</p><p>'+esc(note)+'</p>')
-        if status=="planned":
+        if status=="planned" and lead_status not in ("new","contacted"):
+            out.append('<p>Review needed: this lead is closed. Outcome editing is disabled to avoid recording a misleading follow-up.</p>')
+        if status=="planned" and lead_status in ("new","contacted"):
             out.append('<form method="post" action="/revenue-followups">'
                        '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
                        '<input type="hidden" name="workspace" value="'+esc(wid)+'">'
