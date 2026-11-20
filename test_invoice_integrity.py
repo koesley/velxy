@@ -26,6 +26,26 @@ class InvoiceIntegrityTests(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
+    def test_other_tenant_cannot_pay_or_void_invoice(self):
+        self.db.execute("INSERT INTO users VALUES (2)")
+        for action in ("invoice_pay", "invoice_void", "invoice_issue"):
+            with self.assertRaises(ValueError):
+                business_v4.process(self.db, 2, {"action": action, "id": "invoice1"})
+        self.assertEqual(self.db.execute(
+            "SELECT status FROM vx4_invoices WHERE id='invoice1'"
+        ).fetchone()[0], "issued")
+        self.assertEqual(self.db.execute("SELECT count(*) FROM vx3_entries").fetchone()[0], 0)
+
+    def test_rollback_does_not_record_partial_payment(self):
+        self.db.execute("BEGIN")
+        business_v4.process(self.db, 1, {"action": "invoice_pay", "id": "invoice1"})
+        self.db.rollback()
+        self.assertEqual(self.db.execute(
+            "SELECT status FROM vx4_invoices WHERE id='invoice1'"
+        ).fetchone()[0], "issued")
+        self.assertEqual(self.db.execute("SELECT count(*) FROM vx3_entries").fetchone()[0], 0)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM vx4_events").fetchone()[0], 0)
+
     def test_payment_records_income_only_once(self):
         business_v4.process(self.db, 1, {"action": "invoice_pay", "id": "invoice1"})
         with self.assertRaises(ValueError):
