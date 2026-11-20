@@ -3,7 +3,8 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from recover_report_writes import reconcile
+from recover_report_writes import reconcile, main
+from unittest.mock import patch
 
 
 class RecoveryTests(unittest.TestCase):
@@ -28,6 +29,18 @@ class RecoveryTests(unittest.TestCase):
 
     def remove(self, owner, identifier):
         self.removed.append((owner, identifier))
+
+    def test_apply_requires_explicit_maintenance_authorization(self):
+        with patch.dict('os.environ', {}, clear=True):
+            with self.assertRaises(SystemExit) as error:
+                main(['--apply'])
+        self.assertEqual(error.exception.code, 2)
+
+    def test_apply_rejects_weak_maintenance_value(self):
+        with patch.dict('os.environ', {'VELXTRIA_REPORT_RECOVERY_MAINTENANCE': 'yes'}):
+            with self.assertRaises(SystemExit) as error:
+                main(['--apply'])
+        self.assertEqual(error.exception.code, 2)
 
     def test_dry_run_never_deletes(self):
         result = reconcile(self.connect, self.remove, current_time=100000, min_age_seconds=86400)
