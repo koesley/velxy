@@ -25,6 +25,36 @@ class ExecutiveBriefingTests(unittest.TestCase):
         asc.action(self.c,1,lid,"stalled_deal","approved")
         asc.action(self.c,1,lid,"stalled_deal","completed","Called")
         self.assertEqual(briefing.briefing(self.c,1,self.now)["completed"],1)
+    def test_previous_week_counts_and_tenant_isolation(self):
+        old=sales_pipeline.save(self.c,1,{"business":"Last week","stage":"new"})
+        current=sales_pipeline.save(self.c,1,{"business":"This week","stage":"new"})
+        other=sales_pipeline.save(self.c,2,{"business":"Other tenant","stage":"new"})
+        self.c.execute("UPDATE sales_pipeline_leads SET created_at=?,updated_at=? WHERE id=?",(self.now-9*86400,self.now-9*86400,old))
+        self.c.execute("UPDATE sales_pipeline_leads SET created_at=?,updated_at=? WHERE id=?",(self.now-3*86400,self.now-3*86400,current))
+        self.c.execute("UPDATE sales_pipeline_leads SET created_at=?,updated_at=? WHERE id=?",(self.now-9*86400,self.now-9*86400,other))
+        result=briefing.briefing(self.c,1,self.now)
+        self.assertEqual(result["new_leads"],1)
+        self.assertEqual(result["previous"]["new_leads"],1)
+        self.assertEqual(briefing.briefing(self.c,2,self.now)["new_leads"],0)
+    def test_weekly_boundary_counted_once(self):
+        lid=sales_pipeline.save(self.c,1,{"business":"Boundary","stage":"new"})
+        boundary=self.now-7*86400
+        self.c.execute("UPDATE sales_pipeline_leads SET created_at=?,updated_at=? WHERE id=?",(boundary,boundary,lid))
+        result=briefing.briefing(self.c,1,self.now)
+        self.assertEqual(result["new_leads"],1)
+        self.assertEqual(result["previous"]["new_leads"],0)
+    def test_future_records_excluded(self):
+        lid=sales_pipeline.save(self.c,1,{"business":"Future","stage":"new"})
+        future=self.now+60
+        self.c.execute("UPDATE sales_pipeline_leads SET created_at=?,updated_at=? WHERE id=?",(future,future,lid))
+        result=briefing.briefing(self.c,1,self.now)
+        self.assertEqual(result["new_leads"],0)
+        self.assertEqual(result["updated_leads"],0)
+    def test_dashboard_shows_comparison_without_percentage_claims(self):
+        page=briefing.dashboard(self.c,1)
+        self.assertIn("Compared with the previous seven days",page)
+        self.assertIn("New CRM leads:",page)
+        self.assertIn("not unique customer conversations",page)
     def test_untrusted_business_not_rendered_as_html(self):
         sales_pipeline.save(self.c,1,{"business":"<script>unsafe</script>","stage":"proposal"})
         self.c.execute("UPDATE sales_pipeline_leads SET updated_at=? WHERE owner_id=1",(self.now-15*86400,))
