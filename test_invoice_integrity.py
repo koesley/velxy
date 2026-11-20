@@ -26,6 +26,12 @@ class InvoiceIntegrityTests(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
+    def test_money_format_preserves_cents_at_large_totals(self):
+        self.assertEqual(business_v4.money(9007199254740993), "$90,071,992,547,409.93")
+        self.assertEqual(business_v4.money(1), "$0.01")
+        self.assertEqual(business_v4.money(-12345), "$-123.45")
+        self.assertEqual(business_v4.money(0), "$0.00")
+
     def test_due_today_is_not_overdue_and_creates_no_reminder(self):
         from unittest.mock import patch
         fixed = 2000000000
