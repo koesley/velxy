@@ -9,6 +9,8 @@ database, and a failed write never breaks the request it was logging.
 """
 
 import time
+import html
+import math
 from datetime import datetime, timezone
 
 EVENTS = ('landing_view', 'about_view', 'demo_run', 'signup',
@@ -45,6 +47,8 @@ def record(conn, event, detail='', created=None):
     """Append one event. Never raises: analytics must not break the
     request it is logging."""
     try:
+        if event not in EVENTS:
+            return
         ensure(conn)
         conn.execute(
             'INSERT INTO site_events (created, event, detail) VALUES (?,?,?)',
@@ -67,7 +71,11 @@ def summary(conn, days=14):
             'SELECT event, count(*) FROM site_events GROUP BY event'):
         if event in totals:
             totals[event] = n
-    since = int(time.time()) - days * 86400
+    if not isinstance(days, int) or isinstance(days, bool) or not 1 <= days <= 90:
+        raise ValueError('days must be an integer between 1 and 90')
+    # UTC calendar days, including today; avoid rolling 24-hour windows.
+    today = int(time.time()) // 86400 * 86400
+    since = today - (days - 1) * 86400
     by_day = {}
     for event, day, n in conn.execute(
             'SELECT event, created/86400, count(*) FROM site_events '
@@ -75,7 +83,8 @@ def summary(conn, days=14):
             'ORDER BY created/86400',
             (since,)):
         by_day.setdefault(int(day) * 86400, {})[event] = n
-    daily = [(day, by_day[day]) for day in sorted(by_day)]
+    daily = [(since + i * 86400, by_day.get(since + i * 86400, {}))
+             for i in range(days)]
     recent = conn.execute(
         'SELECT created, event, detail FROM site_events '
         'ORDER BY created DESC LIMIT 50').fetchall()
@@ -89,37 +98,35 @@ def _day_label(day_start):
 def stats_html(totals, daily, recent):
     """Founder stats page: funnel, per-day counts, recent events."""
     funnel_rows = ''
-    prev = None
     for event in FUNNEL:
-        count = totals.get(event, 0)
-        conv = ''
-        if prev is not None:
-            conv = ('%.1f%%' % (100.0 * count / prev)) if prev else '—'
+        count = max(0, int(totals.get(event, 0)))
+        # Anonymous events cannot be joined into unique visitor cohorts.
+        # Never present a ratio of unrelated event counts as conversion.
+        conv = 'Not measured'
         funnel_rows += ('<tr><td>' + LABELS[event] + '</td><td>' + str(count) +
                         '</td><td>' + conv + '</td></tr>')
-        prev = count
     totals_rows = ''.join(
-        '<tr><td>' + LABELS[e] + '</td><td>' + str(totals.get(e, 0)) + '</td></tr>'
+        '<tr><td>' + LABELS[e] + '</td><td>' + str(max(0, int(totals.get(e, 0)))) + '</td></tr>'
         for e in EVENTS)
     day_header = ''.join('<th>' + LABELS[e] + '</th>' for e in FUNNEL)
     day_rows = ''
     for day_start, counts in daily:
         day_rows += '<tr><td>' + _day_label(day_start) + '</td>' + ''.join(
-            '<td>' + str(counts.get(e, 0)) + '</td>' for e in FUNNEL) + '</tr>'
+            '<td>' + str(max(0, int(counts.get(e, 0)))) + '</td>' for e in FUNNEL) + '</tr>'
     recent_rows = ''.join(
         '<tr><td>' + datetime.fromtimestamp(
             r[0], timezone.utc).strftime('%Y-%m-%d %H:%M UTC') +
-        '</td><td>' + LABELS.get(r[1], r[1]) +
-        '</td><td>' + (r[2] or '') + '</td></tr>'
+        '</td><td>' + html.escape(LABELS.get(r[1], str(r[1])), quote=True) +
+        '</td><td>' + html.escape(str(r[2] or ''), quote=True) + '</td></tr>'
         for r in recent)
     return ('<section class="panel"><h2>Funnel</h2><p>All-time counts; '
-            'conversion is against the previous step.</p><table><thead><tr>'
-            '<th>Step</th><th>Count</th><th>Conversion</th></tr></thead><tbody>' +
+            'event counts are not unique-user conversion rates. No visitor tracking is performed.</p><table><thead><tr>'
+            '<th>Step</th><th>Count</th><th>Conversion rate</th></tr></thead><tbody>' +
             funnel_rows + '</tbody></table></section>'
             '<section class="panel"><h2>Totals</h2><table><thead><tr>'
             '<th>Event</th><th>All time</th></tr></thead><tbody>' +
             totals_rows + '</tbody></table></section>'
-            '<section class="panel"><h2>Last 14 days</h2><table><thead><tr>'
+            '<section class="panel"><h2>Last 14 days (UTC)</h2><table><thead><tr>'
             '<th>Day (UTC)</th>' + day_header + '</tr></thead><tbody>' +
             (day_rows or '<tr><td colspan="7">No events yet.</td></tr>') +
             '</tbody></table></section>'
@@ -127,6 +134,6 @@ def stats_html(totals, daily, recent):
             '<th>When</th><th>Event</th><th>Detail</th></tr></thead><tbody>' +
             (recent_rows or '<tr><td colspan="3">No events yet.</td></tr>') +
             '</tbody></table><p>Counts include automated traffic (no bot '
-            'filtering yet). No personal data is stored here — no IP '
+            'filtering yet). Event details may contain manually supplied text; avoid entering personal data. No IP '
             'addresses, no user agents, no emails.</p></section>'
             '<p><a href="/">Back to dashboard</a></p>')
