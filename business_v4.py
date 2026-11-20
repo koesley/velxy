@@ -98,9 +98,33 @@ def render(c,uid,csrf):
     overdue=c.execute("SELECT COUNT(*),COALESCE(SUM(amount_cents),0) FROM vx4_invoices WHERE user_id=? AND status='issued' AND due_at<?",(uid,now)).fetchone()
     outstanding=c.execute("SELECT COALESCE(SUM(amount_cents),0) FROM vx4_invoices WHERE user_id=? AND status='issued'",(uid,)).fetchone()[0]
     paid=c.execute("SELECT COALESCE(SUM(amount_cents),0) FROM vx4_invoices WHERE user_id=? AND status='paid'",(uid,)).fetchone()[0]
+    # Overdue aging is calculated from recorded invoices, never estimated.
+    # These buckets are mutually exclusive and include only issued invoices.
+    aging=c.execute(
+        "SELECT "
+        "COALESCE(SUM(CASE WHEN due_at>=? THEN amount_cents ELSE 0 END),0),"
+        "COALESCE(SUM(CASE WHEN due_at<? AND due_at>=? THEN amount_cents ELSE 0 END),0),"
+        "COALESCE(SUM(CASE WHEN due_at<? THEN amount_cents ELSE 0 END),0),"
+        "SUM(CASE WHEN due_at>=? THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN due_at<? AND due_at>=? THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN due_at<? THEN 1 ELSE 0 END) "
+        "FROM vx4_invoices WHERE user_id=? AND status='issued' AND due_at<?",
+        (now-7*86400, now-7*86400, now-30*86400, now-30*86400,
+         now-7*86400, now-7*86400, now-30*86400, now-30*86400,
+         uid, now)
+    ).fetchone()
+    aging=tuple(int(value or 0) for value in aging)
     options='<option value="">No linked contact</option>'+''.join('<option value="'+e(cid)+'">'+e(name)+'</option>' for cid,name in contacts)
     body='<section class="panel"><h2>V4 · Revenue command center</h2><p>Issued and paid invoices, overdue risk, and customer-linked workflows. Internal records only; no emails, payment requests or money transfers are sent.</p>'
     body+='<div class="stats"><div><b>'+money(outstanding)+'</b><small>Outstanding invoices</small></div><div><b>'+money(overdue[1])+'</b><small>Overdue · '+str(overdue[0])+' invoices</small></div><div><b>'+money(paid)+'</b><small>Marked paid</small></div></div>'
+    body+='<h3>Overdue receivables by age</h3><div class="stats">'
+    for label,amount,count in (
+        ('1–7 days overdue',aging[0],aging[3]),
+        ('8–30 days overdue',aging[1],aging[4]),
+        ('Over 30 days overdue',aging[2],aging[5]),
+    ):
+        body+='<div><b>'+money(amount)+'</b><small>'+label+' · '+str(count)+' invoices</small></div>'
+    body+='</div><p><small>Aging uses UTC due dates and is based only on issued invoices. Payment status is manually recorded.</small></p>'
     body+='<p><strong>Next action:</strong> '+('Review '+str(overdue[0])+' overdue invoices and create follow-up tasks.' if overdue[0] else 'No overdue issued invoices in your entered records.')+'</p>'
     body+='<form method="post" action="/workspace">'+token+'<input type="hidden" name="action" value="invoice_reminders"><button>Create overdue follow-up tasks</button></form>'
     body+='<h3>Create invoice</h3><form method="post" action="/workspace">'+token+'<input type="hidden" name="action" value="invoice_create"><label>Customer<select name="contact_id">'+options+'</select></label><label>Description<input name="description" maxlength="180" required></label><label>Amount (USD)<input name="amount" type="number" min="0.01" step="0.01" required></label><label>Due date (UTC)<input name="due_date" type="date" required></label><button>Create draft invoice</button></form>'
