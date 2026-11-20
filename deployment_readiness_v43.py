@@ -57,6 +57,20 @@ def inspect(root, environ=None, finder=None):
         except (ImportError,ValueError,AttributeError):installed=False
         add("installed_"+name,installed,
             package+" import location found" if installed else package+" is not installed")
+    # Render's free filesystem is ephemeral. Fail the deployment before
+    # accepting real customers without a durable database and report store.
+    durable=env.get("VELXTRIA_REQUIRE_PERSISTENCE","0")=="1"
+    if durable:
+        database=env.get("VELXTRIA_DATABASE_URL","").strip()
+        add("durable_database",bool(database) and
+            database.startswith(("postgresql://","postgres://")),
+            "Persistent PostgreSQL configured" if database else
+            "Persistent mode requires VELXTRIA_DATABASE_URL")
+        storage=bool(env.get("VELXTRIA_SUPABASE_URL","").strip() and
+                     env.get("VELXTRIA_SUPABASE_SERVICE_KEY","").strip())
+        add("private_report_storage",storage,
+            "Private report storage configured" if storage else
+            "Persistent mode requires Supabase URL and service key for report downloads")
     enabled=env.get("VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT","0")=="1"
     if enabled:
         missing=[key for key in MAINNET_KEYS if not env.get(key,"").strip()]
