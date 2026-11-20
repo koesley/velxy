@@ -24,7 +24,15 @@ def setup(c):
     # connection while the flag is set (tests, the Render build), and the
     # Postgres-only lock call crashes on sqlite.
     if isinstance(c, persistent.PgConnection): c.execute('SELECT pg_advisory_xact_lock(731245, 921036)')
-    c.execute('''CREATE TABLE IF NOT EXISTS vx4_invoices (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, contact_id TEXT, description TEXT NOT NULL, amount_cents INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'draft', due_at INTEGER NOT NULL, created_at INTEGER NOT NULL, paid_at INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(user_id) REFERENCES users(id))''')
+    # PostgreSQL INTEGER overflows above $21,474,836.47 in cents and at
+    # Unix timestamps after 2038. SQLite INTEGER is already 64-bit.
+    invoice_schema='''CREATE TABLE IF NOT EXISTS vx4_invoices (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, contact_id TEXT, description TEXT NOT NULL, amount_cents BIGINT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', due_at BIGINT NOT NULL, created_at BIGINT NOT NULL, paid_at BIGINT NOT NULL DEFAULT 0, FOREIGN KEY(user_id) REFERENCES users(id))'''
+    c.execute(invoice_schema)
+    if isinstance(c, persistent.PgConnection):
+        # Idempotent upgrade of tables created by older deployments.
+        # This runs under the existing transaction-scoped schema lock.
+        for column in ('amount_cents','due_at','created_at','paid_at'):
+            c.execute('ALTER TABLE vx4_invoices ALTER COLUMN '+column+' TYPE BIGINT')
     c.execute('''CREATE TABLE IF NOT EXISTS vx4_events (id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,invoice_id TEXT NOT NULL,event_type TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(user_id,invoice_id,event_type))''')
     c.execute('CREATE INDEX IF NOT EXISTS vx4_invoices_user ON vx4_invoices(user_id,created_at)')
     c.execute('CREATE INDEX IF NOT EXISTS vx4_events_user ON vx4_events(user_id,invoice_id)')
