@@ -24,6 +24,38 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         self.conn.rollback()
         self.conn.close()
 
+    def test_invoice_legacy_integer_columns_migrate_to_bigint(self):
+        """Upgrade legacy PG invoice columns without losing existing records."""
+        import persistent
+        import business_v4
+        from unittest.mock import patch
+        with patch.object(persistent, 'DATABASE_URL', TEST_URL):
+            with persistent.PgConnection() as adapter:
+                adapter.execute(
+                    "CREATE TEMP TABLE vx4_invoices "
+                    "(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,contact_id TEXT,"
+                    "description TEXT NOT NULL,amount_cents INTEGER NOT NULL,"
+                    "status TEXT NOT NULL DEFAULT 'draft',due_at INTEGER NOT NULL,"
+                    "created_at INTEGER NOT NULL,paid_at INTEGER NOT NULL DEFAULT 0)"
+                )
+                adapter.execute(
+                    "INSERT INTO vx4_invoices(id,user_id,description,amount_cents,due_at,created_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    ('legacy',1,'Existing',12500,2000000000,2000000000)
+                )
+                business_v4.setup(adapter)
+                adapter.execute(
+                    "INSERT INTO vx4_invoices(id,user_id,description,amount_cents,due_at,created_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    ('future',1,'Large invoice',10000000000,4102444800,4102444800)
+                )
+                self.assertEqual(adapter.execute(
+                    "SELECT amount_cents,due_at FROM vx4_invoices WHERE id='future'"
+                ).fetchone(), (10000000000,4102444800))
+                self.assertEqual(adapter.execute(
+                    "SELECT amount_cents FROM vx4_invoices WHERE id='legacy'"
+                ).fetchone(), (12500,))
+
     def test_postgres_daily_buckets_do_not_round_up(self):
         """A PostgreSQL numeric cast used to shift afternoons into tomorrow."""
         import persistent
