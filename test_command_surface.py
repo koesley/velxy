@@ -10,6 +10,20 @@ class CommandSurfaceTests(unittest.TestCase):
         cls.css = (ROOT / "style.css").read_text(encoding="utf-8")
         cls.portal = (ROOT / "portal.py").read_text(encoding="utf-8")
 
+    def test_command_palette_is_served_and_linked(self):
+        self.assertIn('<script defer src="/command-palette.js"></script>', self.portal)
+        self.assertIn("if p=='/command-palette.js':", self.portal)
+        self.assertIn("(ROOT/'command-palette.js').read_bytes()", self.portal)
+        self.assertIn('id="vx-command-dialog"', self.portal)
+        self.assertIn('id="vx-command-search"', self.portal)
+        self.assertIn('id="vx-command-open"', self.portal)
+        script = (ROOT / "command-palette.js").read_text(encoding="utf-8")
+        self.assertIn("dialog.showModal()", script)
+        self.assertIn("event.key.toLowerCase() === 'k'", script)
+        self.assertIn("results.replaceChildren()", script)
+        self.assertNotIn("innerHTML", script)
+        self.assertIn(".vx-command-dialog", self.css)
+
     def test_production_stylesheet_includes_command_center_design(self):
         # The separate studio CSS route is intentionally disabled on hosted
         # deployments; the public stylesheet must include it instead.
