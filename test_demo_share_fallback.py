@@ -53,10 +53,10 @@ class DemoShareFallbackTests(unittest.TestCase):
     def run_demo(self):
         boundary = '----fallbacktestboundary'
         payload = (
-            ('--' + boundary + '\\r\\n'
-             'Content-Disposition: form-data; name="file"; filename="sales.csv"\\r\\n'
-             'Content-Type: text/csv\\r\\n\\r\\n').encode()
-            + TEST_CSV + ('\\r\\n--' + boundary + '--\\r\\n').encode()
+            ('--' + boundary + '\r\n'
+             'Content-Disposition: form-data; name="file"; filename="sales.csv"\r\n'
+             'Content-Type: text/csv\r\n\r\n').encode()
+            + TEST_CSV + ('\r\n--' + boundary + '--\r\n').encode()
         )
         return self.request('POST', '/try', payload,
                             'multipart/form-data; boundary=' + boundary)
@@ -69,7 +69,7 @@ class DemoShareFallbackTests(unittest.TestCase):
         self.assertIn('Public sharing is unavailable', html)
         self.assertNotIn('Share this result:', html)
         self.assertNotIn('/demo/', html)
-        match = re.search(r'/try-download\\?token=([A-Za-z0-9_-]+)', html)
+        match = re.search(r'/try-download\?token=([A-Za-z0-9_-]+)', html)
         self.assertIsNotNone(match)
         status, _, archive = self.request('GET', '/try-download?token=' + match.group(1))
         self.assertEqual(status, 200)
