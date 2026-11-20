@@ -24,6 +24,8 @@ on:
       - 'test_durable_deployment.py'
       - 'test_storage_probe.py'
       - 'verify_storage.py'
+      - 'verify_report_lifecycle.py'
+      - 'test_report_lifecycle.py'
       - 'deployment_readiness_v43.py'
       - 'render.yaml'
       - '.github/workflows/customer-journey.yml'
@@ -82,4 +84,5 @@ jobs:
             test_paywall_analytics \
             test_email_delivery \
             test_durable_deployment \
-            test_storage_probe
+            test_storage_probe \
+            test_report_lifecycle
