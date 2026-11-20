@@ -3654,7 +3654,7 @@ def delivery_worker():
               " AND next_attempt<=?",
               (now(), now()-notifications.STALE_SENDING_SECONDS))
   except Exception as exc:
-   print('Email reclaim error:', type(exc).__name__)
+   print('Email reclaim error:', type(exc).__name__ + ':', str(exc)[:200])
   try:
    with db() as c:
     row=c.execute("SELECT report_id,user_id,recipient,attempts FROM deliveries WHERE status IN ('queued','retry') AND next_attempt<=? AND attempts<3 ORDER BY next_attempt LIMIT 1",(now(),)).fetchone()
@@ -3684,7 +3684,7 @@ def delivery_worker():
     with db() as c:
      c.execute('UPDATE deliveries SET status=?,last_error=?,next_attempt=? WHERE report_id=?',('retry' if retry else 'failed',str(exc)[:160],now()+min(3600,60*2**attempts),report_id))
      c.execute('UPDATE reports SET email_status=? WHERE id=?',('retry' if retry else 'failed',report_id))
-   print('Email delivery error:',type(exc).__name__)
+   print('Email delivery error:', type(exc).__name__ + ':', str(exc)[:200])
   # Notifications (PRO confirmations, password resets, renewal reminders)
   # are best-effort: a failure here must never break report delivery.
   try:
@@ -3694,7 +3694,7 @@ def delivery_worker():
      last_reminder_scan=now()
     while notifications.process_one(c):pass
   except Exception as exc:
-   print('Email notification error:',type(exc).__name__)
+   print('Email notification error:', type(exc).__name__ + ':', str(exc)[:200])
 
 def month_start():
  d=datetime.now(timezone.utc)

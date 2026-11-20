@@ -104,8 +104,8 @@ class NotificationUnitTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     notifications.process_one(self.conn)
         row = self.conn.execute(
-            "SELECT status,attempts FROM email_outbox").fetchone()
-        self.assertEqual(row, ('retry', 1))
+            "SELECT status,attempts,last_error FROM email_outbox").fetchone()
+        self.assertEqual(row, ('retry', 1, 'down'))
 
     def test_renewal_reminder_scan(self):
         now = int(time.time())
