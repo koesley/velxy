@@ -419,6 +419,18 @@ def claim_demo_zip(token):
   if entry[1]<=time.time():return None
   return entry
 
+def restore_demo_zip(token,entry):
+ """Restore an unclaimed demo after a transient storage failure.
+
+ Only restore while the original expiry is valid and no newer entry has
+ replaced this token. The same token remains usable for the visitor.
+ """
+ if not token or not entry or entry[1]<=time.time():return False
+ with _DEMO_ZIPS_LOCK:
+  if token in _DEMO_ZIPS:return False
+  _DEMO_ZIPS[token]=entry
+  return True
+
 def public_base_url(host):
  """Absolute site URL for robots.txt / sitemap.xml, from the request Host.
 
@@ -3478,9 +3490,13 @@ class Handler(BaseHTTPRequestHandler):
     with db() as c:
      c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',accepted,rejected,digest))
      site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(accepted,rejected))
-   except Exception as e:
-    persistent.remove(user['id'],ident)
-    return self.fail(422,'Could not save this report: '+str(e)[:240],user,csrf)
+   except Exception:
+    # A failed database insert or object-store write must not consume the
+    # visitor's one-time demo. Restore it until its original TTL expires.
+    restore_demo_zip(demo_token,entry)
+    try:persistent.remove(user['id'],ident)
+    except Exception:pass
+    return self.fail(503,'Could not save this report right now. Your demo remains available for retry until its original expiry.',user,csrf)
    return self.redirect('/report?id='+ident,[('Set-Cookie',DEMO_COOKIE+'=; Path=/; Max-Age=0; SameSite=Lax')])
   if p=='/btcpay/mainnet/checkout':
    if not btcpay_mainnet.checkout_enabled():
