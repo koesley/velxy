@@ -78,7 +78,8 @@ def process(c,uid,fields):
         else: raise ValueError('Invoice action is not allowed in its current status.')
     elif action=='invoice_reminders':
         ts=int(time.time())
-        rows=c.execute("SELECT id FROM vx4_invoices WHERE user_id=? AND status='issued' AND due_at<?",(uid,ts)).fetchall()
+        today=ts-ts%86400
+        rows=c.execute("SELECT id FROM vx4_invoices WHERE user_id=? AND status='issued' AND due_at<?",(uid,today)).fetchall()
         for (ident,) in rows:
             # Guarded no-op UPDATE acquires the invoice row lock in PostgreSQL.
             # A concurrent payment/void must complete before we decide whether
@@ -86,7 +87,7 @@ def process(c,uid,fields):
             current=c.execute(
                 "UPDATE vx4_invoices SET status=status "
                 "WHERE id=? AND user_id=? AND status='issued' AND due_at<?",
-                (ident,uid,ts)
+                (ident,uid,today)
             ).rowcount
             if current != 1: continue
             # UNIQUE event + transaction makes repeated runs safe.
@@ -108,7 +109,8 @@ def render(c,uid,csrf):
     contacts=c.execute('SELECT id,name FROM vx3_contacts WHERE user_id=? ORDER BY created_at DESC LIMIT 200',(uid,)).fetchall()
     invoices=c.execute('SELECT id,contact_id,description,amount_cents,status,due_at FROM vx4_invoices WHERE user_id=? ORDER BY created_at DESC LIMIT 50',(uid,)).fetchall()
     now=int(time.time())
-    overdue=c.execute("SELECT COUNT(*),COALESCE(SUM(amount_cents),0) FROM vx4_invoices WHERE user_id=? AND status='issued' AND due_at<?",(uid,now)).fetchone()
+    today=now-now%86400  # Invoice due dates are calendar dates in UTC.
+    overdue=c.execute("SELECT COUNT(*),COALESCE(SUM(amount_cents),0) FROM vx4_invoices WHERE user_id=? AND status='issued' AND due_at<?",(uid,today)).fetchone()
     outstanding=c.execute("SELECT COALESCE(SUM(amount_cents),0) FROM vx4_invoices WHERE user_id=? AND status='issued'",(uid,)).fetchone()[0]
     paid=c.execute("SELECT COALESCE(SUM(amount_cents),0) FROM vx4_invoices WHERE user_id=? AND status='paid'",(uid,)).fetchone()[0]
     # Overdue aging is calculated from recorded invoices, never estimated.
@@ -122,28 +124,28 @@ def render(c,uid,csrf):
         "SUM(CASE WHEN due_at<? AND due_at>=? THEN 1 ELSE 0 END),"
         "SUM(CASE WHEN due_at<? THEN 1 ELSE 0 END) "
         "FROM vx4_invoices WHERE user_id=? AND status='issued' AND due_at<?",
-        (now-7*86400, now-7*86400, now-30*86400, now-30*86400,
-         now-7*86400, now-7*86400, now-30*86400, now-30*86400,
-         uid, now)
+        (today-7*86400, today-7*86400, today-30*86400, today-30*86400,
+         today-7*86400, today-7*86400, today-30*86400, today-30*86400,
+         uid, today)
     ).fetchone()
     aging=tuple(int(value or 0) for value in aging)
     # Surface near-term collection risk before invoices become overdue.
     due_soon=c.execute(
         "SELECT COUNT(*),COALESCE(SUM(amount_cents),0) FROM vx4_invoices "
         "WHERE user_id=? AND status='issued' AND due_at>=? AND due_at<?",
-        (uid,now,now+7*86400)
+        (uid,today,today+7*86400)
     ).fetchone()
     due_soon_items=c.execute(
         "SELECT description,amount_cents,due_at FROM vx4_invoices "
         "WHERE user_id=? AND status='issued' AND due_at>=? AND due_at<? "
         "ORDER BY due_at ASC, created_at ASC LIMIT 10",
-        (uid,now,now+7*86400)
+        (uid,today,today+7*86400)
     ).fetchall()
     oldest=c.execute(
         "SELECT description,amount_cents,due_at FROM vx4_invoices "
         "WHERE user_id=? AND status='issued' AND due_at<? "
         "ORDER BY due_at ASC, created_at ASC LIMIT 10",
-        (uid,now)
+        (uid,today)
     ).fetchall()
     recent_events=c.execute(
         "SELECT i.description,e.event_type,e.created_at FROM vx4_events e "
@@ -176,7 +178,7 @@ def render(c,uid,csrf):
     if oldest:
         body+='<h3>Oldest unpaid invoices</h3><div class="scroll"><table><tr><th>Invoice</th><th>Amount</th><th>Days overdue</th></tr>'
         for description,cents,due_at in oldest:
-            days_overdue=max(1,(now-due_at)//86400)
+            days_overdue=max(1,(today-due_at)//86400)
             body+='<tr><td>'+e(description)+'</td><td>'+money(cents)+'</td><td>'+str(days_overdue)+'</td></tr>'
         body+='</table></div>'
     body+='<p><strong>Next action:</strong> '+('Review '+str(overdue[0])+' overdue invoices and create follow-up tasks.' if overdue[0] else 'No overdue issued invoices in your entered records.')+'</p>'
@@ -187,6 +189,6 @@ def render(c,uid,csrf):
         controls=''
         for action,label,allowed in [('invoice_issue','Issue',status=='draft'),('invoice_pay','Mark paid',status=='issued'),('invoice_void','Void',status in ('draft','issued'))]:
             if allowed: controls+='<form method="post" action="/workspace">'+token+'<input type="hidden" name="action" value="'+action+'"><input type="hidden" name="id" value="'+e(ident)+'"><button>'+label+'</button></form>'
-        body+='<tr><td>'+e(desc)+'</td><td>'+money(cents)+'</td><td>'+datetime.fromtimestamp(due,timezone.utc).strftime('%Y-%m-%d')+'</td><td>'+e(status)+(' · overdue' if status=='issued' and due<now else '')+'</td><td>'+controls+'</td></tr>'
+        body+='<tr><td>'+e(desc)+'</td><td>'+money(cents)+'</td><td>'+datetime.fromtimestamp(due,timezone.utc).strftime('%Y-%m-%d')+'</td><td>'+e(status)+(' · overdue' if status=='issued' and due<today else '')+'</td><td>'+controls+'</td></tr>'
     body+='</table></div><p><small>Mark paid only after verifying payment outside VELXTRIA. Marking paid records income once and updates linked CRM status. This is not an accounting or payment-processing system.</small></p></section>'
     return body
