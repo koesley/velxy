@@ -107,39 +107,56 @@ def outreach_eligibility(c, owner, email):
     row=c.execute("SELECT status FROM outreach_suppression WHERE owner_id=? AND email=?",(owner,email)).fetchone()
     return bool(row and outreach_deliverability.eligible_for_new_outreach(email,{email:row[0]}))
 
+def _lead_text(data, key, limit, *, required=False):
+    """Reject hidden controls and overlong fields instead of silently truncating."""
+    value = data.get(key, "")
+    if not isinstance(value, str):
+        raise ValueError(key + " must be text")
+    value = value.strip()
+    if len(value) > limit or any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        raise ValueError(key + " contains invalid characters or exceeds " + str(limit) + " characters")
+    if required and len(value) < 2:
+        raise ValueError(key + " must contain at least two characters")
+    return value
+
+
 def save(c, owner, data):
     setup(c)
-    business = data.get("business","").strip()
-    if not 2 <= len(business) <= 120:
-        raise ValueError("Business name must be 2–120 characters")
-    stage = data.get("stage","new")
-    if stage not in STAGES:
+    business = _lead_text(data, "business", 120, required=True)
+    stage = data.get("stage", "new")
+    if not isinstance(stage, str) or stage not in STAGES:
         raise ValueError("Invalid stage")
+    raw_value = data.get("value", "0") or "0"
+    if isinstance(raw_value, bool) or not isinstance(raw_value, (str, int)):
+        raise ValueError("Estimated value must be a whole number")
+    if isinstance(raw_value, str) and (len(raw_value) > 12 or not raw_value.isdecimal()):
+        raise ValueError("Estimated value must be a nonnegative whole number")
     try:
-        value = int(data.get("value","0") or "0")
-    except ValueError:
+        value = int(raw_value)
+    except (ValueError, OverflowError):
         raise ValueError("Estimated value must be a whole number")
     if not 0 <= value <= 100000000:
         raise ValueError("Estimated value out of range")
-    contact=data.get("contact","").strip()[:120]
-    email=data.get("email","").strip()[:254]
-    industry=data.get("industry","").strip()[:80]
-    notes=data.get("notes","").strip()[:1000]
-    if email and ("@" not in email or "\n" in email):
+    contact = _lead_text(data, "contact", 120)
+    email = _lead_text(data, "email", 254).lower()
+    industry = _lead_text(data, "industry", 80)
+    notes = _lead_text(data, "notes", 1000)
+    if email and not outreach_deliverability.valid_email(email):
         raise ValueError("Invalid email")
-    lead_id=data.get("lead_id","").strip()
+    lead_id = _lead_text(data, "lead_id", 64)
     if lead_id:
-        result=c.execute("""UPDATE sales_pipeline_leads SET business=?,contact=?,email=?,industry=?,stage=?,estimated_value=?,notes=?,updated_at=?
+        result = c.execute("""UPDATE sales_pipeline_leads SET business=?,contact=?,email=?,industry=?,stage=?,estimated_value=?,notes=?,updated_at=?
                             WHERE id=? AND owner_id=?""",
-                         (business,contact,email,industry,stage,value,notes,int(time.time()),lead_id,owner))
+                         (business, contact, email, industry, stage, value, notes, int(time.time()), lead_id, owner))
         if result.rowcount != 1:
             raise ValueError("Lead not found")
         return lead_id
-    lead_id=secrets.token_hex(12)
-    now=int(time.time())
+    lead_id = secrets.token_hex(12)
+    now = int(time.time())
     c.execute("INSERT INTO sales_pipeline_leads VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-              (lead_id,owner,business,contact,email,industry,stage,value,notes,now,now))
+              (lead_id, owner, business, contact, email, industry, stage, value, notes, now, now))
     return lead_id
+
 def dashboard(c, owner, csrf):
     setup(c)
     rows=c.execute("""SELECT id,business,contact,email,industry,stage,estimated_value,notes
