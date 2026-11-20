@@ -26,6 +26,41 @@ class InvoiceIntegrityTests(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
+    def test_due_today_is_not_overdue_and_creates_no_reminder(self):
+        from unittest.mock import patch
+        fixed = 2000000000
+        today = fixed - fixed % 86400
+        self.db.execute(
+            "UPDATE vx4_invoices SET due_at=? WHERE id='invoice1'", (today,)
+        )
+        with patch.object(business_v4.time, "time", return_value=fixed):
+            page = business_v4.render(self.db, 1, "csrf")
+            business_v4.process(self.db, 1, {"action": "invoice_reminders"})
+        self.assertIn("Due within 7 days", page)
+        self.assertIn("$125.00", page)
+        self.assertIn("across 1 issued invoices", page)
+        self.assertNotIn("Consulting</td><td>$125.00</td><td>1</td>", page)
+        self.assertEqual(self.db.execute(
+            "SELECT count(*) FROM vx3_tasks"
+        ).fetchone()[0], 0)
+
+    def test_yesterday_becomes_one_day_overdue_at_midnight(self):
+        from unittest.mock import patch
+        fixed = 2000000000
+        today = fixed - fixed % 86400
+        self.db.execute(
+            "UPDATE vx4_invoices SET due_at=? WHERE id='invoice1'",
+            (today - 86400,)
+        )
+        with patch.object(business_v4.time, "time", return_value=fixed):
+            page = business_v4.render(self.db, 1, "csrf")
+            business_v4.process(self.db, 1, {"action": "invoice_reminders"})
+        self.assertIn("1–7 days overdue", page)
+        self.assertIn("Consulting</td><td>$125.00</td><td>1</td>", page)
+        self.assertEqual(self.db.execute(
+            "SELECT count(*) FROM vx3_tasks"
+        ).fetchone()[0], 1)
+
     def test_issue_and_void_create_audit_events(self):
         self.db.execute("UPDATE vx4_invoices SET status='draft' WHERE id='invoice1'")
         business_v4.process(self.db, 1, {"action": "invoice_issue", "id": "invoice1"})
