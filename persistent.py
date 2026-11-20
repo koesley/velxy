@@ -40,6 +40,13 @@ class PgConnection:
         self.cursor = self.conn.execute(sql, args)
         return self
 
+    @property
+    def rowcount(self):
+        """Expose the affected-row count expected by SQLite-style callers."""
+        if self.cursor is None:
+            return -1
+        return self.cursor.rowcount
+
     def fetchone(self):
         return self.cursor.fetchone()
 
