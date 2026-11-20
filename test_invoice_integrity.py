@@ -26,6 +26,18 @@ class InvoiceIntegrityTests(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
+    def test_invoice_dashboard_escapes_untrusted_descriptions(self):
+        from unittest.mock import patch
+        payload = '<img src=x onerror=alert(1)>'
+        self.db.execute(
+            "UPDATE vx4_invoices SET description=?,due_at=? WHERE id='invoice1'",
+            (payload, 2000000000+86400)
+        )
+        with patch.object(business_v4.time, "time", return_value=2000000000):
+            page=business_v4.render(self.db, 1, "csrf")
+        self.assertNotIn(payload,page)
+        self.assertIn("&lt;img",page)
+
     def test_due_soon_forecast_excludes_overdue_paid_and_other_tenants(self):
         from unittest.mock import patch
         fixed = 2000000000
