@@ -99,7 +99,7 @@ def verify_storage_absent(retrieve, missing_error, user_id, report_id):
     raise RuntimeError('Storage object absence was not verified')
 
 
-def inspect_stranded(connection_factory, retrieve, *, min_age_seconds=86400, current_time=None):
+def inspect_stranded(connection_factory, retrieve, *, min_age_seconds=86400, current_time=None, missing_error=None):
     """Read-only audit of interrupted recovery, with no customer data in output.
 
     A 404-like exception is not trusted as proof of absence here: storage
@@ -109,7 +109,7 @@ def inspect_stranded(connection_factory, retrieve, *, min_age_seconds=86400, cur
     """
     cutoff = int(time.time() if current_time is None else current_time) - min_age_seconds
     result = {'stranded': 0, 'report_present': 0, 'object_present': 0,
-              'storage_unverified': 0}
+              'object_confirmed_missing': 0, 'storage_unverified': 0}
     with connection_factory() as c:
         rows = c.execute(
             "SELECT report_id,user_id FROM report_write_journal "
@@ -128,8 +128,11 @@ def inspect_stranded(connection_factory, retrieve, *, min_age_seconds=86400, cur
         try:
             retrieve(user_id, report_id, None)
             result['object_present'] += 1
-        except Exception:
-            result['storage_unverified'] += 1
+        except Exception as error:
+            if missing_error is not None and isinstance(error, missing_error):
+                result['object_confirmed_missing'] += 1
+            else:
+                result['storage_unverified'] += 1
     return result
 
 
@@ -147,7 +150,8 @@ def main(argv=None):
     import persistent
     if args.inspect_stranded:
         summary = inspect_stranded(portal.db, persistent.retrieve,
-                                   min_age_seconds=args.min_age_hours * 3600)
+                                   min_age_seconds=args.min_age_hours * 3600,
+                                   missing_error=persistent.StorageObjectNotFound)
         print('Stranded recovery audit:', summary)
         if summary['stranded']:
             return 1
