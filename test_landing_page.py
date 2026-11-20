@@ -66,16 +66,22 @@ class LandingPageTests(unittest.TestCase):
 
     def test_pro_interest_returns_to_pricing_after_login(self):
         html = self.portal.landing_buy_html(None, '')
-        self.assertIn('/login?next=%2F%23v8-pricing', html)
-        self.assertIn('/register?next=%2F%23v8-pricing', html)
+        self.assertIn('/login?next=%2Faccount%23billing', html)
+        self.assertIn('/register?next=%2Faccount%23billing', html)
         self.assertNotIn('/about', html)
         self.assertIn('verified payment', html)
 
     def test_demo_upsell_returns_to_pricing(self):
         result = {'monthly_rows': [['Month', 'Revenue']], 'product_rows': [['Product', 'Revenue']], 'stats': [], 'accepted': 0, 'rejected': 0}
         html = self.portal.demo_result_html(result, 'sample-token')
-        self.assertIn('/login?next=%2F%23v8-pricing', html)
+        self.assertIn('/login?next=%2Faccount%23billing', html)
         self.assertIn('Payment is optional', html)
+
+    def test_account_billing_is_checkout_destination(self):
+        import inspect
+        handler_source = inspect.getsource(self.portal.Handler.do_GET)
+        self.assertIn('id="billing"', handler_source)
+        self.assertIn('action="/btcpay/mainnet/checkout"', handler_source)
 
     def test_logged_in_buy_posts_to_checkout_when_enabled(self):
         with patch.dict(os.environ, MAINNET_ENV):
