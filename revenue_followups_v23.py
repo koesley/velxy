@@ -50,6 +50,20 @@ def change_status(c, uid, wid, identifier, status):
     c.execute("UPDATE vx_followup23 SET status=?,updated=? WHERE workspace_id=? AND id=? AND status='planned'",
               (status,int(time.time()),wid,identifier))
 
+def metrics(c, uid, wid, today=None):
+    """Full-workspace counts, independent of the bounded dashboard preview."""
+    bos.core.access(c, uid, wid)
+    setup(c)
+    today = today or date.today().isoformat()
+    return dict(zip(("planned", "overdue", "due_today", "completed"),
+        c.execute("""SELECT
+            COALESCE(SUM(CASE WHEN status='planned' THEN 1 ELSE 0 END),0),
+            COALESCE(SUM(CASE WHEN status='planned' AND due_date<? THEN 1 ELSE 0 END),0),
+            COALESCE(SUM(CASE WHEN status='planned' AND due_date=? THEN 1 ELSE 0 END),0),
+            COALESCE(SUM(CASE WHEN status!='planned' THEN 1 ELSE 0 END),0)
+            FROM vx_followup23 WHERE workspace_id=?""", (today,today,wid)).fetchone()))
+
+
 def render(c,uid,wid,csrf):
     bos.core.access(c,uid,wid)
     setup(c)
@@ -58,14 +72,14 @@ def render(c,uid,wid,csrf):
     rows=c.execute("""SELECT f.id,l.name,f.due_date,f.status,f.note FROM vx_followup23 f
         JOIN bos59_leads l ON l.id=f.lead_id AND l.workspace_id=f.workspace_id
         WHERE f.workspace_id=? ORDER BY CASE WHEN f.status='planned' THEN 0 ELSE 1 END,
-        f.due_date ASC,f.created DESC LIMIT 100""",(wid,)).fetchall()
+        f.due_date ASC,f.created DESC,f.id ASC LIMIT 100""",(wid,)).fetchall()
     today=date.today().isoformat()
     planned=sum(x[3]=="planned" for x in rows)
     overdue=sum(x[3]=="planned" and x[2]<today for x in rows)
     options=''.join('<option value="'+esc(lid)+'">'+esc(name)+'</option>' for lid,name in leads)
     out=['<section class="panel"><h1>Follow-up Tracker</h1><p>Schedule internal follow-up work and record outcomes. '
          'This feature never contacts customers automatically. Statuses are manually entered and do not verify collected revenue.</p>',
-         '<p>Planned (displayed): '+str(planned)+' · Overdue (displayed): '+str(overdue)+' · Showing at most 100 records.</p></section>']
+         '<p>Planned (all): '+str(totals['planned'])+' · Overdue (all): '+str(totals['overdue'])+' · Due today (all): '+str(totals['due_today'])+' · Completed (all): '+str(totals['completed'])+'. Showing at most 100 records, with planned work first.</p></section>']
     if leads:
         out.append('<section class="panel"><h2>Plan a follow-up</h2><form method="post" action="/revenue-followups">'
                    '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'
