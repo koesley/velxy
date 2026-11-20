@@ -233,6 +233,42 @@ class InstantDemoTests(unittest.TestCase):
         self.assertEqual(self.count('reports'), reports_before)
         self.assertEqual(self.count('users'), users_before)
 
+    def test_authenticated_upload_storage_failure_returns_safe_503(self):
+        import secrets
+        import portal
+        email = 'storage-failure-' + secrets.token_hex(5) + '@example.test'
+        form = urllib.parse.urlencode({
+            'email': email, 'password': 'TestPass123456!',
+        }).encode()
+        self.assertEqual(self.request('POST', '/register', body=form,
+                                     content_type='application/x-www-form-urlencoded')[0], 303)
+        status, headers, _ = self.request('POST', '/login', body=form,
+                                          content_type='application/x-www-form-urlencoded')
+        self.assertEqual(status, 303)
+        cookie = headers['Set-Cookie'].split(';')[0]
+        status, _, dashboard = self.request('GET', '/', headers={'Cookie': cookie})
+        self.assertEqual(status, 200)
+        csrf = re.search(rb'name="csrf" value="([^"]+)"', dashboard)
+        self.assertIsNotNone(csrf)
+        boundary = '----storageFailureBoundary'
+        payload = ('--' + boundary + '\r\n'
+                   'Content-Disposition: form-data; name="csrf"\r\n\r\n'
+                   + csrf.group(1).decode() + '\r\n'
+                   '--' + boundary + '\r\n'
+                   'Content-Disposition: form-data; name="file"; filename="sales.csv"\r\n'
+                   'Content-Type: text/csv\r\n\r\n').encode() + TEST_CSV + (
+                   '\r\n--' + boundary + '--\r\n').encode()
+        with patch.object(portal.persistent, 'store', side_effect=RuntimeError('PRIVATE_STORAGE_SECRET')), \
+             patch.object(portal.persistent, 'remove', side_effect=RuntimeError('CLEANUP_SECRET')):
+            status, _, body = self.request(
+                'POST', '/upload', body=payload,
+                content_type='multipart/form-data; boundary=' + boundary,
+                headers={'Cookie': cookie})
+        self.assertEqual(status, 503)
+        self.assertIn(b'could not be saved', body)
+        self.assertNotIn(b'PRIVATE_STORAGE_SECRET', body)
+        self.assertNotIn(b'CLEANUP_SECRET', body)
+
     def test_authenticated_upload_digest_matches_saved_zip(self):
         import hashlib
         import re
