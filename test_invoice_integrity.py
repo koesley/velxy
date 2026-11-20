@@ -26,6 +26,32 @@ class InvoiceIntegrityTests(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
+    def test_due_soon_forecast_excludes_overdue_paid_and_other_tenants(self):
+        from unittest.mock import patch
+        fixed = 2000000000
+        self.db.execute("INSERT INTO users VALUES (2)")
+        cases = [
+            ("due1", 1, 3200, "issued", fixed+86400),
+            ("due2", 1, 4800, "issued", fixed+6*86400),
+            ("later", 1, 50000, "issued", fixed+8*86400),
+            ("paid", 1, 90000, "paid", fixed+86400),
+            ("foreign", 2, 999999, "issued", fixed+86400),
+        ]
+        for ident,uid,cents,status,due in cases:
+            self.db.execute(
+                "INSERT INTO vx4_invoices(id,user_id,description,amount_cents,status,due_at,created_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (ident,uid,ident,cents,status,due,fixed-100)
+            )
+        with patch.object(business_v4.time, "time", return_value=fixed):
+            page=business_v4.render(self.db, 1, "csrf")
+        self.assertIn("Due within 7 days",page)
+        self.assertIn("$80.00",page)
+        self.assertIn("across 2 issued invoices",page)
+        self.assertIn("due1",page)
+        self.assertIn("due2",page)
+        self.assertNotIn("foreign",page)
+
     def test_aging_dashboard_separates_overdue_buckets_and_tenants(self):
         from unittest.mock import patch
         fixed = 2000000000
