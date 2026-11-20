@@ -10,9 +10,30 @@ INPUT=ROOT/'messy_sales_input.csv'
 OUT=ROOT/'output'
 COLUMNS=['Order ID','Order Date','Customer','Product','Quantity','Unit Price','Status','Region','Revenue']
 
-def write_csv(path,columns,rows):
-    with path.open('w',newline='',encoding='utf-8-sig') as f:
-        w=csv.DictWriter(f,fieldnames=columns);w.writeheader();w.writerows(rows)
+def spreadsheet_safe(value):
+    """Neutralize spreadsheet formulas in untrusted CSV text.
+
+    CSV quoting is not sufficient: spreadsheet applications may evaluate
+    cells starting with =, +, -, or @, including after leading whitespace.
+    Prefix an apostrophe only for strings that could be interpreted as
+    formulas. Numeric types remain numeric.
+    """
+    if not isinstance(value, str):
+        return value
+    candidate = value.lstrip(' \\t\\r\\n')
+    if candidate.startswith(('=', '+', '-', '@')):
+        return "'" + value
+    return value
+
+
+def write_csv(path, columns, rows):
+    """Write safe CSV exports without modifying the caller's row dictionaries."""
+    with path.open('w', newline='', encoding='utf-8-sig') as f:
+        w = csv.DictWriter(f, fieldnames=columns, extrasaction='raise')
+        w.writeheader()
+        for row in rows:
+            w.writerow({column: spreadsheet_safe(row.get(column, ''))
+                        for column in columns})
 
 def parse_date(s):
     for fmt in ('%Y-%m-%d','%m/%d/%Y','%Y/%m/%d'):
