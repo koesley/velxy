@@ -13,7 +13,10 @@ def setup(c):
     if isinstance(c, persistent.PgConnection): c.execute('SELECT pg_advisory_xact_lock(731245, 921035)')
     c.execute('''CREATE TABLE IF NOT EXISTS vx3_profiles (user_id INTEGER PRIMARY KEY, business_name TEXT NOT NULL DEFAULT '', business_type TEXT NOT NULL DEFAULT 'small_business', FOREIGN KEY(user_id) REFERENCES users(id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS vx3_contacts (id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,name TEXT NOT NULL,email TEXT NOT NULL DEFAULT '',stage TEXT NOT NULL DEFAULT 'lead',created_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id))''')
-    c.execute('''CREATE TABLE IF NOT EXISTS vx3_entries (id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,kind TEXT NOT NULL,description TEXT NOT NULL,amount_cents INTEGER NOT NULL,created_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS vx3_entries (id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,kind TEXT NOT NULL,description TEXT NOT NULL,amount_cents BIGINT NOT NULL,created_at BIGINT NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id))''')
+    if isinstance(c, persistent.PgConnection):
+        c.execute('ALTER TABLE vx3_entries ALTER COLUMN amount_cents TYPE BIGINT')
+        c.execute('ALTER TABLE vx3_entries ALTER COLUMN created_at TYPE BIGINT')
     c.execute('''CREATE TABLE IF NOT EXISTS vx3_tasks (id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,title TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',due_at INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id))''')
     c.execute('CREATE INDEX IF NOT EXISTS vx3_contacts_user ON vx3_contacts(user_id)')
     c.execute('CREATE INDEX IF NOT EXISTS vx3_entries_user ON vx3_entries(user_id,created_at)')
