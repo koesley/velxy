@@ -74,7 +74,7 @@ def revise(c,owner,draft_id,subject,body):
         raise ValueError("Subject and body must be text")
     subject=subject.strip()
     body=body.strip()
-    if any(ch in subject for ch in ("\\r", "\\n", "\\x00")) or "\\x00" in body:
+    if any(ord(ch) in (0, 10, 13) for ch in subject) or chr(0) in body:
         raise ValueError("Invalid control characters in draft")
     if not (1<=len(subject)<=180 and 1<=len(body)<=5000):
         raise ValueError("Subject or body length is invalid")
