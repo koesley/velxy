@@ -23,12 +23,10 @@ def briefing(c,owner,now=None):
         done=c.execute("SELECT COUNT(*) FROM ascension_actions WHERE owner_id=? AND status='completed' AND updated_at>=? AND updated_at<?",(owner,start,end)).fetchone()[0]
         return dict(new_leads=new,updated_leads=updated,completed=done)
     previous=weekly_counts(previous_since,since)
-    new_leads=c.execute("SELECT COUNT(*) FROM sales_pipeline_leads WHERE owner_id=? AND created_at>=? AND created_at<?",(owner,since,now)).fetchone()[0]
-    touched=c.execute("SELECT COUNT(*) FROM sales_pipeline_leads WHERE owner_id=? AND updated_at>=? AND updated_at<?",(owner,since,now)).fetchone()[0]
-    completed=c.execute("SELECT COUNT(*) FROM ascension_actions WHERE owner_id=? AND status='completed' AND updated_at>=? AND updated_at<?",(owner,since,now)).fetchone()[0]
+    current=weekly_counts(since,now)
     outcomes=dict(c.execute("SELECT outcome,COUNT(*) FROM ascension_recovery_outcomes WHERE owner_id=? AND created_at>=? AND created_at<? GROUP BY outcome",(owner,since,now)).fetchall())
     reported=c.execute("SELECT COALESCE(SUM(amount_cents),0) FROM ascension_recovery_outcomes WHERE owner_id=? AND outcome='payment_reported' AND created_at>=? AND created_at<?",(owner,since,now)).fetchone()[0]
-    return dict(new_leads=new_leads,updated_leads=touched,completed=completed,outcomes=outcomes,
+    return dict(**current,outcomes=outcomes,
         reported_cents=reported,queue=signals,blocked=sum(x['state']=='contact_blocked' for x in signals),
         awaiting=sum(x['state']=='awaiting_outcome' for x in signals),previous=previous,since=since,until=now)
 
