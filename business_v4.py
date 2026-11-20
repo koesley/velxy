@@ -114,6 +114,12 @@ def render(c,uid,csrf):
          uid, now)
     ).fetchone()
     aging=tuple(int(value or 0) for value in aging)
+    oldest=c.execute(
+        "SELECT description,amount_cents,due_at FROM vx4_invoices "
+        "WHERE user_id=? AND status='issued' AND due_at<? "
+        "ORDER BY due_at ASC, created_at ASC LIMIT 10",
+        (uid,now)
+    ).fetchall()
     options='<option value="">No linked contact</option>'+''.join('<option value="'+e(cid)+'">'+e(name)+'</option>' for cid,name in contacts)
     body='<section class="panel"><h2>V4 · Revenue command center</h2><p>Issued and paid invoices, overdue risk, and customer-linked workflows. Internal records only; no emails, payment requests or money transfers are sent.</p>'
     body+='<div class="stats"><div><b>'+money(outstanding)+'</b><small>Outstanding invoices</small></div><div><b>'+money(overdue[1])+'</b><small>Overdue · '+str(overdue[0])+' invoices</small></div><div><b>'+money(paid)+'</b><small>Marked paid</small></div></div>'
@@ -125,6 +131,12 @@ def render(c,uid,csrf):
     ):
         body+='<div><b>'+money(amount)+'</b><small>'+label+' · '+str(count)+' invoices</small></div>'
     body+='</div><p><small>Aging uses UTC due dates and is based only on issued invoices. Payment status is manually recorded.</small></p>'
+    if oldest:
+        body+='<h3>Oldest unpaid invoices</h3><div class="scroll"><table><tr><th>Invoice</th><th>Amount</th><th>Days overdue</th></tr>'
+        for description,cents,due_at in oldest:
+            days_overdue=max(1,(now-due_at)//86400)
+            body+='<tr><td>'+e(description)+'</td><td>'+money(cents)+'</td><td>'+str(days_overdue)+'</td></tr>'
+        body+='</table></div>'
     body+='<p><strong>Next action:</strong> '+('Review '+str(overdue[0])+' overdue invoices and create follow-up tasks.' if overdue[0] else 'No overdue issued invoices in your entered records.')+'</p>'
     body+='<form method="post" action="/workspace">'+token+'<input type="hidden" name="action" value="invoice_reminders"><button>Create overdue follow-up tasks</button></form>'
     body+='<h3>Create invoice</h3><form method="post" action="/workspace">'+token+'<input type="hidden" name="action" value="invoice_create"><label>Customer<select name="contact_id">'+options+'</select></label><label>Description<input name="description" maxlength="180" required></label><label>Amount (USD)<input name="amount" type="number" min="0.01" step="0.01" required></label><label>Due date (UTC)<input name="due_date" type="date" required></label><button>Create draft invoice</button></form>'
