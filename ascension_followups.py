@@ -48,7 +48,9 @@ def prepare(c,owner,action_id):
     if not row:
         raise ValueError("An approved action for this account is required")
     lead_id,kind,business,email,contact,stage=row
-    if stage in ("won", "lost"):\n        raise ValueError("Lead is closed")\n    if not email or not sales_pipeline.outreach_eligibility(c,owner,email):
+    if stage in ("won", "lost"):
+        raise ValueError("Lead is closed")
+    if not email or not sales_pipeline.outreach_eligibility(c,owner,email):
         raise ValueError("Contact is not verified clear or is suppressed")
     if c.execute("SELECT 1 FROM ascension_followup_drafts WHERE owner_id=? AND action_id=?",(owner,action_id)).fetchone():
         raise ValueError("A draft already exists for this action")
@@ -68,8 +70,12 @@ def prepare(c,owner,action_id):
 
 def revise(c,owner,draft_id,subject,body):
     setup(c)
+    if not isinstance(subject, str) or not isinstance(body, str):
+        raise ValueError("Subject and body must be text")
     subject=subject.strip()
     body=body.strip()
+    if any(ch in subject for ch in ("\\r", "\\n", "\\x00")) or "\\x00" in body:
+        raise ValueError("Invalid control characters in draft")
     if not (1<=len(subject)<=180 and 1<=len(body)<=5000):
         raise ValueError("Subject or body length is invalid")
     row=c.execute("SELECT recipient,status FROM ascension_followup_drafts WHERE id=? AND owner_id=?",(draft_id,owner)).fetchone()
