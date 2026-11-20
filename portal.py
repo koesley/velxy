@@ -1,7 +1,6 @@
 """VELXTRIA customer portal with public landing page and private preview guard."""
-import base64, csv, hashlib, hmac, html, io, json, os, secrets, shutil, smtplib, sqlite3, subprocess, sys, tempfile, time, urllib.parse, zipfile
+import base64, csv, hashlib, hmac, html, io, json, os, secrets, shutil, sqlite3, subprocess, sys, tempfile, time, urllib.parse, zipfile
 from datetime import datetime, timezone
-from email.message import EmailMessage
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -149,7 +148,7 @@ import growth_strategy_v42
 import sales_execution_v44
 
 ROOT=Path(__file__).resolve().parent
-DELIVERY_ENABLED=os.getenv("VELXTRIA_SMTP_HOST","") != ""
+DELIVERY_ENABLED=notifications.email_configured()
 STOP=Event()
 DATA_ROOT=Path(os.getenv('VELXTRIA_DATA_DIR',str(ROOT))).resolve()
 DATA_ROOT.mkdir(parents=True,exist_ok=True)
@@ -1464,7 +1463,7 @@ class Handler(BaseHTTPRequestHandler):
     body+='<section class="panel"><a href="/agents">Open Founder Agent Control</a> · <a href="/founder-stats">Founder stats — traffic and funnel</a></section>'
     with db() as c:
      users=c.execute('SELECT email,role,access FROM users ORDER BY created DESC').fetchall();errors=c.execute("SELECT count(*) FROM reports WHERE status != 'ready'").fetchone()[0]
-    body+='<section class="panel"><h2>Founder overview</h2><p>Accounts: '+str(len(users))+' · Failed reports: '+str(errors)+'</p><p>Payhip verification: <strong>STAGING ONLY — manual review; no automatic access</strong>. SMTP: <strong>'+('configured' if DELIVERY_ENABLED else 'not configured')+'</strong>. Do not use this prototype to enforce paid access.</p></section>'
+    body+='<section class="panel"><h2>Founder overview</h2><p>Accounts: '+str(len(users))+' · Failed reports: '+str(errors)+'</p><p>Payhip verification: <strong>STAGING ONLY — manual review; no automatic access</strong>. Email: <strong>'+('configured' if DELIVERY_ENABLED else 'not configured')+'</strong>. Do not use this prototype to enforce paid access.</p></section>'
    return self.respond(200,shell('Dashboard',body,user,csrf))
   if p=='/sovereign-gate':
    if os.getenv('VELXTRIA_LOCAL_STUDIO')!='1' or persistent.REMOTE:return self.fail(403,'Sovereign Gate requires local SQLite studio mode.',user,csrf)
@@ -3012,7 +3011,7 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/forgot':
    # The reply never reveals whether the email has an account, and when
    # SMTP is not configured no reset is promised at all.
-   if not notifications.smtp_configured():
+   if not notifications.email_configured():
     return self.respond(200,shell('Reset password','<section class="panel narrow"><h1>Reset by email is not available yet</h1><p>Password reset by email is not set up on this site yet. Email <a href="/contact">support</a> and we will help you back in.</p><p><a href="/login">Back to sign in</a></p></section>'))
    email=fields.get('email','').strip().lower()
    if valid_email(email):
@@ -3667,14 +3666,9 @@ def delivery_worker():
      stored=c.execute("SELECT digest FROM reports WHERE id=? AND user_id=? AND status='ready'",(report_id,user_id)).fetchone()
     if not stored or not hmac.compare_digest(hashlib.sha256(report_bytes).hexdigest(),stored[0]):
      raise RuntimeError('Report integrity verification failed; email attachment withheld')
-    msg=EmailMessage();msg['Subject']='Your VELXTRIA report is ready';msg['From']=os.environ['VELXTRIA_SMTP_FROM'];msg['To']=recipient
-    msg.set_content('Your requested VELXTRIA report is attached. This is a local demonstration. Do not send sensitive business information.')
-    msg.add_attachment(report_bytes,maintype='application',subtype='zip',filename='VELXTRIA_Report.zip')
-    host=os.environ['VELXTRIA_SMTP_HOST'];port=int(os.getenv('VELXTRIA_SMTP_PORT','587'))
-    with smtplib.SMTP(host,port,timeout=20) as smtp:
-     smtp.starttls()
-     smtp.login(os.environ['VELXTRIA_SMTP_USER'],os.environ['VELXTRIA_SMTP_PASSWORD'])
-     smtp.send_message(msg)
+    notifications.send_mail(recipient, 'Your VELXTRIA report is ready',
+     'Your requested VELXTRIA report is attached. This is a local demonstration. Do not send sensitive business information.',
+     attachment=('VELXTRIA_Report.zip', report_bytes, 'application/zip'))
     with db() as c:
      c.execute("UPDATE deliveries SET status='sent',last_error='' WHERE report_id=?",(report_id,))
      c.execute("UPDATE reports SET email_status='sent' WHERE id=?",(report_id,))
@@ -3717,7 +3711,7 @@ if __name__=='__main__':
  print(f'VELXTRIA V4 {mode} portal on {host}:{port}; database={"postgresql" if persistent.REMOTE else "sqlite-local"}; storage={"private-supabase" if persistent.REMOTE else "local"}')
  if DELIVERY_ENABLED:
   Thread(target=delivery_worker,daemon=True).start()
-  print('SMTP delivery queue enabled')
- else:print('SMTP not configured: reports available for download only')
+  print('Email delivery queue enabled (' + ('SendGrid' if notifications.sendgrid_configured() else 'SMTP') + ')')
+ else:print('Email not configured: reports available for download only')
  print('PRIVATE TEST ONLY — not production ready; no real customer data or payments.')
  ThreadingHTTPServer((host,port),Handler).serve_forever()
