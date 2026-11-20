@@ -3614,15 +3614,40 @@ def complete_report_write(c, report_id, user_id):
   raise RuntimeError('Report write is no longer pending; refusing to publish ready report')
 
 def abandon_report_write(user_id, report_id):
- """Only mark abandoned after successful best-effort object cleanup."""
- try:
-  persistent.remove(user_id,report_id)
- except Exception:
-  return False
+ """Claim an uncommitted orphan before cleanup; never delete a ready report.
+
+ An upload exception can occur after a DB commit. A conditional journal
+ transition prevents a late exception from deleting a customer's valid ZIP.
+ """
  try:
   with db() as c:
-   c.execute("UPDATE report_write_journal SET state='cleaned' WHERE report_id=? AND user_id=? AND state='pending'",(report_id,user_id))
-  return True
+   claim=c.execute(
+    "UPDATE report_write_journal SET state='recovering' "
+    "WHERE report_id=? AND user_id=? AND state='pending' "
+    "AND NOT EXISTS (SELECT 1 FROM reports WHERE id=?)",
+    (report_id,user_id,report_id))
+   if claim.rowcount != 1:
+    return False
+  try:
+   persistent.remove(user_id,report_id)
+   # A remote delete acknowledgment is insufficient: require authenticated
+   # read-back proving the object is absent before marking it cleaned.
+   if persistent.REMOTE:
+    try:
+     persistent.retrieve(user_id,report_id,REPORTS)
+    except persistent.StorageObjectNotFound:
+     pass
+    else:
+     raise RuntimeError('Report object still exists after deletion')
+   else:
+    raise RuntimeError('Local report deletion is not implemented')
+  except Exception:
+   with db() as c:
+    c.execute("UPDATE report_write_journal SET state='pending' WHERE report_id=? AND user_id=? AND state='recovering'",(report_id,user_id))
+   return False
+  with db() as c:
+   done=c.execute("UPDATE report_write_journal SET state='cleaned' WHERE report_id=? AND user_id=? AND state='recovering'",(report_id,user_id))
+   return done.rowcount == 1
  except Exception:
   return False
 
