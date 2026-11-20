@@ -67,11 +67,27 @@ jobs:
           echo "Running anonymous report engine against the published sample"
           curl --fail --silent --show-error --location --max-time 90 \
             "$base/sample-sales.csv" --output /tmp/velxtria-sample.csv
-          demo_code=$(curl --silent --show-error --max-time 120 \
-            --form "file=@/tmp/velxtria-sample.csv;filename=sample-sales.csv;type=text/csv" \
-            --output /tmp/velxtria-demo.html --write-out '%{http_code}' "$base/try")
+          # A cold-starting Render instance may briefly return 502/503/504.
+          # Retry only gateway/service failures; never hide application 4xx
+          # errors or a persistently broken reporting endpoint.
+          demo_code=""
+          for attempt in 1 2 3; do
+            demo_code=$(curl --silent --show-error --max-time 120 \
+              --form "file=@/tmp/velxtria-sample.csv;filename=sample-sales.csv;type=text/csv" \
+              --output /tmp/velxtria-demo.html --write-out '%{http_code}' "$base/try") || demo_code="transport-error"
+            if [ "$demo_code" = 200 ]; then
+              echo "Anonymous CSV report succeeded on attempt $attempt"
+              break
+            fi
+            echo "::warning::Anonymous CSV report attempt $attempt returned $demo_code"
+            case "$demo_code" in
+              502|503|504|transport-error)
+                if [ "$attempt" -lt 3 ]; then sleep 12; fi ;;
+              *) break ;;
+            esac
+          done
           if [ "$demo_code" != 200 ]; then
-            echo "::error::Anonymous CSV report returned HTTP $demo_code"
+            echo "::error::Anonymous CSV report remained unavailable (HTTP $demo_code)"
             exit 1
           fi
           if ! grep -q 'Accepted 6 rows' /tmp/velxtria-demo.html || ! grep -q 'flagged 3 rows' /tmp/velxtria-demo.html; then
