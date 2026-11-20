@@ -15,7 +15,13 @@ class CommandSurfaceTests(unittest.TestCase):
         self.assertNotIn("script-src 'none'; form-action 'self'", self.portal)
         self.assertNotIn("script-src 'unsafe-inline'", self.portal)
         render = (ROOT / "render.yaml").read_text(encoding="utf-8")
-        self.assertIn("test_invoice_integrity test_command_surface test_site_stats", render)
+        # The build must run the command-surface tests. Check each name
+        # separately: the list grows as new command-surface modules are
+        # added, and a single contiguous substring would break every time
+        # one is inserted between two others.
+        for name in ("test_invoice_integrity", "test_command_surface",
+                     "test_http_command_surface", "test_site_stats"):
+            self.assertIn(name, render)
 
     def test_production_css_cascade_applies_design_last(self):
         route = self.portal.split("if p=='/style.css':return self.respond(200,",1)[1].split("\n",1)[0]
