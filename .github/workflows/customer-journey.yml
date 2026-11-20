@@ -26,6 +26,8 @@ on:
       - 'verify_storage.py'
       - 'verify_report_lifecycle.py'
       - 'test_report_lifecycle.py'
+      - 'recover_report_writes.py'
+      - 'test_report_recovery.py'
       - 'deployment_readiness_v43.py'
       - 'render.yaml'
       - '.github/workflows/customer-journey.yml'
@@ -85,4 +87,5 @@ jobs:
             test_email_delivery \
             test_durable_deployment \
             test_storage_probe \
-            test_report_lifecycle
+            test_report_lifecycle \
+            test_report_recovery
