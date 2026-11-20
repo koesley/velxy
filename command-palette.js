@@ -16,8 +16,17 @@
   if (!openButton || !dialog || !input || !results || !dialog.showModal) return;
   const render = () => {
     const q = input.value.trim().toLocaleLowerCase();
-    const matches = destinations.filter(([title,url]) =>
-      (title + ' ' + url).toLocaleLowerCase().includes(q)).slice(0, 12);
+    const matches = destinations
+      .map(([title,url]) => {
+        const name = title.toLocaleLowerCase();
+        const route = url.toLocaleLowerCase();
+        const score = !q ? 0 : name === q ? 4 : name.startsWith(q) ? 3 :
+          name.includes(q) ? 2 : route.includes(q) ? 1 : -1;
+        return {title,url,score};
+      })
+      .filter(item => item.score >= 0)
+      .sort((a,b) => b.score - a.score || a.title.localeCompare(b.title))
+      .slice(0, 12);
     results.replaceChildren();
     if (!matches.length) {
       const empty = document.createElement('p');
@@ -26,7 +35,7 @@
       results.append(empty);
       return;
     }
-    matches.forEach(([title,url],index) => {
+    matches.forEach(({title,url},index) => {
       const link = document.createElement('a');
       link.href = url;
       link.className = 'vx-command-result';
