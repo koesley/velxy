@@ -47,6 +47,12 @@ class PgConnection:
             return -1
         return self.cursor.rowcount
 
+    def __iter__(self):
+        """Support SQLite-style iteration over results of execute()."""
+        if self.cursor is None:
+            raise RuntimeError('Execute a query before iterating over results')
+        return iter(self.cursor)
+
     def fetchone(self):
         return self.cursor.fetchone()
 
