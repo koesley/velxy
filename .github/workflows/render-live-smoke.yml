@@ -64,4 +64,46 @@ jobs:
             fi
             echo "$path is serving the expected public customer experience"
           done
-          echo "Smoke verification passed: public onboarding and access controls. Authenticated payments and deployed commit identity are not verified."
+          echo "Running anonymous report engine against the published sample"
+          curl --fail --silent --show-error --location --max-time 90 \
+            "$base/sample-sales.csv" --output /tmp/velxtria-sample.csv
+          demo_code=$(curl --silent --show-error --max-time 120 \
+            --form "file=@/tmp/velxtria-sample.csv;filename=sample-sales.csv;type=text/csv" \
+            --output /tmp/velxtria-demo.html --write-out '%{http_code}' "$base/try")
+          if [ "$demo_code" != 200 ]; then
+            echo "::error::Anonymous CSV report returned HTTP $demo_code"
+            exit 1
+          fi
+          if ! grep -q 'Accepted 6 rows' /tmp/velxtria-demo.html || ! grep -q 'flagged 3 rows' /tmp/velxtria-demo.html; then
+            echo "::error::Demo report did not contain the expected cleaned-row counts"
+            exit 1
+          fi
+          export BASE_URL="$base"
+          python - <<'PY'
+          import os
+          import re
+          import urllib.request
+          import zipfile
+          import io
+          from pathlib import Path
+
+          html = Path('/tmp/velxtria-demo.html').read_text(encoding='utf-8')
+          match = re.search(r'/try-download\\?token=([A-Za-z0-9_-]+)', html)
+          if not match:
+              raise SystemExit('Anonymous demo did not provide a ZIP download token')
+          url = os.environ['BASE_URL'] + '/try-download?token=' + match.group(1)
+          with urllib.request.urlopen(url, timeout=60) as response:
+              payload = response.read(5_000_001)
+          if len(payload) > 5_000_000:
+              raise SystemExit('Demo ZIP exceeded smoke-test size limit')
+          with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+              expected = {'cleaned_sales.csv', 'rejected_rows.csv',
+                          'monthly_summary.csv', 'product_summary.csv', 'run_summary.txt'}
+              if set(archive.namelist()) != expected:
+                  raise SystemExit('Demo ZIP contents do not match report contract')
+              summary = archive.read('run_summary.txt').decode('utf-8')
+              if 'Paid revenue (accepted Paid orders only): $800.00' not in summary:
+                  raise SystemExit('Demo ZIP revenue summary did not match expected sample')
+          print('Anonymous report generated and downloadable ZIP validated')
+          PY
+          echo "Smoke verification passed: public onboarding, real anonymous reporting, ZIP download, and access controls. Authenticated payments and deployed commit identity are not verified."
