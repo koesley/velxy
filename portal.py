@@ -16,6 +16,7 @@ import btcpay_integration
 import btcpay_mainnet
 import referrals
 import demo_shares
+import demo_leads
 import trust_pages
 import notifications
 import password_reset
@@ -215,6 +216,7 @@ def _initialize_schema(c):
  subscriptions.setup(c)
  referrals.setup(c)
  demo_shares.setup(c)
+ demo_leads.setup(c)
  notifications.setup(c)
  password_reset.setup(c)
  business_v3.setup(c)
@@ -616,8 +618,16 @@ def demo_result_html(result,token,share_token=None,user=None,csrf=''):
  if user:
   keep=('<form method="post" action="/claim-demo"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><input type="hidden" name="token" value="'+escape(token)+'"><button>Save this report to my account</button></form>'
         '<p class="v8-demo-note">Saves as one of your free reports — no re-upload.</p>')
+  email_form=''
  else:
   keep=('<p class="v8-demo-note">Want to keep it? <a href="/register">Create a free account</a> — then claim this report from your dashboard. It stays claimable for 10 minutes.</p>')
+  email_form=''
+  if share_token:
+   # Anonymous runners vanish after the demo — this is the only chance
+   # to reach them again. Email the report (summaries + share link) and
+   # record the lead; no account needed.
+   email_form=('<form method="post" action="/demo/email"><input type="hidden" name="share_token" value="'+escape(share_token)+'"><label>Email me this report<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><button class="v8-primary" type="submit">Email me this report</button></form>'
+               '<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>')
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
   +'<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
@@ -625,6 +635,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf=''):
   +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>'
   +share
   +keep
+  +email_form
   +'<p class="v8-demo-note">Ready for more? <a href="/login?next='+nxt+'">Sign in to open PRO billing and checkout</a>. Payment is optional and verified before activation.</p></section></div>')
 
 def report_view_html(row,monthly_rows,product_rows,stats):
@@ -1177,6 +1188,8 @@ class Handler(BaseHTTPRequestHandler):
     +report_summaries_html(shared['monthly_rows'],shared['product_rows'],shared['stats'])
     +'<p>Accepted '+str(shared['accepted'])+' rows · flagged '+str(shared['rejected'])+' rows. Only the summaries are shared — the original file and raw rows were never stored.</p>'
     +'<a class="v8-primary" href="/#try">Try it with your own CSV — no account</a>'
+    +'<form method="post" action="/demo/email"><input type="hidden" name="share_token" value="'+escape(share_token)+'"><label>Email me this report<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><button class="v8-primary" type="submit">Email me this report</button></form>'
+    +'<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>'
     +'<p class="v8-demo-note">VELXTRIA turns messy sales CSVs into clean monthly and product reports. Free demo, no signup. PRO $49/30 days, Bitcoin only.</p></section></div>')
    return self.respond(200,shell('Shared demo report',body))
   if p=='/' and not user:
@@ -3131,6 +3144,31 @@ class Handler(BaseHTTPRequestHandler):
    user,csrf,_=self.identity()
    headers=[('Set-Cookie',DEMO_COOKIE+'='+token+'; Path=/; Max-Age=600; SameSite=Lax')]
    return self.respond(200,shell('Your demo report',demo_result_html(report,token,share_token,user,csrf)),headers=headers)
+  if p=='/demo/email':
+   # Anonymous demo lead capture: email the demo report to the runner.
+   # No account, no session, no CSRF token — like /try, the request
+   # changes no account state, and the send itself is bounded (one email
+   # per address+demo ever, at most 3 demo emails per address per day),
+   # so a forged or abusive request can at most send one report email.
+   email=fields.get('email','').strip().lower()
+   share_token=fields.get('share_token','').strip()
+   if not valid_email(email):
+    return self.respond(400,shell('Email this report','<section class="panel narrow"><h1>Enter a valid email address</h1><p>We need a valid email to send your demo report to.</p><p><a href="/#try">Back to the demo</a></p></section>'))
+   if not share_token or '/' in share_token:
+    return self.respond(404,'This shared demo has expired or does not exist.','text/plain')
+   with db() as c:
+    shared=demo_shares.get(c,share_token)
+    if not shared:
+     return self.respond(404,'This shared demo has expired or does not exist.','text/plain')
+    site_url=btcpay_mainnet.site_url()
+    share_link=site_url.rstrip('/')+'/demo/'+share_token
+    if demo_leads.record(c,email,share_token):
+     notifications.queue(
+      c, email, 'Your VELXTRIA demo report',
+      demo_leads.format_email_body(shared,share_link,site_url),
+      'demo_report', dedupe_key='demo-email:'+email+':'+share_token)
+     site_stats.record(c,'demo_email_sent',share_token)
+   return self.respond(200,shell('Report on its way','<section class="panel narrow"><h1>Check your email</h1><p>Your demo report is on its way to '+escape(email)+'. It includes the summaries, a link to view it online, and a link to create your free account.</p><p><a href="'+escape(share_link)+'">View the report online</a> · <a href="/register">Create your free account</a></p></section>'))
   ident=self.require()
   if not ident:return
   user,csrf,token=ident
