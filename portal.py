@@ -1122,6 +1122,8 @@ class Handler(BaseHTTPRequestHandler):
    ref=referral_code_from_request(self) if not user else ''
    headers=[referral_cookie_header(ref)] if ref else ()
    return self.respond(200,shell('Meet VELXTRIA',landing_page(user,csrf)),headers=headers)
+  if p=='/command-palette.js':
+   return self.respond(200,(ROOT/'command-palette.js').read_bytes(),'application/javascript; charset=utf-8',headers=[('Cache-Control','public, max-age=300, must-revalidate'),('X-Content-Type-Options','nosniff')])
   if p=='/checkout-feedback.js':
    js="""document.addEventListener('submit',function(e){var f=e.target;if(!f || !f.action || !f.action.includes('/btcpay/mainnet/checkout'))return;var b=f.querySelector('button[type="submit"],button:not([type])');if(!b)return;if(b.disabled){e.preventDefault();return;}b.disabled=true;b.textContent='Preparing secure Bitcoin checkout…';b.setAttribute('aria-busy','true');var note=document.createElement('span');note.setAttribute('role','status');note.textContent=' Creating your invoice; please wait.';f.appendChild(note);});"""
    return self.respond(200,js,'application/javascript',headers=[('Cache-Control','public, max-age=3600')])
