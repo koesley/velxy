@@ -19,9 +19,14 @@ def recommendations(c,owner,now=None):
     ascension_recovery.setup(c)
     now=int(time.time() if now is None else now)
     queue=[]
+    # Filter eligible aging signals in SQL before ranking. A fixed oldest-500
+    # scan silently hid newer, higher-priority replies and proposals.
     leads=c.execute("""SELECT id,business,email,stage,estimated_value,updated_at
-        FROM sales_pipeline_leads WHERE owner_id=? AND stage NOT IN ('won','lost')
-        ORDER BY updated_at ASC LIMIT 500""",(owner,)).fetchall()
+        FROM sales_pipeline_leads WHERE owner_id=? AND (
+          (stage IN ('proposal','meeting','new','contacted') AND updated_at<=?)
+          OR (stage='replied' AND updated_at<=?)
+        ) ORDER BY updated_at ASC,id ASC""",
+        (owner,now-7*86400,now-2*86400)).fetchall()
     for lid,business,email,stage,value,updated_at in leads:
         age=max(0,(now-int(updated_at))//86400)
         if age<2:continue
@@ -74,14 +79,14 @@ def recommendations(c,owner,now=None):
             priority=priority,state=state,next_step=next_step,target=target,
             evidence=why,contact_eligible=contact,
             estimated_value=value,assumption='CRM timestamps may omit external activity'))
-    return sorted(queue,key=lambda x:(-x['priority'],-x['age_days'],x['business'].lower()))[:100]
+    return sorted(queue,key=lambda x:(-x['priority'],-x['age_days'],x['business'].lower(),x['lead_id']))[:100]
 
 def dashboard(c,owner):
     items=recommendations(c,owner)
     blocked=sum(x['state']=='contact_blocked' for x in items)
     pending=sum(x['state']=='awaiting_outcome' for x in items)
     parts=['<section class="hero"><h1>Next Best Action Engine</h1><p>Prioritized CRM work based on existing records, not invented AI predictions. All actions require human review. No messages are sent.</p></section>']
-    parts.append('<section class="panel"><h2>Execution overview</h2><p>'+str(len(items))+' recommendations · '+str(pending)+' awaiting outcome records · '+str(blocked)+' contact restrictions</p><p>Scores are rule-based ordering aids, not conversion probabilities. Estimated deal values are not received revenue.</p></section>')
+    parts.append('<section class="panel"><h2>Execution overview</h2><p>'+str(len(items))+' recommendations · '+str(pending)+' awaiting outcome records · '+str(blocked)+' contact restrictions</p><p>Scores are rule-based ordering aids, not conversion probabilities. The queue displays up to 100 highest-priority eligible signals across the workspace. Estimated deal values are not received revenue.</p></section>')
     parts.append('<section class="panel"><h2>Priority work queue</h2>')
     for item in items:
         parts.append('<article><h3>'+esc(item['business'])+'</h3><p>Priority score '+str(item['priority'])+'/100 · '+esc(item['state'].replace('_',' '))+' · CRM stage '+esc(item['stage'])+'</p><p>Evidence: '+esc(item['evidence'])+' ('+str(item['age_days'])+' days since CRM update)</p><p>'+esc(item['next_step'])+'</p><p>Contact: '+('verified clear' if item['contact_eligible'] else 'unverified or restricted')+' · Estimated deal value: $'+format(item['estimated_value'],',d')+' (not received)</p><p>'+esc(item['assumption'])+'</p><p><a href="'+item['target']+'">Open relevant workspace</a></p></article>')
