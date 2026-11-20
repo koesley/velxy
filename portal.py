@@ -3587,9 +3587,18 @@ class Handler(BaseHTTPRequestHandler):
      if fields.get('email_report')=='yes':
       c.execute('INSERT INTO deliveries(report_id,user_id,recipient,status,next_attempt) VALUES (?,?,?,?,?)',(ident,user['id'],user['email'],'queued' if DELIVERY_ENABLED else 'not_configured',now()))
       c.execute('UPDATE reports SET email_status=? WHERE id=?',('queued' if DELIVERY_ENABLED else 'not_configured',ident))
-   except Exception as e:
-    if 'ident' in locals(): persistent.remove(user['id'],ident)
-    return self.fail(422,'Could not process this file: '+str(e)[:240],user,csrf)
+   except ValueError as e:
+    # Invalid CSV is a client error. Storage cleanup must never mask the
+    # original error or expose infrastructure details to the customer.
+    try:persistent.remove(user['id'],ident)
+    except Exception:pass
+    return self.fail(422,'Could not process this CSV: '+str(e)[:180],user,csrf)
+   except Exception:
+    # A failed object upload or database transaction is a service failure,
+    # not an invalid customer file. Keep provider errors and secrets private.
+    try:persistent.remove(user['id'],ident)
+    except Exception:pass
+    return self.fail(503,'Your report could not be saved right now. Please try again later.',user,csrf)
   return self.redirect('/report?id='+ident)
 
 def delivery_worker():
