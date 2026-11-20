@@ -19,9 +19,30 @@ def recommendations(c,owner,now=None):
     ascension_recovery.setup(c)
     now=int(time.time() if now is None else now)
     queue=[]
+    # Evaluate eligible leads across the workspace, not an arbitrary oldest prefix.
+    # The three evidence maps replace per-lead action/draft/outcome lookups.
     leads=c.execute("""SELECT id,business,email,stage,estimated_value,updated_at
-        FROM sales_pipeline_leads WHERE owner_id=? AND stage NOT IN ('won','lost')
-        ORDER BY updated_at ASC LIMIT 500""",(owner,)).fetchall()
+        FROM sales_pipeline_leads WHERE owner_id=? AND (
+          (stage IN ('proposal','meeting','new','contacted') AND updated_at<=?)
+          OR (stage='replied' AND updated_at<=?))
+        ORDER BY updated_at ASC,id ASC""",(owner,now-7*86400,now-2*86400)).fetchall()
+    if not leads:
+        return []
+    latest_actions={}
+    for aid,lid,kind,status in c.execute("""SELECT id,lead_id,kind,status
+        FROM ascension_actions WHERE owner_id=?
+        ORDER BY updated_at DESC,created_at DESC,id DESC""",(owner,)).fetchall():
+        latest_actions.setdefault((lid,kind),(aid,status))
+    draft_actions={row[0] for row in c.execute(
+        "SELECT action_id FROM ascension_followup_drafts WHERE owner_id=?",(owner,)).fetchall()}
+    outcome_actions={row[0] for row in c.execute(
+        "SELECT action_id FROM ascension_recovery_outcomes WHERE owner_id=?",(owner,)).fetchall()}
+    # Keep the existing eligibility helper as the final authority. Batch its
+    # backing suppression state to avoid per-lead lookups while retaining its
+    # email validation and opt-out semantics.
+    import outreach_deliverability
+    suppression=dict(c.execute(
+        "SELECT email,status FROM outreach_suppression WHERE owner_id=?",(owner,)).fetchall())
     for lid,business,email,stage,value,updated_at in leads:
         age=max(0,(now-int(updated_at))//86400)
         if age<2:continue
@@ -38,8 +59,7 @@ def recommendations(c,owner,now=None):
             kind='aging_lead'
             why='Early-stage lead has not been updated for at least seven days'
         else:continue
-        latest=c.execute("""SELECT id,status FROM ascension_actions WHERE owner_id=? AND lead_id=?
-            AND kind=? ORDER BY updated_at DESC LIMIT 1""",(owner,lid,kind)).fetchone()
+        latest=latest_actions.get((lid,kind))
         state='needs_review'
         next_step='Review this opportunity in Sovereign Ascension'
         target='/ascension'
@@ -47,8 +67,7 @@ def recommendations(c,owner,now=None):
             aid,status=latest
             if status=='dismissed':continue
             if status=='approved':
-                draft=c.execute("SELECT id FROM ascension_followup_drafts WHERE owner_id=? AND action_id=?",(owner,aid)).fetchone()
-                if draft:
+                if aid in draft_actions:
                     state='draft_ready'
                     next_step='Review the saved draft; do not send without checking recipient eligibility'
                     target='/ascension-followups'
@@ -58,13 +77,15 @@ def recommendations(c,owner,now=None):
                     target='/ascension-followups'
                 priority+=10
             elif status=='completed':
-                outcome=c.execute("SELECT outcome FROM ascension_recovery_outcomes WHERE owner_id=? AND action_id=?",(owner,aid)).fetchone()
-                if outcome:continue
+                if aid in outcome_actions:continue
                 state='awaiting_outcome'
                 next_step='Record what happened after the completed action'
                 target='/ascension-recovery'
                 priority+=20
-        contact=sales_pipeline.outreach_eligibility(c,owner,email) if email else False
+        normalized=(email or '').strip().lower()
+        status=suppression.get(normalized)
+        contact=bool(status and outreach_deliverability.eligible_for_new_outreach(
+            normalized,{normalized:status}))
         if state in ('approved','draft_ready') and not contact:
             state='contact_blocked'
             next_step='Review contact suppression or verification; do not send outreach'
@@ -74,7 +95,7 @@ def recommendations(c,owner,now=None):
             priority=priority,state=state,next_step=next_step,target=target,
             evidence=why,contact_eligible=contact,
             estimated_value=value,assumption='CRM timestamps may omit external activity'))
-    return sorted(queue,key=lambda x:(-x['priority'],-x['age_days'],x['business'].lower()))[:100]
+    return sorted(queue,key=lambda x:(-x['priority'],-x['age_days'],x['business'].lower(),x['lead_id']))[:100]
 
 def dashboard(c,owner):
     items=recommendations(c,owner)
