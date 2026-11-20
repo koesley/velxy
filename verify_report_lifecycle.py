@@ -44,24 +44,18 @@ def verify(storage=None, identifier=None):
     except Exception:
         outcome = 'failed'
     try:
-        remove_probe_object(persistent.URL, persistent.KEY,
-                            persistent.BUCKET, owner, identifier)
+        storage.remove(owner, identifier)
+        # Confirm the object is no longer retrievable; HTTP 200 from a delete
+        # endpoint alone does not establish that deletion occurred.
+        try:
+            storage.retrieve(owner, identifier, None)
+        except (OSError, RuntimeError):
+            pass
+        else:
+            return 'cleanup_failed'
     except Exception:
         return 'cleanup_failed'
     return outcome
-
-
-def remove_probe_object(url, key, bucket, owner, identifier, opener=None):
-    """Supabase Storage's documented bulk-remove API (not DELETE object URL)."""
-    prefix = owner + '/' + identifier + '.zip'
-    endpoint = url.rstrip('/') + '/storage/v1/object/remove/' + urllib.parse.quote(bucket, safe='')
-    payload = json.dumps({'prefixes': [prefix]}).encode()
-    request = urllib.request.Request(endpoint, data=payload, method='POST', headers={
-        'apikey': key, 'Authorization': 'Bearer ' + key,
-        'Content-Type': 'application/json',
-    })
-    with (opener or urllib.request.urlopen)(request, timeout=15) as response:
-        return response.read(65536)
 
 
 def main(argv=None):
