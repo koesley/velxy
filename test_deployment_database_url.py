@@ -20,6 +20,11 @@ class PostgresURLTests(unittest.TestCase):
             " postgresql://app:secret@db.example.com/app",
             "https://app:secret@db.example.com/app",
             "postgresql://app:secret@db.example.com/app?password=leak",
+            "postgresql://app:secret@db.example.com",
+            "postgresql://app:secret@db.example.com/",
+            "postgresql://app:secret@db.example.com/app#fragment",
+            "postgresql://app:secret@db.example.com/app ",
+            "postgresql://app:secret@db.example.com/app/extra",
         ):
             with self.subTest(value=value.split("@")[-1]):
                 self.assertFalse(valid_postgres_url(value))
