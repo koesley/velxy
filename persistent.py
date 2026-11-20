@@ -208,13 +208,34 @@ def retrieve(user_id, report_id, local_reports):
 
 
 def remove(user_id, report_id):
+    """Remove one report object using Supabase Storage's remove API.
+
+    A failed remote deletion raises an error rather than silently claiming
+    success. Callers may choose whether cleanup is best-effort.
+    """
     if REMOTE:
-        path = '%s/%s/%s.zip' % (
-            BUCKET,
-            user_id,
-            report_id
+        if not (URL and KEY):
+            raise RuntimeError('Supabase Storage is not configured')
+        object_name = '%s/%s.zip' % (user_id, report_id)
+        endpoint = URL + '/storage/v1/object/remove/' + urllib.parse.quote(BUCKET, safe='')
+        request = urllib.request.Request(
+            endpoint,
+            data=json.dumps({'prefixes': [object_name]}).encode('utf-8'),
+            headers={
+                'apikey': KEY,
+                'Authorization': 'Bearer ' + KEY,
+                'Content-Type': 'application/json',
+            },
+            method='POST',
         )
         try:
-            _request('DELETE', path)
-        except RuntimeError:
-            pass
+            with urllib.request.urlopen(request, timeout=25) as response:
+                result = json.loads(response.read(65536))
+            if not isinstance(result, list):
+                raise RuntimeError('Storage deletion returned an unexpected response')
+        except (urllib.error.URLError, ValueError, TypeError) as exc:
+            raise RuntimeError('Private storage deletion failed') from None
+    else:
+        path = Path(os.getenv('VELXTRIA_DATA_DIR', 'data')) / 'reports' / str(user_id) / (str(report_id) + '.zip')
+        # Local callers currently manage their own cleanup; no-op for backward
+        # compatibility with the existing local report directory conventions.
