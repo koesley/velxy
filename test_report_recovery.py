@@ -3,7 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from recover_report_writes import reconcile, main
+from recover_report_writes import reconcile, main, inspect_stranded
 from unittest.mock import patch
 
 
@@ -41,6 +41,28 @@ class RecoveryTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as error:
                 main(['--apply'])
         self.assertEqual(error.exception.code, 2)
+
+    def test_stranded_audit_is_read_only_and_conservative(self):
+        with self.connect() as c:
+            c.execute("INSERT INTO report_write_journal VALUES ('stranded-present',1,100,'recovering')")
+            c.execute("INSERT INTO report_write_journal VALUES ('stranded-unknown',1,100,'recovering')")
+            c.execute("INSERT INTO report_write_journal VALUES ('stranded-ready',1,100,'recovering')")
+            c.execute("INSERT INTO reports VALUES ('stranded-ready',1)")
+        def retrieve(owner, identifier, root):
+            if identifier == 'stranded-unknown':
+                raise RuntimeError('Storage unreachable, not confirmed missing')
+            return b'ZIP'
+        result = inspect_stranded(self.connect, retrieve, current_time=100000,
+                                  min_age_seconds=86400)
+        self.assertEqual(result, {
+            'stranded': 3, 'report_present': 1,
+            'object_present': 1, 'storage_unverified': 1
+        })
+        self.assertEqual(self.removed, [])
+        with self.connect() as c:
+            self.assertEqual(c.execute(
+                "SELECT COUNT(*) FROM report_write_journal WHERE state='recovering'"
+            ).fetchone()[0], 3)
 
     def test_stranded_recovery_is_reported_without_deletion(self):
         with self.connect() as c:
