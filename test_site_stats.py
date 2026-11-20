@@ -21,6 +21,15 @@ class SiteStatsTests(unittest.TestCase):
         self.assertEqual(daily[0][1]['landing_view'], 2)
         self.assertEqual(daily[0][0] % 86400, 0)
 
+    def test_afternoon_and_late_night_remain_on_same_utc_day(self):
+        # PostgreSQL CAST(float AS INTEGER) rounds; integer division must
+        # not send afternoon events into the following UTC day.
+        midnight = 2000000000 - (2000000000 % 86400)
+        for seconds in (1, 43201, 86399):
+            site_stats.record(self.conn, 'landing_view', created=midnight + seconds)
+        _, daily, _ = site_stats.summary(self.conn, days=36500)
+        self.assertEqual(daily, [(midnight, {'landing_view': 3})])
+
     def test_failed_analytics_write_preserves_business_transaction(self):
         self.conn.execute("CREATE TABLE business_orders (id INTEGER PRIMARY KEY)")
         self.conn.execute("INSERT INTO business_orders VALUES (1)")
