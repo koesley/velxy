@@ -18,6 +18,27 @@ def setup(c):
         updated_at INTEGER NOT NULL, UNIQUE(owner_id,action_id))""")
     c.execute("CREATE INDEX IF NOT EXISTS ascension_draft_owner ON ascension_followup_drafts(owner_id,status,updated_at)")
 
+def draft_readiness(c, owner, draft_id):
+    """Check the current action, lead, and recipient before editing a saved draft."""
+    row = c.execute("""SELECT d.recipient,d.status,a.status,l.email,l.stage
+        FROM ascension_followup_drafts d
+        LEFT JOIN ascension_actions a ON a.id=d.action_id AND a.owner_id=d.owner_id
+        LEFT JOIN sales_pipeline_leads l ON l.id=d.lead_id AND l.owner_id=d.owner_id
+        WHERE d.owner_id=? AND d.id=?""", (owner, draft_id)).fetchone()
+    if not row or row[1] != "draft":
+        return False, "Draft is no longer editable"
+    recipient, _, action_status, current_email, stage = row
+    if action_status != "approved":
+        return False, "Action is no longer approved"
+    if not current_email or current_email.strip().casefold() != recipient.strip().casefold():
+        return False, "Lead email has changed"
+    if stage in ("won", "lost"):
+        return False, "Lead is closed"
+    if not sales_pipeline.outreach_eligibility(c, owner, recipient):
+        return False, "Contact is suppressed or unverified"
+    return True, "Eligible for manual review"
+
+
 def prepare(c,owner,action_id):
     setup(c)
     row=c.execute("""SELECT a.lead_id,a.kind,l.business,l.email,l.contact,l.stage
@@ -27,7 +48,7 @@ def prepare(c,owner,action_id):
     if not row:
         raise ValueError("An approved action for this account is required")
     lead_id,kind,business,email,contact,stage=row
-    if not email or not sales_pipeline.outreach_eligibility(c,owner,email):
+    if stage in ("won", "lost"):\n        raise ValueError("Lead is closed")\n    if not email or not sales_pipeline.outreach_eligibility(c,owner,email):
         raise ValueError("Contact is not verified clear or is suppressed")
     if c.execute("SELECT 1 FROM ascension_followup_drafts WHERE owner_id=? AND action_id=?",(owner,action_id)).fetchone():
         raise ValueError("A draft already exists for this action")
@@ -54,8 +75,9 @@ def revise(c,owner,draft_id,subject,body):
     row=c.execute("SELECT recipient,status FROM ascension_followup_drafts WHERE id=? AND owner_id=?",(draft_id,owner)).fetchone()
     if not row or row[1]!="draft":
         raise ValueError("Editable draft not found")
-    if not sales_pipeline.outreach_eligibility(c,owner,row[0]):
-        raise ValueError("Contact is no longer eligible for outreach")
+    ready, reason = draft_readiness(c, owner, draft_id)
+    if not ready:
+        raise ValueError(reason)
     c.execute("UPDATE ascension_followup_drafts SET subject=?,body=?,updated_at=? WHERE id=? AND owner_id=?",
               (subject,body,int(time.time()),draft_id,owner))
 
@@ -78,8 +100,8 @@ def dashboard(c,owner,csrf):
     if not approved:parts.append('<p>No approved actions awaiting a draft.</p>')
     parts.append('</section><section class="panel"><h2>Editable drafts</h2>')
     for ident,recipient,subject,body in drafts:
-        eligible=sales_pipeline.outreach_eligibility(c,owner,recipient)
-        parts.append('<article><p>Recipient: '+esc(recipient)+' — '+('verified clear' if eligible else 'blocked or unverified')+'</p>')
+        eligible, reason = draft_readiness(c, owner, ident)
+        parts.append('<article><p>Recipient: '+esc(recipient)+' — '+esc(reason)+'</p>')
         parts.append('<form method="post" action="/ascension-followup-revise"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><input type="hidden" name="draft_id" value="'+esc(ident)+'"><label>Subject<input name="subject" maxlength="180" value="'+esc(subject)+'" required></label><label>Message<textarea name="body" maxlength="5000" rows="8" required>'+esc(body)+'</textarea></label><button type="submit"'+('' if eligible else ' disabled')+'>Save draft</button></form></article>')
     if not drafts:parts.append('<p>No drafts yet.</p>')
     parts.append('</section>')
