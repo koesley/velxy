@@ -71,9 +71,9 @@ def summary(conn, days=14):
     since = int(time.time()) - days * 86400
     by_day = {}
     for event, day, n in conn.execute(
-            'SELECT event, CAST(created / 86400 AS INTEGER), count(*) FROM site_events '
-            'WHERE created>=? GROUP BY event, created/86400 '
-            'ORDER BY created/86400',
+            'SELECT event, CAST(created / 86400.0 AS INTEGER), count(*) FROM site_events '
+            'WHERE created>=? GROUP BY event, CAST(created / 86400.0 AS INTEGER) '
+            'ORDER BY CAST(created / 86400.0 AS INTEGER)',
             (since,)):
         by_day.setdefault(int(day) * 86400, {})[event] = n
     daily = [(day, by_day[day]) for day in sorted(by_day)]
