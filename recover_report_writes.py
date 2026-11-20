@@ -12,6 +12,8 @@ import time
 
 
 def reconcile(connection_factory, remove, *, apply=False, min_age_seconds=86400, current_time=None, verify_absent=None):
+    if apply and not callable(verify_absent):
+        raise ValueError('Destructive recovery requires an object-absence verifier')
     cutoff = int(time.time() if current_time is None else current_time) - min_age_seconds
     with connection_factory() as c:
         candidates = c.execute(
