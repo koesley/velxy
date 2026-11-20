@@ -42,6 +42,12 @@ class RecoveryTests(unittest.TestCase):
                 main(['--apply'])
         self.assertEqual(error.exception.code, 2)
 
+    def test_apply_without_verifier_fails_before_deletion(self):
+        with self.assertRaisesRegex(ValueError, 'requires an object-absence verifier'):
+            reconcile(self.connect, self.remove, apply=True,
+                      current_time=100000, min_age_seconds=86400)
+        self.assertEqual(self.removed, [])
+
     def test_absence_verification_accepts_only_explicit_missing(self):
         class Missing(FileNotFoundError):
             pass
@@ -93,7 +99,7 @@ class RecoveryTests(unittest.TestCase):
         with self.connect() as c:
             c.execute("INSERT INTO report_write_journal VALUES ('stranded',1,100,'recovering')")
         result = reconcile(self.connect, self.remove, apply=True,
-                           current_time=100000, min_age_seconds=86400)
+                           current_time=100000, min_age_seconds=86400, verify_absent=lambda *_: None)
         self.assertEqual(result['recovering_needs_review'], 1)
         self.assertNotIn((1, 'stranded'), self.removed)
         with self.connect() as c:
@@ -108,7 +114,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_apply_deletes_only_stale_orphan(self):
         result = reconcile(self.connect, self.remove, apply=True,
-                           current_time=100000, min_age_seconds=86400)
+                           current_time=100000, min_age_seconds=86400, verify_absent=lambda *_: None)
         self.assertEqual(result['cleaned'], 1)
         self.assertEqual(result['protected'], 1)
         self.assertEqual(self.removed, [(1, 'orphan')])
@@ -126,7 +132,7 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(attempted.rowcount, 0)
             self.removed.append((owner, identifier))
         result = reconcile(self.connect, competing_remove, apply=True,
-                           current_time=100000, min_age_seconds=86400)
+                           current_time=100000, min_age_seconds=86400, verify_absent=lambda *_: None)
         self.assertEqual(result['cleaned'], 1)
         self.assertEqual(self.removed, [(1, 'orphan')])
 
@@ -134,7 +140,7 @@ class RecoveryTests(unittest.TestCase):
         def fail(owner, identifier):
             raise RuntimeError('offline')
         result = reconcile(self.connect, fail, apply=True,
-                           current_time=100000, min_age_seconds=86400)
+                           current_time=100000, min_age_seconds=86400, verify_absent=lambda *_: None)
         self.assertEqual(result['failed'], 1)
         with self.connect() as c:
             self.assertEqual(c.execute("SELECT state FROM report_write_journal WHERE report_id='orphan'").fetchone()[0], 'pending')
