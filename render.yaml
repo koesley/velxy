@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: "python -m pip install -r requirements.txt && python -m compileall -q . && python deployment_readiness_v43.py"
-    startCommand: "python portal.py"
+    startCommand: "python -u portal.py"
     healthCheckPath: /healthz
     envVars:
       # Never accept paid customer data on Render's ephemeral local SQLite.
