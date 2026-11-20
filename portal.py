@@ -167,6 +167,7 @@ def db():
   c.execute("""CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', access TEXT NOT NULL DEFAULT 'demo', created INTEGER NOT NULL)""")
  c.execute('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires INTEGER NOT NULL, csrf TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
  c.execute("CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, filename TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL, digest TEXT NOT NULL, email_status TEXT NOT NULL DEFAULT 'not_sent', FOREIGN KEY(user_id) REFERENCES users(id))")
+ c.execute("CREATE TABLE IF NOT EXISTS report_write_journal (report_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created INTEGER NOT NULL, state TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))")
  c.execute("CREATE TABLE IF NOT EXISTS deliveries (report_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', next_attempt INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(report_id) REFERENCES reports(id))")
  c.execute('CREATE TABLE IF NOT EXISTS paid_licenses (license_hash TEXT PRIMARY KEY, license_key TEXT NOT NULL, user_id INTEGER NOT NULL UNIQUE, redeemed_at INTEGER NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))')
  site_stats.ensure(c)
@@ -3499,16 +3500,17 @@ class Handler(BaseHTTPRequestHandler):
    zip_bytes,_exp,accepted,rejected,filename=entry
    ident=secrets.token_hex(16);digest=hashlib.sha256(zip_bytes).hexdigest()
    try:
+    begin_report_write(user['id'],ident)
     store_verified_report(user['id'],ident,zip_bytes)
     with db() as c:
      c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',accepted,rejected,digest))
      site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(accepted,rejected))
+     complete_report_write(c,ident,user['id'])
    except Exception:
     # A failed database insert or object-store write must not consume the
     # visitor's one-time demo. Restore it until its original TTL expires.
     restore_demo_zip(demo_token,entry)
-    try:persistent.remove(user['id'],ident)
-    except Exception:pass
+    abandon_report_write(user['id'],ident)
     return self.fail(503,'Could not save this report right now. Your demo remains available for retry until its original expiry.',user,csrf)
    return self.redirect('/report?id='+ident,[('Set-Cookie',DEMO_COOKIE+'=; Path=/; Max-Age=0; SameSite=Lax')])
   if p=='/btcpay/mainnet/checkout':
@@ -3580,26 +3582,48 @@ class Handler(BaseHTTPRequestHandler):
    try:
     report=run_report_engine(data)
     digest=hashlib.sha256(report['zip_bytes']).hexdigest()
+    begin_report_write(user['id'],ident)
     store_verified_report(user['id'],ident,report['zip_bytes'])
     with db() as c:
      c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',report['accepted'],report['rejected'],digest))
      site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
+     complete_report_write(c,ident,user['id'])
      if fields.get('email_report')=='yes':
       c.execute('INSERT INTO deliveries(report_id,user_id,recipient,status,next_attempt) VALUES (?,?,?,?,?)',(ident,user['id'],user['email'],'queued' if DELIVERY_ENABLED else 'not_configured',now()))
       c.execute('UPDATE reports SET email_status=? WHERE id=?',('queued' if DELIVERY_ENABLED else 'not_configured',ident))
    except ValueError as e:
     # Invalid CSV is a client error. Storage cleanup must never mask the
     # original error or expose infrastructure details to the customer.
-    try:persistent.remove(user['id'],ident)
-    except Exception:pass
+    abandon_report_write(user['id'],ident)
     return self.fail(422,'Could not process this CSV: '+str(e)[:180],user,csrf)
    except Exception:
     # A failed object upload or database transaction is a service failure,
     # not an invalid customer file. Keep provider errors and secrets private.
-    try:persistent.remove(user['id'],ident)
-    except Exception:pass
+    abandon_report_write(user['id'],ident)
     return self.fail(503,'Your report could not be saved right now. Please try again later.',user,csrf)
   return self.redirect('/report?id='+ident)
+
+def begin_report_write(user_id, report_id):
+ """Durably record intent before writing to object storage."""
+ with db() as c:
+  c.execute("INSERT INTO report_write_journal(report_id,user_id,created,state) VALUES (?,?,?,?)",(report_id,user_id,now(),'pending'))
+
+def complete_report_write(c, report_id, user_id):
+ """Finalize the journal in the same transaction as the ready report row."""
+ c.execute("UPDATE report_write_journal SET state='committed' WHERE report_id=? AND user_id=? AND state='pending'",(report_id,user_id))
+
+def abandon_report_write(user_id, report_id):
+ """Only mark abandoned after successful best-effort object cleanup."""
+ try:
+  persistent.remove(user_id,report_id)
+ except Exception:
+  return False
+ try:
+  with db() as c:
+   c.execute("UPDATE report_write_journal SET state='cleaned' WHERE report_id=? AND user_id=? AND state='pending'",(report_id,user_id))
+  return True
+ except Exception:
+  return False
 
 def store_verified_report(user_id, report_id, payload):
  """Persist report ZIP and verify the exact stored bytes before publishing DB metadata.
