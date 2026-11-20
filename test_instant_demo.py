@@ -297,10 +297,11 @@ class InstantDemoTests(unittest.TestCase):
                 if uid is not None:
                     try:portal.persistent.remove(uid, report_id)
                     except Exception:pass
+            # Keep the isolated fixture user until the module's temporary
+            # database is discarded. Registration creates additional FK-linked
+            # records; deleting the user here is unnecessary and brittle.
             with portal.db() as c:
                 c.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email=?)', (email,))
-                c.execute('DELETE FROM subscriptions WHERE user_id IN (SELECT id FROM users WHERE email=?)', (email,))
-                c.execute('DELETE FROM users WHERE email=?', (email,))
 
     def test_saved_report_digest_rejects_tampered_download_and_view(self):
         import hashlib
