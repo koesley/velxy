@@ -92,6 +92,30 @@ def process_one(conn):
     return True
 
 
+STALE_SENDING_SECONDS = 300
+
+
+def reclaim_stale(conn, stale_after=STALE_SENDING_SECONDS, now=None):
+    """Return rows stuck in 'sending' to the queue.
+
+    process_one marks a row 'sending' before it calls SMTP. If the process
+    is killed mid-send (a redeploy, a spin-down), the row stays 'sending'
+    forever because process_one only picks 'queued'/'retry' rows. A row
+    still 'sending' after stale_after seconds was abandoned: send it again
+    when attempts remain, else mark it failed. Returns how many rows were
+    reclaimed.
+    """
+    setup(conn)
+    now = int(time.time()) if now is None else now
+    cur = conn.execute(
+        "UPDATE email_outbox SET status=CASE WHEN attempts<3 THEN 'retry'"
+        " ELSE 'failed' END, next_attempt=? WHERE status='sending'"
+        " AND next_attempt<=?",
+        (now, now - stale_after))
+    claimed = cur.cursor.rowcount if hasattr(cur, 'cursor') else cur.rowcount
+    return claimed
+
+
 def queue_pro_confirmation(conn, user_id, email, period_end, order_id):
     """Confirm a settled PRO payment by email. One per order, ever."""
     from datetime import datetime, timezone

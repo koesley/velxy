@@ -55,6 +55,13 @@ class DurableDeploymentTests(unittest.TestCase):
         self.assertNotIn("durable_database", checks)
         self.assertNotIn("private_report_storage", checks)
 
+    def test_render_start_command_is_unbuffered(self):
+        # Python buffers stdout when it is piped, so without -u the delivery
+        # worker's error lines never reach Render's logs and a failed send
+        # is invisible. The start command must run unbuffered.
+        text = (Path(__file__).resolve().parent / "render.yaml").read_text()
+        self.assertIn("python -u portal.py", text)
+
 
 if __name__ == "__main__":
     unittest.main()

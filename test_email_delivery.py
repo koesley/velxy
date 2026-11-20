@@ -137,6 +137,53 @@ class NotificationUnitTests(unittest.TestCase):
         self.assertFalse(notifications.queue_pro_confirmation(
             self.conn, 1, 'a@example.test', now + 30 * 86400, 'vx-1'))
 
+    def test_reclaim_stale_returns_abandoned_row_to_retry(self):
+        notifications.queue(self.conn, 'a@example.test', 'Hi', 'Body', 'test',
+                            user_id=1)
+        now = int(time.time())
+        with self.conn:
+            self.conn.execute(
+                "UPDATE email_outbox SET status='sending', attempts=1,"
+                " next_attempt=?", (now - 600,))
+        self.assertEqual(notifications.reclaim_stale(self.conn, now=now), 1)
+        row = self.conn.execute(
+            "SELECT status,attempts FROM email_outbox").fetchone()
+        self.assertEqual(row, ('retry', 1))
+        with patch.dict(os.environ, SMTP_ENV):
+            with patch('smtplib.SMTP') as mock_smtp_cls:
+                mock_smtp_cls.return_value = MagicMock()
+                self.assertTrue(notifications.process_one(self.conn))
+        self.assertEqual(
+            self.conn.execute("SELECT status FROM email_outbox").fetchone()[0],
+            'sent')
+
+    def test_reclaim_stale_ignores_fresh_sending_row(self):
+        notifications.queue(self.conn, 'a@example.test', 'Hi', 'Body', 'test',
+                            user_id=1)
+        now = int(time.time())
+        with self.conn:
+            self.conn.execute(
+                "UPDATE email_outbox SET status='sending', attempts=1,"
+                " next_attempt=?", (now,))
+        self.assertEqual(notifications.reclaim_stale(self.conn, now=now), 0)
+        row = self.conn.execute(
+            "SELECT status FROM email_outbox").fetchone()
+        self.assertEqual(row, ('sending',))
+
+    def test_reclaim_stale_marks_exhausted_row_failed(self):
+        notifications.queue(self.conn, 'a@example.test', 'Hi', 'Body', 'test',
+                            user_id=1)
+        now = int(time.time())
+        with self.conn:
+            self.conn.execute(
+                "UPDATE email_outbox SET status='sending', attempts=3,"
+                " next_attempt=?", (now - 600,))
+        self.assertEqual(notifications.reclaim_stale(self.conn, now=now), 1)
+        row = self.conn.execute(
+            "SELECT status,attempts FROM email_outbox").fetchone()
+        self.assertEqual(row, ('failed', 3))
+        self.assertFalse(notifications.process_one(self.conn))
+
 
 def setUpModule():
     global _TMP, _ENV

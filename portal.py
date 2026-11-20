@@ -3643,6 +3643,18 @@ def delivery_worker():
  last_reminder_scan=0
  while not STOP.wait(5):
   if not DELIVERY_ENABLED:continue
+  # A row marked 'sending' when the process was killed mid-send (a redeploy,
+  # a spin-down) would otherwise sit stuck forever: neither queue picks
+  # 'sending' rows. Return abandoned rows to the queue first.
+  try:
+   with db() as c:
+    notifications.reclaim_stale(c)
+    c.execute("UPDATE deliveries SET status=CASE WHEN attempts<3 THEN 'retry'"
+              " ELSE 'failed' END, next_attempt=? WHERE status='sending'"
+              " AND next_attempt<=?",
+              (now(), now()-notifications.STALE_SENDING_SECONDS))
+  except Exception as exc:
+   print('Email reclaim error:', type(exc).__name__)
   try:
    with db() as c:
     row=c.execute("SELECT report_id,user_id,recipient,attempts FROM deliveries WHERE status IN ('queued','retry') AND next_attempt<=? AND attempts<3 ORDER BY next_attempt LIMIT 1",(now(),)).fetchone()
