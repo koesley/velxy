@@ -64,6 +64,19 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn('/login?next=', html)
         self.assertNotIn('/btcpay/mainnet/checkout', html)
 
+    def test_pro_interest_returns_to_pricing_after_login(self):
+        html = self.portal.landing_buy_html(None, '')
+        self.assertIn('/login?next=%2F%23v8-pricing', html)
+        self.assertIn('/register?next=%2F%23v8-pricing', html)
+        self.assertNotIn('/about', html)
+        self.assertIn('verified payment', html)
+
+    def test_demo_upsell_returns_to_pricing(self):
+        result = {'monthly_rows': [['Month', 'Revenue']], 'product_rows': [['Product', 'Revenue']], 'stats': [], 'accepted': 0, 'rejected': 0}
+        html = self.portal.demo_result_html(result, 'sample-token')
+        self.assertIn('/login?next=%2F%23v8-pricing', html)
+        self.assertIn('Payment is optional', html)
+
     def test_logged_in_buy_posts_to_checkout_when_enabled(self):
         with patch.dict(os.environ, MAINNET_ENV):
             html = self.portal.landing_page({'id': 1, 'email': 'a@example.test'}, 'csrf-token')
