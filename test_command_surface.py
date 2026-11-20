@@ -10,6 +10,13 @@ class CommandSurfaceTests(unittest.TestCase):
         cls.css = (ROOT / "style.css").read_text(encoding="utf-8")
         cls.portal = (ROOT / "portal.py").read_text(encoding="utf-8")
 
+    def test_security_policy_allows_only_same_origin_scripts(self):
+        self.assertIn("script-src 'self'; form-action 'self'", self.portal)
+        self.assertNotIn("script-src 'none'; form-action 'self'", self.portal)
+        self.assertNotIn("script-src 'unsafe-inline'", self.portal)
+        render = (ROOT / "render.yaml").read_text(encoding="utf-8")
+        self.assertIn("test_invoice_integrity test_command_surface test_site_stats", render)
+
     def test_production_css_cascade_applies_design_last(self):
         route = self.portal.split("if p=='/style.css':return self.respond(200,",1)[1].split("\n",1)[0]
         self.assertLess(route.index("LANDING_CSS+WORKSPACE_CSS"), route.index("(ROOT/'site-studio.css').read_bytes()"))
