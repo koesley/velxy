@@ -3609,6 +3609,13 @@ def month_start():
  return int(datetime(d.year,d.month,1,tzinfo=timezone.utc).timestamp())
 
 if __name__=='__main__':
+ # Runtime guard: Render build checks alone cannot guarantee that the running
+ # service has durable storage. Never serve paid accounts with missing config.
+ if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview':
+  if not persistent.REQUIRE or not persistent.REMOTE:
+   raise SystemExit('Render requires persistent PostgreSQL; configure VELXTRIA_REQUIRE_PERSISTENCE=1 and VELXTRIA_DATABASE_URL')
+  if not persistent.URL or not persistent.KEY:
+   raise SystemExit('Render requires private report storage; configure VELXTRIA_SUPABASE_URL and VELXTRIA_SUPABASE_SERVICE_KEY')
  db().close()
  mode=os.getenv('VELXTRIA_DEPLOYMENT_MODE','local')
  if mode == 'render-preview' and not os.getenv('VELXTRIA_PREVIEW_PASSWORD'):
