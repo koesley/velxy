@@ -65,7 +65,9 @@ def tearDownModule():
         c.execute(
             'DELETE FROM subscriptions WHERE user_id IN '
             "(SELECT id FROM users WHERE email LIKE 'dc%@example.test')")
-        c.execute("DELETE FROM users WHERE email LIKE 'dc%@example.test'")
+        # The test DB is temporary; retaining fixture users avoids FK errors
+        # when new application tables reference their IDs.
+        # User rows disappear with the isolated database at teardown.
     _ENV.stop()
     _TMP.cleanup()
     portal.DATA_ROOT.mkdir(parents=True, exist_ok=True)
