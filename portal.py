@@ -158,8 +158,24 @@ REQUIRED=['Order ID','Order Date','Customer','Product','Quantity','Unit Price','
 SITE_DESCRIPTION='VELXTRIA turns messy sales CSVs into clean monthly and product reports for small service businesses. Free demo, no signup. PRO $49/30 days, Bitcoin only.'
 
 def now(): return int(time.time())
+_SCHEMA_READY=False
+_SCHEMA_LOCK=Lock()
+
 def db():
+ global _SCHEMA_READY
  c=persistent.connect(DB)
+ if not _SCHEMA_READY:
+  with _SCHEMA_LOCK:
+   if not _SCHEMA_READY:
+    try:
+     _initialize_schema(c)
+    except BaseException:
+     c.close()
+     raise
+    _SCHEMA_READY=True
+ return c
+
+def _initialize_schema(c):
  if persistent.REMOTE:
   c.execute("""CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, email TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, pw_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer', access TEXT NOT NULL DEFAULT 'demo', created INTEGER NOT NULL)""")
  else:
@@ -214,7 +230,7 @@ def db():
  if not persistent.REMOTE: sovereign_intelligence_v56.setup(c)
  if not persistent.REMOTE: sovereign_twin_v56.setup(c); sovereign_sync_v56.setup(c); sovereign_opportunities_v56.setup(c); sovereign_strategy_v56.setup(c); sovereign_execution_v56.setup(c); sovereign_memory_v56.setup(c); sovereign_future_v56.setup(c); sovereign_executive_v56.setup(c); sovereign_connectors_v56.setup(c); sovereign_guardian_v56.setup(c); sovereign_genesis_v56.setup(c)
  if not persistent.REMOTE: genesis_reborn_v40.install_indexes(c)
- c.commit();return c
+ c.commit()
 
 def persistent_integrity_error():
  if persistent.REMOTE:
