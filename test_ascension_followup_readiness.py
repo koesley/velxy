@@ -43,7 +43,7 @@ class DraftReadinessTests(unittest.TestCase):
 
     @patch("ascension_followups.setup")
     def test_revise_rejects_newline_subject_and_nontext(self, setup):
-        for subject, body in [("Hello\\nBcc: victim@example.com","body"), (None,"body"), ("Hello",None)]:
+        for subject, body in [("Hello" + chr(10) + "Bcc: victim@example.com","body"), (None,"body"), ("Hello",None)]:
             with self.assertRaises(ValueError):
                 studio.revise(self.c,1,"d",subject,body)
 
