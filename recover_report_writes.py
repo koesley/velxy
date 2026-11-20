@@ -6,6 +6,7 @@ not exist, then marks the journal entry cleaned. Never touches a ready
 report. Intended for a controlled maintenance window.
 """
 import argparse
+import os
 import sys
 import time
 
@@ -61,6 +62,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.min_age_hours < 24:
         parser.error('Minimum age must be at least 24 hours')
+    if args.apply and os.getenv('VELXTRIA_REPORT_RECOVERY_MAINTENANCE') != 'I_HAVE_STOPPED_REPORT_WRITERS':
+        parser.error('--apply requires VELXTRIA_REPORT_RECOVERY_MAINTENANCE=I_HAVE_STOPPED_REPORT_WRITERS after stopping report writers')
     import portal
     import persistent
     result = reconcile(portal.db, persistent.remove, apply=args.apply,
