@@ -4,7 +4,9 @@ Extract the production functions via AST to avoid importing the entire portal
 and its optional integration dependencies in this focused offline test.
 """
 import ast
+import os
 import pathlib
+import tempfile
 import threading
 import unittest
 from unittest.mock import patch
@@ -104,6 +106,63 @@ class SchemaLifecycleTests(unittest.TestCase):
             self.assertFalse(thread.is_alive())
         self.assertFalse(errors)
         self.assertEqual(len(calls), 1)
+
+
+# The AST tests above cover the once-per-process flag in isolation. The
+# tests below cover it against the real database: the flag must not survive
+# the database file being replaced mid-process.
+_TMP = None
+_ENV = None
+
+
+def setUpModule():
+    global _TMP, _ENV
+    _TMP = tempfile.TemporaryDirectory()
+    _ENV = patch.dict(os.environ, {
+        'VELXTRIA_DATA_DIR': _TMP.name,
+        'VELXTRIA_DEPLOYMENT_MODE': 'local',
+        'VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT': '0',
+    })
+    _ENV.start()
+    import portal  # noqa: F401  (imported for its module-level DATA_ROOT)
+    portal.DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    portal.REPORTS.mkdir(parents=True, exist_ok=True)
+
+
+def tearDownModule():
+    import portal
+    with portal.db() as c:
+        c.execute(
+            'DELETE FROM sessions WHERE user_id IN '
+            "(SELECT id FROM users WHERE email LIKE 'recovery%@example.test')")
+        c.execute(
+            "DELETE FROM users WHERE email LIKE 'recovery%@example.test'")
+    _ENV.stop()
+    _TMP.cleanup()
+    portal.DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    portal.REPORTS.mkdir(parents=True, exist_ok=True)
+
+
+class SchemaRecoveryTests(unittest.TestCase):
+    def test_schema_recreated_after_database_file_deleted(self):
+        import portal
+        with portal.db() as c:
+            c.execute(
+                'INSERT INTO users(email,salt,pw_hash,created) VALUES (?,?,?,?)',
+                ('recovery@example.test', 's', 'h', portal.now()))
+        # Simulate a test module deleting its temp data dir (and the sqlite
+        # file with it) between modules: the file is gone, but the process
+        # flag still says the schema is ready.
+        portal.DB.unlink(missing_ok=True)
+        self.assertTrue(portal._SCHEMA_READY)
+        with portal.db() as c:
+            row = c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+            ).fetchone()
+            self.assertIsNotNone(row, 'users table was not re-created')
+            c.execute(
+                'INSERT INTO users(email,salt,pw_hash,created) VALUES (?,?,?,?)',
+                ('recovery2@example.test', 's', 'h', portal.now()))
 
 
 if __name__ == '__main__':

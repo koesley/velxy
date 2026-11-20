@@ -164,6 +164,23 @@ _SCHEMA_LOCK=Lock()
 def db():
  global _SCHEMA_READY
  c=persistent.connect(DB)
+ if _SCHEMA_READY and not getattr(persistent,'REMOTE',False):
+  # The ready flag is per-process, but the local sqlite file can be
+  # replaced mid-process (test modules delete their temp data dir, and a
+  # local database file can be removed while the server runs). A fresh
+  # empty file has no tables, so verify the users table is still there
+  # and re-initialize if it is gone. Remote databases cannot be swapped
+  # this way, so the probe is local-only. Connections without an execute
+  # method (offline test doubles) skip the probe.
+  execute=getattr(c,'execute',None)
+  if execute is not None:
+   try:
+    cur=execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+    fetchone=getattr(cur,'fetchone',None)
+    if fetchone is not None and fetchone() is None:
+     _SCHEMA_READY=False
+   except Exception:
+    pass
  if not _SCHEMA_READY:
   with _SCHEMA_LOCK:
    if not _SCHEMA_READY:
