@@ -130,6 +130,29 @@ class InstantDemoTests(unittest.TestCase):
         self.assertIn('Generate my report', body)
         self.assertIn('Order ID, Order Date, Customer, Product, Quantity, Unit Price, Status, Region', body)
 
+    def test_public_sample_csv_download_matches_demo_schema(self):
+        status, headers, data = self.request('GET', '/sample-sales.csv')
+        self.assertEqual(status, 200)
+        self.assertIn('text/csv', headers.get('Content-Type', ''))
+        self.assertIn('attachment;', headers.get('Content-Disposition', ''))
+        self.assertEqual(data.decode('utf-8'), self.portal.SAMPLE_SALES_CSV)
+        self.assertTrue(data.startswith(b'Order ID,Order Date,Customer,Product,Quantity,Unit Price,Status,Region'))
+
+    def test_sample_csv_can_run_through_anonymous_demo(self):
+        status, _, data = self.request('GET', '/sample-sales.csv')
+        self.assertEqual(status, 200)
+        status, _, body = self.post_multipart('/try', 'VELXTRIA_Sample_Sales.csv', data)
+        self.assertEqual(status, 200)
+        self.assertIn(b'Accepted 6 rows', body)
+        self.assertIn(b'flagged 3 rows', body)
+
+    def test_landing_offers_sample_without_registration(self):
+        status, _, body = self.get('/')
+        self.assertEqual(status, 200)
+        self.assertIn('href="/sample-sales.csv"', body)
+        self.assertIn('Download the sample sales CSV', body)
+        self.assertIn('fictional', body)
+
     def test_about_page_shows_demo_form(self):
         status, _, body = self.get('/about')
         self.assertEqual(status, 200)
