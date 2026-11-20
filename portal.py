@@ -938,6 +938,19 @@ class Handler(BaseHTTPRequestHandler):
   if urllib.parse.urlsplit(self.path).path == '/healthz': return self.respond(200,'ok','text/plain')
   if self.preview_guard(): return
   p=urllib.parse.urlsplit(self.path).path
+  if p=='/health/ready':
+   if os.getenv('VELXTRIA_DEPLOYMENT_MODE') != 'render-preview':
+    return self.respond(404,'Not found','text/plain')
+   try:
+    import verify_database, verify_storage
+    ready = (verify_database.check() == 'connected' and
+             verify_storage.check() == 'connected')
+   except Exception:
+    ready = False
+   return self.respond(200 if ready else 503,
+                       'ready' if ready else 'unavailable',
+                       'text/plain',
+                       headers=[('Cache-Control','no-store')])
   if p=='/health/db':
    if os.getenv('VELXTRIA_DEPLOYMENT_MODE') != 'render-preview':
     return self.respond(404,'Not found','text/plain')
