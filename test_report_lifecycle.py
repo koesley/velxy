@@ -19,6 +19,9 @@ class FakeStorage:
         value = self.objects[(owner, identifier)]
         return value + b'corruption' if self.corrupt else value
 
+    def remove(self, owner, identifier):
+        del self.objects[(owner, identifier)]
+
 
 class ReportLifecycleTests(unittest.TestCase):
     def test_requires_opt_in(self):
@@ -30,21 +33,21 @@ class ReportLifecycleTests(unittest.TestCase):
 
     def test_successful_round_trip_and_cleanup(self):
         with patch('persistent.REMOTE', True), patch('persistent.URL', 'https://example.supabase.co'), \
-             patch('persistent.KEY', 'test-key'), patch.object(lifecycle, 'remove_probe_object') as remove:
+             patch('persistent.KEY', 'test-key'), patch.object(FakeStorage, 'remove', autospec=True, side_effect=lambda obj, owner, ident: obj.objects.pop((owner, ident))) as remove:
             storage = FakeStorage()
             self.assertEqual(lifecycle.verify(storage=storage, identifier='synthetic'), 'connected')
-            self.assertEqual(len(storage.objects), 1)
+            self.assertEqual(len(storage.objects), 0)
             remove.assert_called_once()
 
     def test_corrupted_round_trip_fails(self):
         with patch('persistent.REMOTE', True), patch('persistent.URL', 'https://example.supabase.co'), \
-             patch('persistent.KEY', 'test-key'), patch.object(lifecycle, 'remove_probe_object'):
+             patch('persistent.KEY', 'test-key'), patch.object(FakeStorage, 'remove', autospec=True, side_effect=lambda obj, owner, ident: obj.objects.pop((owner, ident))):
             self.assertEqual(lifecycle.verify(storage=FakeStorage(corrupt=True), identifier='synthetic'),
                              'integrity_failed')
 
     def test_cleanup_failure_fails_even_after_successful_round_trip(self):
         with patch('persistent.REMOTE', True), patch('persistent.URL', 'https://example.supabase.co'), \
-             patch('persistent.KEY', 'test-key'), patch.object(lifecycle, 'remove_probe_object', side_effect=OSError):
+             patch('persistent.KEY', 'test-key'), patch.object(FakeStorage, 'remove', side_effect=OSError):
             self.assertEqual(lifecycle.verify(storage=FakeStorage(), identifier='synthetic'),
                              'cleanup_failed')
 
