@@ -8,6 +8,8 @@ class FakeCursor:
     def __init__(self, rows, rowcount):
         self.rows = rows
         self.rowcount = rowcount
+    def __iter__(self):
+        return iter(self.rows)
     def fetchone(self):
         return self.rows[0] if self.rows else None
     def fetchall(self):
@@ -56,6 +58,16 @@ class PostgreSQLAdapterTests(unittest.TestCase):
         adapter = self.make_adapter()
         adapter.conn.affected = 0
         self.assertEqual(adapter.execute('DELETE FROM reports WHERE id=?', ('missing',)).rowcount, 0)
+
+    def test_sqlite_style_iteration(self):
+        adapter = self.make_adapter()
+        rows = list(adapter.execute('SELECT ?', (1,)))
+        self.assertEqual(rows, [(1,)])
+
+    def test_iteration_requires_query(self):
+        adapter = self.make_adapter()
+        with self.assertRaises(RuntimeError):
+            iter(adapter)
 
     def test_fetch_contract(self):
         adapter = self.make_adapter()
