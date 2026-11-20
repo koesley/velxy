@@ -233,6 +233,74 @@ class InstantDemoTests(unittest.TestCase):
         self.assertEqual(self.count('reports'), reports_before)
         self.assertEqual(self.count('users'), users_before)
 
+    def test_authenticated_upload_digest_matches_saved_zip(self):
+        import hashlib
+        import re
+        import secrets
+        import portal
+        email = 'upload-integrity-' + secrets.token_hex(5) + '@example.test'
+        form = urllib.parse.urlencode({
+            'email': email, 'password': 'TestPass123456!',
+        }).encode()
+        uid = None
+        report_id = None
+        status, _, _ = self.request('POST', '/register', body=form,
+                                    content_type='application/x-www-form-urlencoded')
+        self.assertEqual(status, 303)
+        status, headers, _ = self.request('POST', '/login', body=form,
+                                          content_type='application/x-www-form-urlencoded')
+        self.assertEqual(status, 303)
+        cookie = headers['Set-Cookie'].split(';')[0]
+        try:
+            status, _, dashboard = self.request('GET', '/', headers={'Cookie': cookie})
+            self.assertEqual(status, 200)
+            match = re.search(rb'name="csrf" value="([^"]+)"', dashboard)
+            self.assertIsNotNone(match)
+            boundary = '----velxtriaUploadIntegrity'
+            parts = [
+                '--' + boundary,
+                'Content-Disposition: form-data; name="csrf"',
+                '',
+                match.group(1).decode(),
+                '--' + boundary,
+                'Content-Disposition: form-data; name="file"; filename="sales.csv"',
+                'Content-Type: text/csv',
+                '',
+                TEST_CSV.decode(),
+                '--' + boundary + '--',
+                '',
+            ]
+            payload = '\\r\\n'.join(parts).encode()
+            status, headers, _ = self.request(
+                'POST', '/upload', body=payload,
+                content_type='multipart/form-data; boundary=' + boundary,
+                headers={'Cookie': cookie})
+            self.assertEqual(status, 303)
+            location = headers['Location']
+            self.assertTrue(location.startswith('/report?id='))
+            report_id = location.split('id=', 1)[1]
+            with portal.db() as c:
+                uid, stored_digest = c.execute(
+                    'SELECT user_id,digest FROM reports WHERE id=?', (report_id,)
+                ).fetchone()
+            status, _, zip_bytes = self.request(
+                'GET', '/download?id=' + report_id, headers={'Cookie': cookie})
+            self.assertEqual(status, 200)
+            self.assertEqual(stored_digest, hashlib.sha256(zip_bytes).hexdigest())
+            status, _, page = self.request('GET', location, headers={'Cookie': cookie})
+            self.assertEqual(status, 200)
+            self.assertIn(b'Window Cleaning', page)
+        finally:
+            if report_id:
+                with portal.db() as c:
+                    c.execute('DELETE FROM reports WHERE id=?', (report_id,))
+                if uid is not None:
+                    try:portal.persistent.remove(uid, report_id)
+                    except Exception:pass
+            with portal.db() as c:
+                c.execute('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email=?)', (email,))
+                c.execute('DELETE FROM users WHERE email=?', (email,))
+
     def test_saved_report_digest_rejects_tampered_download_and_view(self):
         import hashlib
         import secrets
