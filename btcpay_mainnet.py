@@ -146,8 +146,12 @@ def setup(conn):
     # Serialize PostgreSQL schema initialization across concurrent requests.
     # CREATE TABLE IF NOT EXISTS alone is not safe against simultaneous first creates.
     # Transaction-scoped lock releases automatically on commit or rollback.
+    # Guard on the connection itself, not the REMOTE flag: the flag
+    # describes the deployment, but setup can be handed a sqlite
+    # connection while the flag is set (tests, the Render build), and the
+    # Postgres-only lock call crashes on sqlite.
     import persistent
-    if persistent.REMOTE:
+    if isinstance(conn, persistent.PgConnection):
         conn.execute('SELECT pg_advisory_xact_lock(731245, 921035)')
     conn.execute('''CREATE TABLE IF NOT EXISTS btcpay_orders (
       order_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL,

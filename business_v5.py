@@ -8,7 +8,11 @@ def cash(c): return '${:,.2f}'.format(c/100)
 def token(csrf): return '<input type="hidden" name="csrf" value="'+e(csrf)+'">'
 def setup(c):
     import persistent
-    if persistent.REMOTE: c.execute('SELECT pg_advisory_xact_lock(731245, 921037)')
+    # Guard on the connection itself, not the REMOTE flag: the flag
+    # describes the deployment, but setup can be handed a sqlite
+    # connection while the flag is set (tests, the Render build), and the
+    # Postgres-only lock call crashes on sqlite.
+    if isinstance(c, persistent.PgConnection): c.execute('SELECT pg_advisory_xact_lock(731245, 921037)')
     c.execute('''CREATE TABLE IF NOT EXISTS vx5_deals(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,contact_id TEXT NOT NULL,title TEXT NOT NULL,value_cents INTEGER NOT NULL,stage TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS vx5_rules(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,kind TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,created_at INTEGER NOT NULL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS vx5_audit(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,rule_id TEXT NOT NULL,object_id TEXT NOT NULL,event TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(user_id,rule_id,object_id,event))''')
