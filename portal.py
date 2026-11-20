@@ -962,7 +962,7 @@ class Handler(BaseHTTPRequestHandler):
   # everything else defaults to no-store. The extra headers are sent
   # after this block, so a duplicate would go out if we sent both.
   if not any(k.lower()=='cache-control' for k,v in headers):self.send_header('Cache-Control','no-store')
-  self.send_header('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
+  self.send_header('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
   for k,v in headers:self.send_header(k,v)
   self.end_headers();self.wfile.write(b)
  def fail(self,status,message,user=None,csrf=''):
