@@ -41,6 +41,28 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
                     "UPDATE vx_adapter_probe SET id=? WHERE id=?", (11, 10)
                 ).rowcount, 1)
 
+    def test_analytics_summary_on_postgres(self):
+        """Validate the production analytics query and iteration path."""
+        import persistent
+        import site_stats
+        from unittest.mock import patch
+        with patch.object(persistent, 'DATABASE_URL', TEST_URL):
+            with persistent.PgConnection() as adapter:
+                # A temporary table shadows the real analytics table so this
+                # integration test cannot change any persistent analytics.
+                adapter.execute(
+                    "CREATE TEMP TABLE site_events "
+                    "(created INTEGER NOT NULL, event TEXT NOT NULL, detail TEXT NOT NULL)"
+                )
+                adapter.execute(
+                    "INSERT INTO site_events(created,event,detail) VALUES (?,?,?)",
+                    (2000000000, 'landing_view', 'ci')
+                )
+                totals, daily, recent = site_stats.summary(adapter, days=36500)
+                self.assertEqual(totals['landing_view'], 1)
+                self.assertEqual(recent[0][1], 'landing_view')
+                self.assertTrue(daily)
+
     def test_insert_read_update_and_delete(self):
         from sql_params import translate_qmark
         self.conn.execute(translate_qmark(
