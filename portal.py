@@ -942,9 +942,8 @@ class Handler(BaseHTTPRequestHandler):
    if os.getenv('VELXTRIA_DEPLOYMENT_MODE') != 'render-preview':
     return self.respond(404,'Not found','text/plain')
    try:
-    import verify_database, verify_storage
-    ready = (verify_database.check() == 'connected' and
-             verify_storage.check() == 'connected')
+    import verify_readiness
+    ready = verify_readiness.check()
    except Exception:
     ready = False
    return self.respond(200 if ready else 503,
