@@ -24,6 +24,23 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         self.conn.rollback()
         self.conn.close()
 
+    def test_real_adapter_iteration_and_rowcount(self):
+        """Exercise the actual PgConnection wrapper, not only psycopg."""
+        import persistent
+        from unittest.mock import patch
+        with patch.object(persistent, 'DATABASE_URL', TEST_URL):
+            with persistent.PgConnection() as adapter:
+                adapter.execute("CREATE TEMP TABLE vx_adapter_probe (id INTEGER PRIMARY KEY)")
+                self.assertEqual(adapter.execute(
+                    "INSERT INTO vx_adapter_probe (id) VALUES (?)", (10,)
+                ).rowcount, 1)
+                self.assertEqual(list(adapter.execute(
+                    "SELECT id FROM vx_adapter_probe WHERE id=?", (10,)
+                )), [(10,)])
+                self.assertEqual(adapter.execute(
+                    "UPDATE vx_adapter_probe SET id=? WHERE id=?", (11, 10)
+                ).rowcount, 1)
+
     def test_insert_read_update_and_delete(self):
         from sql_params import translate_qmark
         self.conn.execute(translate_qmark(
