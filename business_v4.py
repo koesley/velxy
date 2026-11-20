@@ -4,7 +4,13 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 
 def e(v): return html.escape(str(v), quote=True)
-def money(cents): return f'${cents/100:,.2f}'
+def money(cents):
+    # Format integer cents exactly; floating-point conversion can lose pennies
+    # once portfolio totals grow beyond binary float's exact integer range.
+    cents=int(cents)
+    sign='-' if cents<0 else ''
+    whole, remainder=divmod(abs(cents),100)
+    return f'${sign}{whole:,}.{remainder:02d}'
 def amount_cents(raw):
     try:
         d=Decimal(str(raw))
