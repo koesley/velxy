@@ -89,6 +89,10 @@ def connect(local_db):
     return c
 
 
+class StorageObjectNotFound(FileNotFoundError):
+    """The storage provider explicitly returned HTTP 404 for an object."""
+
+
 def _request(method, path, payload=None):
     if not (URL and KEY):
         raise RuntimeError('Supabase Storage is not configured')
@@ -122,6 +126,8 @@ def _request(method, path, payload=None):
             return response.read()
 
     except urllib.error.HTTPError as e:
+        if e.code == 404 and method == 'GET':
+            raise StorageObjectNotFound('Private report object not found') from None
         # Show the actual Supabase error, without exposing
         # credentials, authorization headers, or the request URL.
         details = e.read().decode(
