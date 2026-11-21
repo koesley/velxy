@@ -6,6 +6,13 @@ import launchpad_v27
 
 def esc(value): return html.escape(str(value),quote=True)
 
+# Only local, reviewed destinations may be emitted into dashboard links.
+SAFE_ROUTES=frozenset(('/genesis-prime','/oracle','/autonomy','/nexus-intelligence','/launchpad','/foundation','/integration'))
+def route_url(path,wid):
+ if path not in SAFE_ROUTES:raise ValueError('Unsupported dashboard destination')
+ from urllib.parse import urlencode
+ return esc(path+'?'+urlencode({'w':str(wid)}))
+
 TOOLS=[('Applications','Build and publish business applications','/genesis-prime','01'),('AI Oracle','Ask evidence-based questions about records','/oracle','02'),('Automation','Review rules and approved actions','/autonomy','03'),('Strategy Center','Create goals and evaluate proposals','/nexus-intelligence','04'),('Customer Pilots','Track onboarding and feedback','/launchpad','05'),('Data Protection','Check integrity and create backups','/foundation','06'),('Integration Journey','Follow setup through customer feedback','/integration','07')]
 
 def dashboard(c,uid,wid=''):
@@ -23,10 +30,10 @@ def dashboard(c,uid,wid=''):
  pending=[(label,url) for label,ok,url in checks if not ok]
  if pending:
   next_label,next_url=pending[0]
-  next_step=('<section class="asc-next" aria-labelledby="asc-next-title"><div><span class="asc-kicker">RECOMMENDED NEXT ACTION</span><h2 id="asc-next-title">'+esc(next_label)+'</h2><p>This onboarding requirement has no qualifying saved evidence yet. Open the relevant tool to complete it.</p></div><a class="asc-primary" href="'+next_url+'?w='+esc(wid)+'">Continue setup ↗</a></section>')
+  next_step=('<section class="asc-next" aria-labelledby="asc-next-title"><div><span class="asc-kicker">RECOMMENDED NEXT ACTION</span><h2 id="asc-next-title">'+esc(next_label)+'</h2><p>This onboarding requirement has no qualifying saved evidence yet. Open the relevant tool to complete it.</p></div><a class="asc-primary" href="'+route_url(next_url,wid)+'">Continue setup ↗</a></section>')
  else:
   next_step=('<section class="asc-next" aria-labelledby="asc-next-title"><div><span class="asc-kicker">ONBOARDING MILESTONE</span><h2 id="asc-next-title">Workspace checklist complete</h2><p>All three saved-data requirements are met. Review pilot feedback before treating the workspace as customer-ready.</p></div><a class="asc-primary" href="/launchpad?w='+esc(wid)+'">Review customer pilots ↗</a></section>')
- steps=''.join('<li><span aria-hidden="true">'+('✓' if ok else '○')+'</span><div><strong>'+esc(label)+'</strong><a href="'+url+'?w='+esc(wid)+'">'+('Review' if ok else 'Get started')+' →</a></div></li>' for label,ok,url in checks)
+ steps=''.join('<li><span aria-hidden="true">'+('✓' if ok else '○')+'</span><div><strong>'+esc(label)+'</strong><a href="'+route_url(url,wid)+'">'+('Review' if ok else 'Get started')+' →</a></div></li>' for label,ok,url in checks)
  tools=''.join('<a class="asc-tool" href="'+url+'?w='+esc(wid)+'"><span class="asc-number">'+num+'</span><strong>'+esc(label)+'</strong><small>'+esc(desc)+'</small><span class="asc-arrow" aria-hidden="true">↗</span></a>' for label,desc,url,num in TOOLS)
  return ('<div class="ascension"><section class="asc-hero"><div class="asc-top"><span class="asc-kicker">VELXTRIA / COMMAND OS</span><span class="asc-tag">WORKSPACE INTELLIGENCE</span></div><h1>One workspace.<br><em>Every advantage.</em></h1><p>A focused operating surface for building applications, reviewing intelligence, managing approvals, and tracking readiness. Every metric comes from authorized workspace records.</p><a class="asc-primary" href="/genesis-prime?w='+esc(wid)+'">Open application builder ↗</a></section>'
  '<nav class="asc-quicknav" aria-label="Command center sections"><a href="#asc-overview">Overview</a><a href="#asc-toolkit">Capabilities</a><a href="#asc-onboarding">Readiness</a></nav><section id="asc-overview" class="asc-switch"><div><span class="asc-kicker">ACTIVE WORKSPACE</span><h2>'+esc(name)+'</h2></div><form method="get" action="/ascension"><label for="asc-workspace">Switch workspace</label><select id="asc-workspace" name="w">'+opts+'</select><button type="submit">Switch</button></form></section>'
