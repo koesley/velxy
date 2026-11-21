@@ -73,5 +73,5 @@ def panel_html(metrics):
             "customer business value, payment, or retention. Anonymous demo "
             "runs and unsaved results are excluded.</p>"
             "<table><tbody>" + rows + "</tbody></table>" + cohort_html
-            "<p>Older records and late report imports may affect counts. "
+            + "<p>Older records and late report imports may affect counts. "
             "No individual customer information is shown.</p></section>")
