@@ -95,6 +95,17 @@ class AscensionTests(unittest.TestCase):
  def test_evidence_with_untrusted_route_is_rejected(self):
   with patch.object(self.asc.launchpad_v27,'evidence',return_value=[('Untrusted',False,'https://evil.example')]):
    with self.assertRaises(ValueError):self.asc.dashboard(self.c,1,self.w1)
+ def test_every_navigation_link_encodes_workspace(self):
+  from unittest.mock import patch
+  wid='alpha&evil="onmouseover'
+  original=self.w1
+  with patch.object(self.asc.foundation_v26,'workspaces',return_value=[(wid,'Unsafe name')]), patch.object(self.asc.empire_v19,'role',return_value='owner'), patch.object(self.asc.foundation_v26,'overview',return_value={}), patch.object(self.asc.launchpad_v27,'evidence',return_value=[('Done',True,'/genesis-prime')]):
+   # The dashboard's pilot queries remain scoped to this artificial workspace.
+   page=self.asc.dashboard(self.c,1,wid)
+  self.assertNotIn('w='+wid,page)
+  self.assertIn('w=alpha%26evil%3D%22onmouseover',page)
+  self.assertNotIn('href="/launchpad?w=alpha&',page)
+  self.assertNotIn('href="/genesis-prime?w=alpha&',page)
  def test_pilot_outcomes_are_real_and_workspace_scoped(self):
   import launchpad_v27
   pid=launchpad_v27.create(self.c,1,self.w1,'Alpha customer trial')
