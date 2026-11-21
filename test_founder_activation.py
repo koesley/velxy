@@ -1,0 +1,80 @@
+"""Regression tests for V61 founder saved-report activation cohorts."""
+import sqlite3
+import unittest
+
+import founder_activation
+
+DAY = 86400
+NOW = 30 * DAY
+
+
+class FounderActivationTests(unittest.TestCase):
+    def setUp(self):
+        self.db = sqlite3.connect(":memory:")
+        self.db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, created INTEGER, role TEXT)")
+        self.db.execute("CREATE TABLE reports (id TEXT, user_id INTEGER, created INTEGER, status TEXT)")
+
+    def tearDown(self):
+        self.db.close()
+
+    def user(self, uid, age_days, role="customer"):
+        self.db.execute("INSERT INTO users VALUES (?,?,?)", (uid, NOW - age_days * DAY, role))
+
+    def report(self, ident, uid, days_ago, status="ready"):
+        self.db.execute("INSERT INTO reports VALUES (?,?,?,?)", (ident, uid, NOW - days_ago * DAY, status))
+
+    def test_mature_and_immature_cohorts(self):
+        self.user(1, 20)
+        self.user(2, 10)
+        self.user(3, 3)
+        self.report("a", 1, 19)
+        self.report("b", 2, 1)
+        self.report("c", 3, 2)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual((m["signup_accounts"], m["mature_seven_day_cohort"],
+                          m["saved_report_within_seven_days"], m["seven_day_rate_pct"]),
+                         (3, 2, 1, 50.0))
+
+    def test_ignores_admin_failed_and_presignup_reports(self):
+        self.user(1, 15)
+        self.user(2, 15, "admin")
+        self.report("bad", 1, 14, "failed")
+        self.report("early", 1, 16)
+        self.report("admin", 2, 14)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["signup_accounts"], 1)
+        self.assertEqual(m["accounts_with_saved_report"], 0)
+
+    def test_multiple_reports_count_once_and_boundary_is_exclusive(self):
+        self.user(1, 10)
+        self.report("at-boundary", 1, 3)
+        self.report("later", 1, 2)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["saved_report_within_seven_days"], 0)
+        self.assertEqual(m["accounts_with_saved_report"], 1)
+
+    def test_no_mature_cohort_is_not_zero_percent(self):
+        self.user(1, 1)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertIsNone(m["seven_day_rate_pct"])
+        self.assertIn("Not available", founder_activation.panel_html(m))
+
+    def test_does_not_expose_customer_identifiers(self):
+        self.user(1, 20)
+        self.report("secret-report-id", 1, 19)
+        html = founder_activation.panel_html(founder_activation.report_activation(self.db, NOW))
+        self.assertNotIn("secret-report-id", html)
+        self.assertIn("not proof of", html.lower())
+
+    def test_future_records_excluded(self):
+        self.db.execute("INSERT INTO users VALUES (?,?,?)", (5, NOW + DAY, "customer"))
+        self.assertEqual(founder_activation.report_activation(self.db, NOW)["signup_accounts"], 0)
+
+    def test_read_only(self):
+        self.user(1, 10)
+        self.db.execute("PRAGMA query_only=ON")
+        self.assertEqual(founder_activation.report_activation(self.db, NOW)["mature_seven_day_cohort"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
