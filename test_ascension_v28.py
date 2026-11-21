@@ -27,6 +27,37 @@ class AscensionTests(unittest.TestCase):
   page=self.asc.dashboard(self.c,1,self.w1)
   self.assertIn('0 of 3 requirements completed',page)
   self.assertIn('aria-valuenow="0"',page)
+ def test_next_action_follows_evidence_order(self):
+  evidence=[('Publish application',False,'/genesis-prime'),('Create record',False,'/genesis-prime'),('Set goal',False,'/nexus-intelligence')]
+  with patch.object(self.asc.launchpad_v27,'evidence',return_value=evidence):
+   page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertIn('RECOMMENDED NEXT ACTION',page)
+  self.assertIn('Publish application',page)
+  self.assertIn('href="/genesis-prime?w='+self.w1+'"',page)
+  evidence[0]=('Publish application',True,'/genesis-prime')
+  with patch.object(self.asc.launchpad_v27,'evidence',return_value=evidence):
+   page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertIn('Create record</h2>',page)
+  self.assertNotIn('Publish application</h2>',page)
+ def test_completed_checklist_does_not_claim_production_ready(self):
+  evidence=[('Published app',True,'/genesis-prime'),('Saved record',True,'/genesis-prime'),('Goal',True,'/nexus-intelligence')]
+  with patch.object(self.asc.launchpad_v27,'evidence',return_value=evidence):
+   page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertIn('Workspace checklist complete',page)
+  self.assertIn('3 of 3 requirements completed',page)
+  self.assertIn('before treating the workspace as customer-ready',page)
+ def test_untrusted_evidence_is_escaped(self):
+  evidence=[('<img src=x onerror=alert(1)>',False,'/genesis-prime')]
+  with patch.object(self.asc.launchpad_v27,'evidence',return_value=evidence):
+   page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertNotIn('<img src=x',page)
+  self.assertIn('&lt;img src=x',page)
+ def test_no_cross_workspace_data_in_action_panel(self):
+  with patch.object(self.asc.launchpad_v27,'evidence',return_value=[('Private Alpha task',False,'/genesis-prime')]):
+   page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertIn('Private Alpha task',page)
+  with self.assertRaises(ValueError):
+   self.asc.dashboard(self.c,1,self.w2)
  def test_no_mutation(self):
   before=self.c.total_changes
   self.asc.dashboard(self.c,1,self.w1)
