@@ -51,6 +51,8 @@ jobs:
             test_verify_database \
             test_verify_storage \
             test_verify_readiness
+      - name: Command center browserless interaction tests
+        run: node test_command_palette_behavior.cjs
       - name: Offline deployment inspection
         run: python deployment_readiness_v43.py
       - name: Boot real HTTP server and verify homepage
