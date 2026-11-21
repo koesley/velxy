@@ -5,7 +5,7 @@ import unittest
 import founder_activation
 
 DAY = 86400
-NOW = 30 * DAY
+NOW = 150 * DAY
 
 
 class FounderActivationTests(unittest.TestCase):
@@ -189,13 +189,13 @@ class FounderActivationTests(unittest.TestCase):
     def test_negative_signup_timestamp_is_excluded_from_all_cohorts(self):
         self.db.execute("INSERT INTO users VALUES (?,?,?)", (1, -1, "customer"))
         self.user(2, 20)
-        self.report("valid", 2, 19)
+        self.report("private-valid-report-token", 2, 19)
         m = founder_activation.report_activation(self.db, NOW)
         self.assertEqual(m["excluded_invalid_timestamp_accounts"], 1)
         self.assertEqual(m["signup_accounts"], 1)
         self.assertEqual(m["mature_seven_day_cohort"], 1)
         self.assertEqual(m["saved_report_within_seven_days"], 1)
-        self.assertNotIn("valid", founder_activation.panel_html(m))
+        self.assertNotIn("private-valid-report-token", founder_activation.panel_html(m))
 
 if __name__ == "__main__":
     unittest.main()
