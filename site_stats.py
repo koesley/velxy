@@ -79,8 +79,8 @@ def summary(conn, days=14):
     {event: count})] for the last `days` days, oldest first. recent:
     [(created, event, detail)] newest first, capped at 50.
     """
-    if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 366:
-        raise ValueError('days must be an integer between 1 and 366')
+    if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 36500:
+        raise ValueError('days must be an integer between 1 and 36500')
     ensure(conn)
     totals = {e: 0 for e in EVENTS}
     for event, n in conn.execute(
