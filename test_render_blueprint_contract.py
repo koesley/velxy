@@ -56,6 +56,28 @@ class RenderBlueprintContractTests(unittest.TestCase):
             + ", ".join(sorted(render_tests - ci_tests)),
         )
 
+    def test_ci_has_release_check_triggers_and_least_privilege(self):
+        workflow = (BLUEPRINT.parent / ".github/workflows/ascension-ci.yml").read_text(
+            encoding="utf-8"
+        )
+        for trigger in ("  push:", "  pull_request:", "  merge_group:", "  workflow_dispatch:"):
+            with self.subTest(trigger=trigger):
+                self.assertIn(trigger, workflow)
+        self.assertIn("    branches: [main]", workflow)
+        self.assertNotIn("    paths:", workflow)
+        self.assertRegex(workflow, r"(?m)^permissions:\\n  contents: read$")
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertIn("cancel-in-progress: true", workflow)
+
+    def test_ci_executes_contract_and_security_suites(self):
+        workflow = (BLUEPRINT.parent / ".github/workflows/ascension-ci.yml").read_text(
+            encoding="utf-8"
+        )
+        for module in ("test_render_blueprint_contract", "test_ascension_v28"):
+            with self.subTest(module=module):
+                self.assertIn("run: python -m unittest -v " + module, workflow)
+        self.assertIn("python -m pip install -r requirements.txt", workflow)
+
     def test_ascension_suite_runs_in_local_mode(self):
         self.assertIsNotNone(self.build)
         self.assertIn(
