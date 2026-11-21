@@ -18,7 +18,8 @@
   links.forEach(([title,url]) => { if (!unique.has(url)) unique.set(url,title); });
   const destinations = Array.from(unique, ([url,title]) => [title,url]);
   // Personal quick-launch stays in this browser; only known navigation paths are used.
-  const STORE = 'vx-command-launch-v1';
+  const scope = document.body.dataset.vxWorkspaceScope || 'guest';
+  const STORE = 'vx-command-launch-v2:' + scope;
   const allowed = new Set(destinations.map(([,url]) => url));
   const readState = () => {
     try {
