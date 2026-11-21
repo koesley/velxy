@@ -21,6 +21,8 @@ class CommandCenterTests(unittest.TestCase):
         self.assertEqual(center.snapshot(self.c,2)["stages"],{})
     def test_reported_money_not_verified(self):
         lid=sales_pipeline.save(self.c,1,{"business":"Example","stage":"proposal"})
+        import time
+        self.c.execute("UPDATE sales_pipeline_leads SET updated_at=? WHERE id=?", (int(time.time())-8*86400, lid))
         aid=asc.action(self.c,1,lid,"stalled_deal","approved")
         asc.action(self.c,1,lid,"stalled_deal","completed","Manual contact")
         recovery.record(self.c,1,aid,"payment_reported","125.50","Customer said paid in email")
