@@ -162,5 +162,40 @@ class FounderActivationTests(unittest.TestCase):
         self.assertIn("not proof of churn", markup)
         self.assertNotIn("private-report-id", markup)
 
+
+    def test_first_week_funnel_reconciles_to_seven_day_activation(self):
+        for uid in range(1, 5):
+            self.user(uid, 20)
+        self.report("instant", 1, 20)
+        self.report("next-day-boundary", 2, 19)
+        self.report("six-days", 3, 14)
+        self.report("late", 4, 12)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["saved_report_within_one_day"], 1)
+        self.assertEqual(m["saved_report_days_one_to_seven"], 2)
+        self.assertEqual(m["saved_report_within_seven_days"], 3)
+        self.assertEqual(m["one_day_rate_pct"], 25.0)
+        self.assertEqual(m["seven_day_lift_pct_points"], 50.0)
+        self.assertEqual(m["seven_day_rate_pct"], 75.0)
+        self.assertIn("percentage points", founder_activation.panel_html(m))
+
+    def test_missing_mature_cohort_has_no_fabricated_funnel_rates(self):
+        self.user(1, 2)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertIsNone(m["one_day_rate_pct"])
+        self.assertIsNone(m["seven_day_lift_pct_points"])
+        self.assertEqual(m["saved_report_days_one_to_seven"], 0)
+
+    def test_negative_signup_timestamp_is_excluded_from_all_cohorts(self):
+        self.db.execute("INSERT INTO users VALUES (?,?,?)", (1, -1, "customer"))
+        self.user(2, 20)
+        self.report("valid", 2, 19)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["excluded_invalid_timestamp_accounts"], 1)
+        self.assertEqual(m["signup_accounts"], 1)
+        self.assertEqual(m["mature_seven_day_cohort"], 1)
+        self.assertEqual(m["saved_report_within_seven_days"], 1)
+        self.assertNotIn("valid", founder_activation.panel_html(m))
+
 if __name__ == "__main__":
     unittest.main()
