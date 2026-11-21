@@ -37,7 +37,9 @@ class CommandSurfaceTests(unittest.TestCase):
 
     def test_personal_quick_launch_is_scoped_and_accessible(self):
         script = (ROOT / "command-palette.js").read_text(encoding="utf-8")
-        self.assertIn("const STORE = 'vx-command-launch-v1'", script)
+        self.assertIn("const STORE = 'vx-command-launch-v2:' + scope", script)
+        self.assertIn("document.body.dataset.vxWorkspaceScope", script)
+        self.assertIn('data-vx-workspace-scope="{escape(str(user[\'id\'])) if user else \'guest\'}"', self.portal)
         self.assertIn("allowed.has(url)", script)
         self.assertIn("localStorage.getItem(STORE)", script)
         self.assertIn("localStorage.setItem(STORE", script)
