@@ -36,6 +36,20 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Compile touched modules and regression tests
         run: python -m py_compile ascension_v28.py test_ascension_v28.py foundation_v26.py launchpad_v27.py empire_v19.py
+      - name: Run production-critical regression suite
+        run: |
+          python -m unittest -v \
+            test_invoice_integrity \
+            test_command_surface \
+            test_http_command_surface \
+            test_site_stats \
+            test_schema_lifecycle \
+            test_pg_adapter \
+            test_sql_params \
+            test_deployment_database_url \
+            test_verify_database \
+            test_verify_storage \
+            test_verify_readiness
       - name: Verify deployment safety contract
         run: python -m unittest -v test_render_blueprint_contract
       - name: Execute Ascension regression suite
