@@ -31,8 +31,8 @@ def setup(conn):
 
 def record(conn, email, share_token, now=None):
     """Record a demo-report email request. Returns True when this is a
-    new (email, demo) pair under the daily cap and the email should be
-    sent; False when it is a duplicate or the address is over its cap."""
+    new (email, demo) pair under all three daily caps and the email should
+    be sent; False for duplicates or exhausted budgets."""
     setup(conn)
     email = email.strip().lower()
     if not email or not share_token:
