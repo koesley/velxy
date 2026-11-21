@@ -83,7 +83,8 @@ class DemoLeadUnitTests(unittest.TestCase):
         self.assertIn('$350.00', body)
         self.assertIn('Window Cleaning', body)
         self.assertIn('https://example.test/demo/tok1', body)
-        self.assertIn('https://example.test/register', body)
+        self.assertIn('https://example.test/login', body)
+        self.assertIn('create your free account directly from that page', body)
         self.assertNotIn('X-001', body)
         self.assertNotIn('Secret Customer', body)
 
@@ -206,7 +207,7 @@ class DemoEmailFlowTests(unittest.TestCase):
         self.assertIn('/demo/' + token, mail_body)
         self.assertIn('$350.00', mail_body)
         self.assertIn('Window Cleaning', mail_body)
-        self.assertIn('/register', mail_body)
+        self.assertIn('create your free account directly from that page', mail_body)
         self.assertNotIn('X-001', mail_body)
         self.assertNotIn('Secret Customer', mail_body)
         self.assertEqual(self.lead_rows(email), [(token,)])
