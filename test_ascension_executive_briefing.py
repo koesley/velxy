@@ -22,8 +22,9 @@ class ExecutiveBriefingTests(unittest.TestCase):
         self.assertEqual(briefing.briefing(self.c,1,self.now)["new_leads"],0)
     def test_completed_action_count(self):
         lid=sales_pipeline.save(self.c,1,{"business":"Example","stage":"proposal"})
+        self.c.execute("UPDATE sales_pipeline_leads SET updated_at=? WHERE id=?", (self.now-8*86400, lid))
         asc.action(self.c,1,lid,"stalled_deal","approved")
-        asc.action(self.c,1,lid,"stalled_deal","completed","Called")
+        asc.action(self.c,1,lid,"stalled_deal","completed","Called customer manually")
         self.assertEqual(briefing.briefing(self.c,1,self.now)["completed"],1)
     def test_untrusted_business_not_rendered_as_html(self):
         sales_pipeline.save(self.c,1,{"business":"<script>unsafe</script>","stage":"proposal"})
