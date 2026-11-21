@@ -68,6 +68,41 @@ class AscensionSafetyTests(unittest.TestCase):
             sovereign_ascension.action(self.c, 1, "lead-a", "stalled_deal", "completed",
                                        "Repeated completion attempt")
 
+    def test_decision_events_record_approval_and_completion(self):
+        action_id=sovereign_ascension.action(
+            self.c, 1, "lead-a", "stalled_deal", "approved", "Review next steps")
+        sovereign_ascension.action(
+            self.c, 1, "lead-a", "stalled_deal", "completed",
+            "Reviewed the customer response")
+        events=self.c.execute(
+            "SELECT event_type,note,action_id FROM ascension_action_events "
+            "WHERE owner_id=? ORDER BY created_at,id",(1,)).fetchall()
+        self.assertEqual(len(events),2)
+        self.assertEqual({event[0] for event in events},{"approved","completed"})
+        self.assertTrue(all(event[2]==action_id for event in events))
+        page=sovereign_ascension.dashboard(self.c,1,"csrf")
+        self.assertIn("Decision audit trail",page)
+        self.assertIn("Reviewed the customer response",page)
+        self.assertNotIn("Private Beta",page)
+
+    def test_failed_decision_writes_no_audit_event(self):
+        self.c.execute(
+            "INSERT INTO outreach_suppression VALUES (?,?,?,?,?)",
+            (1,"alpha@example.com","do_not_contact","opt out",1))
+        with self.assertRaises(ValueError):
+            sovereign_ascension.action(
+                self.c,1,"lead-a","stalled_deal","approved")
+        self.assertEqual(
+            self.c.execute("SELECT COUNT(*) FROM ascension_action_events").fetchone()[0],0)
+
+    def test_audit_trail_escapes_untrusted_notes(self):
+        sovereign_ascension.action(
+            self.c,1,"lead-a","stalled_deal","dismissed",
+            '<img src=x onerror="alert(1)">')
+        page=sovereign_ascension.dashboard(self.c,1,"csrf")
+        self.assertNotIn('<img src=x',page)
+        self.assertIn('&lt;img src=x',page)
+
     def test_dismissed_signal_cannot_be_approved_later(self):
         sovereign_ascension.action(self.c, 1, "lead-a", "stalled_deal", "dismissed")
         with self.assertRaises(ValueError):
