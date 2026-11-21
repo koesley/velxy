@@ -13,6 +13,7 @@ import license_verification
 import subscriptions
 import site_stats
 import founder_economics
+import founder_activation
 import btcpay_integration
 import btcpay_mainnet
 import referrals
@@ -1251,8 +1252,11 @@ class Handler(BaseHTTPRequestHandler):
    user,csrf,_=self.identity()
    if not user:return self.fail(401,'Please sign in first.')
    if user['role']!='admin':return self.fail(403,'Founder access required.',user,csrf)
-   with db() as c:totals,daily,recent=site_stats.summary(c)
-   return self.respond(200,shell('Founder stats',site_stats.stats_html(totals,daily,recent),user,csrf))
+   with db() as c:
+    totals,daily,recent=site_stats.summary(c)
+    activation=founder_activation.report_activation(c)
+   body=founder_activation.panel_html(activation)+site_stats.stats_html(totals,daily,recent)
+   return self.respond(200,shell('Founder stats',body,user,csrf),headers=[('Cache-Control','no-store'),('Referrer-Policy','no-referrer')])
   if p=='/ascension-workflows':
    auth=self.require()
    if not auth:return
