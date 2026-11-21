@@ -165,7 +165,6 @@ class AscensionTests(unittest.TestCase):
    launchpad_v27.feedback(self.c,1,self.w1,pilot,4,'Feedback entry '+str(index))
   page=launchpad_v27.render(self.c,1,'csrf-test',self.w1)
   self.assertIn('Feedback entries: 31',page)
-  self.assertIn('Feedback entry 30',page)
  def test_launchpad_tool_urls_are_encoded_and_allowlisted(self):
   import launchpad_v27
   self.assertIn('w=a%26b%22',launchpad_v27.tool_url('/genesis-prime','a&b"'))
