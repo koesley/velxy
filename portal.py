@@ -345,6 +345,20 @@ def _csv_table_html(path):
 def _read_csv_rows(path):
  with path.open(encoding='utf-8-sig',newline='') as f:return list(csv.reader(f))
 
+def _read_csv_rows_capped(path,limit):
+ """Read a CSV into list-of-lists, keeping the header plus at most `limit`
+ data rows, so a 20,000-row file cannot bloat the diagnosis on screen."""
+ with path.open(encoding='utf-8-sig',newline='') as f:
+  rows=list(csv.reader(f))
+ return rows[:limit+1]
+
+# How many flagged rows the engine hands back for the on-screen diagnosis
+# (the render shows fewer), and how many clean rows the "cleaned sample"
+# shows. The full lists always stay in the downloaded ZIP.
+DIAGNOSIS_FLAGGED_ENGINE_CAP=25
+DIAGNOSIS_FLAGGED_SHOW=10
+DIAGNOSIS_CLEANED_SHOW=5
+
 def _report_charts_html(monthly_rows, product_rows):
  """Inline SVG revenue charts above the summary tables, or '' when
  neither table has chartable revenue. One helper so the demo result,
@@ -368,6 +382,59 @@ def report_summaries_html(monthly_rows,product_rows,stats):
  return (_report_charts_html(monthly_rows, product_rows)
   +'<div class="v8-sample-tables"><div><h4>Monthly summary</h4>'+_csv_rows_html(monthly_rows)+'</div><div><h4>Product summary</h4>'+_csv_rows_html(product_rows)+'</div></div><p class="v8-sample-stats">'+' · '.join(escape(l) for l in stats)+'</p>')
 
+# rejected_rows.csv columns: Source Line, Order ID, Order Date, Customer,
+# Product, Quantity, Unit Price, Status, Region, Issue(s).
+_FLAGGED_SHOW_IDX=(0,1,3,4,9)
+_FLAGGED_SHOW_HEAD=('Source Line','Order ID','Customer','Product',"What's wrong")
+# cleaned_sales.csv columns: Order ID, Order Date, Customer, Product,
+# Quantity, Unit Price, Status, Region, Revenue.
+_CLEANED_SHOW_IDX=(0,1,2,3,4,5,8)
+
+def report_diagnosis_html(rejected_rows,cleaned_rows,rejected_total,accepted_total):
+ """The "what we found wrong" diagnosis, shown on screen where the report
+ is viewed — the demo result, a saved report, and the landing sample.
+
+ The flagged rows are the engine's smartest output: each one names the
+ exact row and the specific problem (duplicate order ID, invalid date,
+ quantity must be a positive integer...). Until now that detail lived
+ only inside the downloaded ZIP, so a visitor saw the totals but never
+ the proof that the product actually understands their data. Showing it
+ on screen is what makes the demo feel like a diagnostic, not a summary.
+
+ Raw rows are never shown on the public share page — anyone with the link
+ could read a stranger's customer names — so the share page keeps showing
+ only aggregated summaries + charts. This helper is only called where the
+ viewer owns the data: their own demo run, their own saved report, or the
+ fictional landing sample.
+ """
+ out=[]
+ if rejected_rows and len(rejected_rows)>1:
+  body=rejected_rows[1:]
+  counts={}
+  for r in body:
+   if len(r)>9:
+    for issue in r[9].split(';'):
+     issue=issue.strip()
+     if issue:counts[issue]=counts.get(issue,0)+1
+  shown=body[:DIAGNOSIS_FLAGGED_SHOW]
+  rows=[list(_FLAGGED_SHOW_HEAD)]+[[r[i] if i<len(r) else '' for i in _FLAGGED_SHOW_IDX] for r in shown]
+  out.append('<div class="vx-diagnosis"><h4>What we found wrong</h4>')
+  if counts and rejected_total<=len(body):
+   summary=' · '.join(escape(issue)+' ×'+str(n) for issue,n in sorted(counts.items(),key=lambda kv:(-kv[1],kv[0])))
+   out.append('<p class="v8-demo-note">'+summary+'</p>')
+  out.append('<div class="vx-flagged">'+_csv_rows_html(rows)+'</div>')
+  if rejected_total>DIAGNOSIS_FLAGGED_SHOW:
+   out.append('<p class="v8-demo-note">Showing '+str(DIAGNOSIS_FLAGGED_SHOW)+' of '+str(rejected_total)+' flagged rows — the full list is in the ZIP.</p>')
+  out.append('</div>')
+ if cleaned_rows and len(cleaned_rows)>1:
+  body=cleaned_rows[1:DIAGNOSIS_CLEANED_SHOW+1]
+  rows=[['Order ID','Order Date','Customer','Product','Quantity','Unit Price','Revenue']]+[[r[i] if i<len(r) else '' for i in _CLEANED_SHOW_IDX] for r in body]
+  out.append('<div class="vx-diagnosis"><h4>Your data, cleaned</h4>'+_csv_rows_html(rows))
+  if accepted_total>DIAGNOSIS_CLEANED_SHOW:
+   out.append('<p class="v8-demo-note">First '+str(DIAGNOSIS_CLEANED_SHOW)+' of '+str(accepted_total)+' clean rows — the full cleaned file is in the ZIP.</p>')
+  out.append('</div>')
+ return ''.join(out)
+
 def sample_report_html():
  """Render the public sample report with the real report engine.
 
@@ -380,7 +447,7 @@ def sample_report_html():
  _SAMPLE_REPORT_HTML=''
  try:
   report=run_report_engine(SAMPLE_SALES_CSV.encode('utf-8'))
-  _SAMPLE_REPORT_HTML=report_summaries_html(report['monthly_rows'],report['product_rows'],report['stats'])
+  _SAMPLE_REPORT_HTML=report_summaries_html(report['monthly_rows'],report['product_rows'],report['stats'])+report_diagnosis_html(report.get('rejected_rows') or [],report.get('cleaned_rows') or [],report['rejected'],report['accepted'])
  except Exception:
   _SAMPLE_REPORT_HTML=''
  return _SAMPLE_REPORT_HTML
@@ -429,7 +496,7 @@ def run_report_engine(data):
   archive=io.BytesIO()
   with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as z:
    for f in REPORT_FILES:z.write(out/f,arcname=f)
-  return {'zip_bytes':archive.getvalue(),'accepted':accepted,'rejected':rejected,'stats':stats,'monthly_rows':_read_csv_rows(out/'monthly_summary.csv'),'product_rows':_read_csv_rows(out/'product_summary.csv'),'summary':summary}
+  return {'zip_bytes':archive.getvalue(),'accepted':accepted,'rejected':rejected,'stats':stats,'monthly_rows':_read_csv_rows(out/'monthly_summary.csv'),'product_rows':_read_csv_rows(out/'product_summary.csv'),'summary':summary,'rejected_rows':_read_csv_rows_capped(out/'rejected_rows.csv',DIAGNOSIS_FLAGGED_ENGINE_CAP),'cleaned_rows':_read_csv_rows_capped(out/'cleaned_sales.csv',DIAGNOSIS_CLEANED_SHOW)}
 
 # Anonymous demo downloads: ZIP bytes held in memory only, keyed by a random
 # token, expiring after 10 minutes. Nothing is written to disk or the
@@ -639,7 +706,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf=''):
         '<p class="v8-demo-note">Saves as one of your free reports — no re-upload.</p>')
   email_form=''
  else:
-  keep=('<p class="v8-demo-note">Want to keep it? <a href="/register">Create a free account</a> — then claim this report from your dashboard. It stays claimable for 10 minutes.</p>')
+  keep=('<p class="v8-demo-note">Want to keep it? <a href="/register">Create a free account</a> — then claim this report from your dashboard, with the full list of what\'s wrong with your data. It stays claimable for 10 minutes; your download expires then too, but a free account keeps it forever.</p>')
   email_form=''
   if share_token:
    # Anonymous runners vanish after the demo — this is the only chance
@@ -649,6 +716,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf=''):
                '<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>')
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
+  +report_diagnosis_html(result.get('rejected_rows') or [],result.get('cleaned_rows') or [],result['rejected'],result['accepted'])
   +'<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
   +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
   +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>'
@@ -657,7 +725,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf=''):
   +email_form
   +'<p class="v8-demo-note">Ready for more? <a href="/login?next='+nxt+'">Sign in to open PRO billing and checkout</a>. Payment is optional and verified before activation.</p></section></div>')
 
-def report_view_html(row,monthly_rows,product_rows,stats):
+def report_view_html(row,monthly_rows,product_rows,stats,rejected_rows=None,cleaned_rows=None):
  """A saved report, viewed on screen: the same monthly + product summaries
  the demo shows, read back from the stored ZIP so the numbers always match
  the download. row is (id, filename, created, status, accepted, rejected)."""
@@ -665,12 +733,15 @@ def report_view_html(row,monthly_rows,product_rows,stats):
  when=datetime.fromtimestamp(created,timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
  return ('<section class="panel"><h2>Report: '+escape(filename)+'</h2><p>Processed '+escape(when)+' · Status '+escape(status)+' · Accepted '+str(accepted)+' rows · flagged '+str(rejected)+' rows</p>'
   +report_summaries_html(monthly_rows,product_rows,stats)
+  +report_diagnosis_html(rejected_rows or [],cleaned_rows or [],rejected,accepted)
   +'<p><a href="/download?id='+escape(ident)+'">Download ZIP</a> · <a href="/">Back to dashboard</a></p></section>')
 
 def read_report_summaries(zip_bytes):
- """Parse the monthly + product summary tables and headline stats out of a
- stored report ZIP. Raises ValueError on a missing or unreadable file so
- the caller can answer 503, the same as a missing report file."""
+ """Parse the monthly + product summary tables, headline stats, and the
+ diagnosis rows (flagged + cleaned) out of a stored report ZIP. Raises
+ ValueError on a missing or unreadable file so the caller can answer 503,
+ the same as a missing report file. The diagnosis files are optional: an
+ older package without them still renders its summaries."""
  try:
   with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
    names=z.namelist()
@@ -679,10 +750,12 @@ def read_report_summaries(zip_bytes):
    monthly_rows=list(csv.reader(io.StringIO(z.read('monthly_summary.csv').decode('utf-8-sig'))))
    product_rows=list(csv.reader(io.StringIO(z.read('product_summary.csv').decode('utf-8-sig'))))
    summary=z.read('run_summary.txt').decode('utf-8')
+   rejected_rows=list(csv.reader(io.StringIO(z.read('rejected_rows.csv').decode('utf-8-sig'))))[:DIAGNOSIS_FLAGGED_ENGINE_CAP+1] if 'rejected_rows.csv' in names else []
+   cleaned_rows=list(csv.reader(io.StringIO(z.read('cleaned_sales.csv').decode('utf-8-sig'))))[:DIAGNOSIS_CLEANED_SHOW+1] if 'cleaned_sales.csv' in names else []
  except (ValueError,KeyError,zipfile.BadZipFile,UnicodeError) as e:
   raise ValueError('unreadable report package') from e
  stats=[l for l in summary.splitlines() if l.startswith(_SUMMARY_STAT_PREFIXES)]
- return monthly_rows,product_rows,stats
+ return monthly_rows,product_rows,stats,rejected_rows,cleaned_rows
 
 def landing_sample_html():
  sample=sample_report_html()
@@ -3018,9 +3091,9 @@ class Handler(BaseHTTPRequestHandler):
    except (OSError,RuntimeError):return self.fail(503,'Report file temporarily unavailable.',user,csrf)
    if not hmac.compare_digest(hashlib.sha256(report_bytes).hexdigest(),row[6]):
     return self.fail(503,'Report integrity verification failed. Please contact support.',user,csrf)
-   try:monthly_rows,product_rows,stats=read_report_summaries(report_bytes)
+   try:monthly_rows,product_rows,stats,rejected_rows,cleaned_rows=read_report_summaries(report_bytes)
    except ValueError:return self.fail(503,'Report file temporarily unavailable.',user,csrf)
-   return self.respond(200,shell('Report',report_view_html(row[:6],monthly_rows,product_rows,stats),user,csrf),headers=[('Cache-Control','no-store')])
+   return self.respond(200,shell('Report',report_view_html(row[:6],monthly_rows,product_rows,stats,rejected_rows,cleaned_rows),user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
    with db() as c:row=c.execute("SELECT id,digest FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
