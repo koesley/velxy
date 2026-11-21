@@ -53,13 +53,44 @@ class DemoShareUnitTests(unittest.TestCase):
     def test_unknown_token_returns_none(self):
         self.assertIsNone(demo_shares.get(self.conn, 'no-such-token'))
 
-    def test_expired_share_returns_none_and_is_dropped(self):
+    def test_expired_share_returns_none_without_mutating_public_read(self):
         token = demo_shares.create(self.conn, SAMPLE_REPORT)
         self.conn.execute('UPDATE demo_shares SET expires=? WHERE token=?',
                           (int(time.time()) - 1, token))
         self.assertIsNone(demo_shares.get(self.conn, token))
+        self.assertIsNotNone(self.conn.execute(
+            'SELECT 1 FROM demo_shares WHERE token=?', (token,)).fetchone())
+        self.assertEqual(demo_shares.cleanup_expired(self.conn), 1)
         self.assertIsNone(self.conn.execute(
             'SELECT 1 FROM demo_shares WHERE token=?', (token,)).fetchone())
+
+    def test_public_lookup_does_not_write_to_database(self):
+        token = demo_shares.create(self.conn, SAMPLE_REPORT)
+        self.conn.commit()
+        self.conn.execute('PRAGMA query_only=ON')
+        try:
+            self.assertEqual(demo_shares.get(self.conn, token)['accepted'], 2)
+            self.assertIsNone(demo_shares.get(self.conn, 'unknown'))
+        finally:
+            self.conn.execute('PRAGMA query_only=OFF')
+
+    def test_cleanup_is_bounded_and_keeps_active_shares(self):
+        tokens = [demo_shares.create(self.conn, SAMPLE_REPORT) for _ in range(4)]
+        self.conn.execute('UPDATE demo_shares SET expires=? WHERE token IN (?,?,?)',
+                          (int(time.time()) - 1, *tokens[:3]))
+        self.assertEqual(demo_shares.cleanup_expired(self.conn, batch=2), 2)
+        self.assertEqual(demo_shares.cleanup_expired(self.conn, batch=2), 1)
+        self.assertIsNotNone(demo_shares.get(self.conn, tokens[3]))
+
+    def test_rejects_malformed_and_oversized_tokens(self):
+        for token in ('', '../secret', 'a' * 129, None, 42):
+            with self.subTest(token=token):
+                self.assertIsNone(demo_shares.get(self.conn, token))
+
+    def test_cleanup_rejects_unbounded_batches(self):
+        for batch in (0, -1, 1001, '100'):
+            with self.assertRaises(ValueError):
+                demo_shares.cleanup_expired(self.conn, batch=batch)
 
 
 def setUpModule():
