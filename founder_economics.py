@@ -95,10 +95,10 @@ def render(params):
                  '<h3>Assumptions and limitations</h3><ul>' +
                  "".join('<li>' + escape(note) + '</li>' for note in result["assumptions"]) +
                  '</ul>')
-    body += ('<p>V61 activation cohorts are not shown here: aggregate site events do not '
-             'identify individual signup-to-first-value journeys. Displaying a seven-day '
-             'activation rate without authenticated, consent-appropriate event linkage '
-             'would be misleading.</p>'
+    body += ('<p>V61 observed saved-report activation cohorts and early/late drop-off diagnostics '
+             'are available on the founder stats page. These are product milestones, '
+             'not verified payment, retention, or business value. Anonymous site events '
+             'alone cannot establish individual customer journeys.</p>'
              '<p><a href="/founder-stats">Founder event counts</a> · '
              '<a href="/">Dashboard</a></p></section>')
     return body
