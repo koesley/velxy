@@ -18,6 +18,7 @@ import referrals
 import demo_shares
 import demo_leads
 import charts
+import decision_lens
 import trust_pages
 import notifications
 import password_reset
@@ -729,6 +730,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
                '<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>')
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
+  +decision_lens.html_panel(result)
   +report_diagnosis_html(result.get('rejected_rows') or [],result.get('cleaned_rows') or [],result['rejected'],result['accepted'],preview=user is None)
   +('<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows.</p>'
    +'<p class="v8-demo-note">This is a preview — the full list of what is wrong, the full cleaned file and the ZIP download unlock with a free account. No card, no purchase.</p>' if user is None else
@@ -748,6 +750,7 @@ def report_view_html(row,monthly_rows,product_rows,stats,rejected_rows=None,clea
  when=datetime.fromtimestamp(created,timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
  return ('<section class="panel"><h2>Report: '+escape(filename)+'</h2><p>Processed '+escape(when)+' · Status '+escape(status)+' · Accepted '+str(accepted)+' rows · flagged '+str(rejected)+' rows</p>'
   +report_summaries_html(monthly_rows,product_rows,stats)
+  +decision_lens.html_panel({'monthly_rows': monthly_rows, 'product_rows': product_rows, 'accepted': accepted, 'rejected': rejected})
   +report_diagnosis_html(rejected_rows or [],cleaned_rows or [],rejected,accepted)
   +'<p><a href="/download?id='+escape(ident)+'">Download ZIP</a> · <a href="/">Back to dashboard</a></p></section>')
 
