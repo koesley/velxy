@@ -40,7 +40,7 @@ class LandingPageTests(unittest.TestCase):
     def test_public_navigation_is_focused_and_advanced_routes_remain_accessible(self):
         import re
         page = self.portal.shell('Home', self.portal.landing_page())
-        nav = re.search(r'<nav\\b[^>]*class="velx-nav"[^>]*>(.*?)</nav>', page, re.S).group(1)
+        nav = re.search(r'<nav\b[^>]*class="velx-nav"[^>]*>(.*?)</nav>', page, re.S).group(1)
         primary_section = nav.split('<details class="velx-more">', 1)[0]
         primary = re.findall(r'class="velx-primary" href="([^"]+)"', primary_section)
         self.assertEqual(primary, ['/', '/business-os-v59', '/revenue-priority', '/account'])
