@@ -41,10 +41,10 @@ class DemoEmailConversionTests(unittest.TestCase):
 
     def test_untrusted_cells_cannot_inject_new_email_lines(self):
         report = dict(self.shared)
-        report["product_rows"] = [["Name", "Value"], ["bad\\r\\nForged: yes", "x" * 500]]
+        report["product_rows"] = [["Name", "Value"], ["bad\r\nForged: yes", "x" * 500]]
         body = self.render(report)
         self.assertIn("bad  Forged: yes", body)
-        self.assertNotIn("\\r", body)
+        self.assertNotIn("\r", body)
         self.assertNotIn("x" * 300, body)
 
     def test_no_raw_customer_rows_added(self):
