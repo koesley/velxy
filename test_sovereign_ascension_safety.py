@@ -44,6 +44,20 @@ class AscensionSafetyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sovereign_ascension.action(self.c, 1, "lead-a", "stalled_deal", "approved")
 
+    def test_suppressed_lead_has_no_approval_button(self):
+        self.c.execute(
+            "INSERT INTO outreach_suppression VALUES (?,?,?,?,?)",
+            (1,"alpha@example.com","do_not_contact","customer opted out",1))
+        page=sovereign_ascension.dashboard(self.c,1,"csrf")
+        self.assertIn("Approval blocked:",page)
+        self.assertNotIn('value="approved"',page)
+        self.assertIn('value="dismissed"',page)
+
+    def test_clear_lead_retains_approval_option(self):
+        page=sovereign_ascension.dashboard(self.c,1,"csrf")
+        self.assertIn('value="approved"',page)
+        self.assertNotIn("Approval blocked:",page)
+
     def test_suppression_blocks_approval(self):
         self.c.execute(
             "INSERT INTO outreach_suppression VALUES (?,?,?,?,?)",
