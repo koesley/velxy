@@ -10,6 +10,8 @@ class FollowupStudioTests(unittest.TestCase):
         sales_pipeline.setup(self.c)
         asc.setup(self.c)
         self.lead=sales_pipeline.save(self.c,1,{"business":"Example Cafe","email":"hello@example.com","stage":"proposal"})
+        import time
+        self.c.execute("UPDATE sales_pipeline_leads SET updated_at=? WHERE id=?", (int(time.time())-8*86400, self.lead))
         self.action=asc.action(self.c,1,self.lead,"stalled_deal","approved")
     def tearDown(self):
         self.c.close()
