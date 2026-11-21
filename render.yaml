@@ -3,7 +3,7 @@ services:
     name: velxtria-private-preview
     runtime: python
     plan: free
-    buildCommand: "python -m pip install -r requirements.txt && python -m compileall -q . && python -m unittest -q test_invoice_integrity test_command_surface test_http_command_surface test_site_stats test_schema_lifecycle test_pg_adapter test_sql_params test_deployment_database_url test_verify_database test_verify_storage test_verify_readiness && VELXTRIA_LOCAL_STUDIO=1 VELXTRIA_DEPLOYMENT_MODE=local python -m unittest -v test_ascension_v28 && python -m unittest -v test_render_blueprint_contract && python deployment_readiness_v43.py && python smoke_http.py"
+    buildCommand: "python -m pip install -r requirements.txt && python -m compileall -q . && python -m unittest -q test_invoice_integrity test_command_surface test_http_command_surface test_site_stats test_schema_lifecycle test_pg_adapter test_sql_params test_deployment_database_url test_verify_database test_verify_storage test_verify_readiness && VELXTRIA_LOCAL_STUDIO=1 VELXTRIA_DEPLOYMENT_MODE=local python -m unittest -v test_ascension_v28 && python -m unittest -v test_render_blueprint_contract && python -m unittest -v test_sovereign_ascension_safety && python deployment_readiness_v43.py && python smoke_http.py"
     startCommand: "python -u portal.py"
     healthCheckPath: /health/ready
     envVars:
