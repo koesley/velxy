@@ -17,6 +17,25 @@
   const unique = new Map();
   links.forEach(([title,url]) => { if (!unique.has(url)) unique.set(url,title); });
   const destinations = Array.from(unique, ([url,title]) => [title,url]);
+  // Personal quick-launch stays in this browser; only known navigation paths are used.
+  const STORE = 'vx-command-launch-v1';
+  const allowed = new Set(destinations.map(([,url]) => url));
+  const readState = () => {
+    try {
+      const value = JSON.parse(localStorage.getItem(STORE) || '{}');
+      const valid = items => Array.isArray(items) ? [...new Set(items.filter(url =>
+        typeof url === 'string' && allowed.has(url)))].slice(0, 8) : [];
+      return {pinned:valid(value.pinned),recent:valid(value.recent)};
+    } catch (_) { return {pinned:[],recent:[]}; }
+  };
+  let state = readState();
+  const saveState = () => {
+    try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (_) { /* private browsing */ }
+  };
+  if (allowed.has(currentPath)) {
+    state.recent = [currentPath, ...state.recent.filter(url => url !== currentPath)].slice(0, 8);
+    saveState();
+  }
   const openButton = document.getElementById('vx-command-open');
   const dialog = document.getElementById('vx-command-dialog');
   const input = document.getElementById('vx-command-search');
@@ -28,7 +47,8 @@
       .map(([title,url]) => {
         const name = title.toLocaleLowerCase();
         const route = url.toLocaleLowerCase();
-        const score = !q ? 0 : name === q ? 4 : name.startsWith(q) ? 3 :
+        const score = !q ? (state.pinned.includes(url) ? 3 : state.recent.includes(url) ? 2 : 0) :
+          name === q ? 4 : name.startsWith(q) ? 3 :
           name.includes(q) ? 2 : route.includes(q) ? 1 : -1;
         return {title,url,score};
       })
@@ -53,7 +73,27 @@
       detail.textContent = url;
       link.append(label,detail);
       if (index === 0) link.dataset.first = 'true';
-      results.append(link);
+      const row = document.createElement('div');
+      row.className = 'vx-command-item';
+      const pin = document.createElement('button');
+      pin.type = 'button';
+      pin.className = 'vx-command-pin';
+      const pinned = state.pinned.includes(url);
+      pin.textContent = pinned ? '★' : '☆';
+      pin.setAttribute('aria-label', (pinned ? 'Unpin ' : 'Pin ') + title);
+      pin.setAttribute('aria-pressed', String(pinned));
+      pin.title = pinned ? 'Remove from quick launch' : 'Add to quick launch';
+      pin.addEventListener('click', () => {
+        state.pinned = pinned ? state.pinned.filter(item => item !== url) :
+          [url, ...state.pinned.filter(item => item !== url)].slice(0, 8);
+        saveState();
+        render();
+        const next = Array.from(results.querySelectorAll('.vx-command-pin'))
+          .find(button => button.getAttribute('aria-label').endsWith(title));
+        if (next) next.focus();
+      });
+      row.append(link,pin);
+      results.append(row);
     });
   };
   const open = () => {
