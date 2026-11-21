@@ -14,6 +14,7 @@ REQUIRED_TESTS = (
     "test_verify_storage",
     "test_verify_readiness",
     "test_ascension_v28",
+    "test_ascension_recovery_ledger",
 )
 
 class RenderBlueprintContractTests(unittest.TestCase):
