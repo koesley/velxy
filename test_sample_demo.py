@@ -68,6 +68,14 @@ def tearDownModule():
     portal.REPORTS.mkdir(parents=True, exist_ok=True)
 
 
+_EMAIL_N = [0]
+
+
+def _next_email():
+    _EMAIL_N[0] += 1
+    return 'sample-demo-%d@example.com' % _EMAIL_N[0]
+
+
 class SampleDemoTests(unittest.TestCase):
     def setUp(self):
         import portal
@@ -95,10 +103,11 @@ class SampleDemoTests(unittest.TestCase):
         status, headers_out, body = self.request('GET', path, headers=headers)
         return status, headers_out, body.decode('utf-8', 'replace')
 
-    def post_form(self, path, fields):
+    def post_form(self, path, fields, headers=None):
         body = urllib.parse.urlencode(fields).encode()
         return self.request('POST', path, body=body,
-                            content_type='application/x-www-form-urlencoded')
+                            content_type='application/x-www-form-urlencoded',
+                            headers=headers)
 
     def post_multipart(self, path, filename, data):
         boundary = '----testboundary1234'
@@ -110,10 +119,21 @@ class SampleDemoTests(unittest.TestCase):
         return self.request('POST', path, body=head + data + tail,
                             content_type='multipart/form-data; boundary=' + boundary)
 
-    def run_sample_demo(self):
-        status, _, body = self.post_form('/try-sample', {'sample': '1'})
+    def run_sample_demo(self, headers=None):
+        status, _, body = self.post_form('/try-sample', {'sample': '1'}, headers)
         self.assertEqual(status, 200)
         return body.decode('utf-8', 'replace')
+
+    def _signed_in_cookie(self):
+        email = _next_email()
+        status, _, _ = self.post_form('/register', {
+            'email': email, 'password': 'SamplePass123456!'})
+        self.assertEqual(status, 303, 'register failed')
+        status, headers, _ = self.post_form('/login', {
+            'email': email, 'password': 'SamplePass123456!'})
+        self.assertEqual(status, 303, 'login failed')
+        return [p for p in headers.get('Set-Cookie', '').split(',')
+                if 'velxtria_session=' in p][0].split(';')[0]
 
     def test_landing_page_has_one_click_sample_button(self):
         status, _, body = self.get('/')
@@ -127,26 +147,38 @@ class SampleDemoTests(unittest.TestCase):
         # form POST is rejected as "no form data received").
         self.assertIn('name="sample" value="1"', body)
 
-    def test_sample_demo_returns_full_result(self):
+    def test_sample_demo_returns_preview(self):
+        # Anonymous runners get a preview, not the full result: the full
+        # flagged list, the full cleaned file and the ZIP unlock with a
+        # free account (the freemium demo). The preview still proves the
+        # engine works — summaries, charts, issue counts and a taste of
+        # the diagnosis.
         text = self.run_sample_demo()
         self.assertIn('Monthly summary', text)
         self.assertIn('Product summary', text)
         self.assertIn('$800.00', text)
         self.assertIn('Accepted 6 rows', text)
         self.assertIn('flagged 3 rows', text)
-        # Charts and diagnosis render on the sample result too.
+        # Charts and a diagnosis preview render on the sample result too.
         self.assertIn('Revenue by month', text)
         self.assertIn('Revenue by product', text)
         self.assertIn('What we found wrong', text)
         self.assertIn('duplicate order ID', text)
         self.assertIn('Your data, cleaned', text)
-        match = re.search(r'/try-download\?token=([A-Za-z0-9_-]+)', text)
-        self.assertIsNotNone(match, 'result page has no download link')
+        self.assertIn('Showing 2 of 3 flagged rows', text)
+        self.assertIn('unlock with a free account', text)
+        # No ZIP download for an anonymous runner.
+        self.assertNotIn('Download report ZIP', text)
+        # The one-step signup is the unlock.
+        self.assertIn('Save this report to my free account', text)
         match = re.search(r'/demo/([A-Za-z0-9_-]+)', text)
         self.assertIsNotNone(match, 'result page has no share link')
 
-    def test_sample_demo_zip_downloads(self):
-        text = self.run_sample_demo()
+    def test_sample_demo_zip_downloads_signed_in(self):
+        # The ZIP download is behind the free account now, so a signed-in
+        # runner is the one who gets the link.
+        cookie = self._signed_in_cookie()
+        text = self.run_sample_demo(headers={'Cookie': cookie})
         match = re.search(r'/try-download\?token=([A-Za-z0-9_-]+)', text)
         self.assertIsNotNone(match, 'result page has no download link')
         status, headers, zipped = self.request(

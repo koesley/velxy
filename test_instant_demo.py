@@ -163,7 +163,11 @@ class InstantDemoTests(unittest.TestCase):
         self.assertEqual(status, 303)
         self.assertEqual(headers.get('Location'), '/#try')
 
-    def test_demo_generates_report_on_screen(self):
+    def test_demo_generates_preview_on_screen(self):
+        # An anonymous own-file demo shows a preview, not the full result:
+        # the full flagged list, the full cleaned file and the ZIP unlock
+        # with a free account (the freemium demo). The ZIP download itself
+        # is covered by the signed-in test in test_freemium_demo.
         status, _, body = self.post_multipart('/try', 'sales.csv', TEST_CSV)
         self.assertEqual(status, 200)
         text = body.decode('utf-8')
@@ -173,18 +177,11 @@ class InstantDemoTests(unittest.TestCase):
         self.assertIn('Accepted 6 rows', text)
         self.assertIn('flagged 3 rows', text)
         self.assertIn('Window Cleaning', text)
-        match = re.search(r'/try-download\?token=([A-Za-z0-9_-]+)', text)
-        self.assertIsNotNone(match, 'result page has no download link')
-        token = match.group(1)
-        status, headers, zipped = self.request('GET', '/try-download?token=' + token)
-        self.assertEqual(status, 200)
-        self.assertIn('application/zip', headers.get('Content-Type', ''))
-        with zipfile.ZipFile(io.BytesIO(zipped)) as z:
-            self.assertEqual(sorted(z.namelist()), sorted([
-                'cleaned_sales.csv', 'rejected_rows.csv', 'monthly_summary.csv',
-                'product_summary.csv', 'run_summary.txt']))
-            summary = z.read('run_summary.txt').decode('utf-8')
-        self.assertIn('Paid revenue (accepted Paid orders only): $800.00', summary)
+        self.assertIn('Showing 2 of 3 flagged rows', text)
+        self.assertIn('unlock with a free account', text)
+        self.assertNotIn('Download report ZIP', text)
+        # The one-step signup is the unlock, with the YOUR-report copy.
+        self.assertIn('Save your report to my free account', text)
 
     def test_failed_claim_can_restore_demo_until_original_expiry(self):
         import portal
