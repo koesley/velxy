@@ -6,17 +6,31 @@ from unittest.mock import patch
 class AscensionTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory()
-  self.env=patch.dict(os.environ,{'VELXTRIA_DATA_DIR':self.tmp.name,'VELXTRIA_LOCAL_STUDIO':'1','VELXTRIA_DEPLOYMENT_MODE':'local'})
+  # Unset the production database URL too: the Render build runs with
+  # VELXTRIA_DATABASE_URL set, and persistent.REMOTE is computed from it
+  # at import — so portal.db() would connect to PRODUCTION Postgres and
+  # this INSERT of user id 1 would fail with a UniqueViolation (id 1 is a
+  # real account there), failing every test and blocking every deploy.
+  # These tests must run against an isolated temp sqlite file, never prod.
+  self.env=patch.dict(os.environ,{'VELXTRIA_DATA_DIR':self.tmp.name,'VELXTRIA_LOCAL_STUDIO':'1','VELXTRIA_DEPLOYMENT_MODE':'local','VELXTRIA_DATABASE_URL':''})
   self.env.start()
-  import portal,empire_v19,ascension_v28
+  import portal,empire_v19,ascension_v28,persistent
   self.portal=portal;self.empire=empire_v19;self.asc=ascension_v28
   self.old_db=portal.DB
+  self.old_remote=persistent.REMOTE
+  # Belt and braces: persistent may already be imported (by an earlier
+  # test module in the same process), so REMOTE was already computed True
+  # from the real URL. Force it off so portal.db() uses local sqlite.
+  persistent.REMOTE=False
   portal.DB=Path(self.tmp.name)/"portal.sqlite3"
   self.c=portal.db()
   self.c.execute("INSERT INTO users(id,email,salt,pw_hash,role,access,created) VALUES(1,'one@example.test','a','b','customer','demo',0),(2,'two@example.test','a','b','customer','demo',0)")
   self.w1=self.empire.create(self.c,1,'Alpha <Workspace>');self.w2=self.empire.create(self.c,2,'Beta')
   self.c.commit()
- def tearDown(self):self.c.close();self.portal.DB=self.old_db;self.env.stop();self.tmp.cleanup()
+ def tearDown(self):
+  self.c.close();self.portal.DB=self.old_db
+  import persistent;persistent.REMOTE=self.old_remote
+  self.env.stop();self.tmp.cleanup()
  def test_workspace_scoping_and_escaping(self):
   page=self.asc.dashboard(self.c,1,self.w1)
   self.assertIn('Alpha &lt;Workspace&gt;',page)
