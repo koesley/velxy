@@ -44,6 +44,11 @@ def discover(c, owner, at=None):
                     (owner,stale_week,stale_reply)).fetchall()
     existing={(row[0],row[1]) for row in c.execute(
         "SELECT lead_id,kind FROM ascension_actions WHERE owner_id=? AND status IN ('approved','completed','dismissed')",(owner,)).fetchall()}
+    # Read contact restrictions once, avoiding one database round trip per lead.
+    suppressions={str(email or '').strip().lower():status
+                  for email,status in c.execute(
+                      "SELECT email,status FROM outreach_suppression WHERE owner_id=?",
+                      (owner,)).fetchall()}
     items=[]
     for lid,business,email,stage,value,updated in leads:
         days=max(0,(now-int(updated))//86400)
@@ -61,9 +66,7 @@ def discover(c, owner, at=None):
             continue
         if (lid,kind) in existing:
             continue
-        status=c.execute("SELECT status FROM outreach_suppression WHERE owner_id=? AND email=?",
-                         (owner,(email or '').lower())).fetchone()
-        contact_state=status[0] if status else "unverified"
+        contact_state=suppressions.get(str(email or '').strip().lower(),"unverified")
         urgency="high" if days>=14 else "medium"
         score=(30 if urgency=="high" else 15)+(15 if stage in ('proposal','meeting') else 5)+min(days,30)
         items.append(dict(lead_id=lid,business=business,kind=kind,days=days,
