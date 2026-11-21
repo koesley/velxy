@@ -76,5 +76,42 @@ class FounderActivationTests(unittest.TestCase):
         self.assertEqual(founder_activation.report_activation(self.db, NOW)["mature_seven_day_cohort"], 1)
 
 
+    def test_weekly_cohorts_count_only_mature_signups(self):
+        self.user(1, 20)
+        self.user(2, 19)
+        self.user(3, 2)
+        self.report("first", 1, 19)
+        self.report("late", 2, 1)
+        self.report("young", 3, 1)
+        result = founder_activation.report_activation(self.db, NOW)
+        weeks = result["weekly_cohorts"]
+        self.assertEqual(sum(row[1] for row in weeks), 2)
+        self.assertEqual(sum(row[2] for row in weeks), 1)
+        self.assertNotIn("young", founder_activation.panel_html(result))
+
+    def test_weekly_cohorts_exclude_admin_and_failed_reports(self):
+        self.user(1, 21)
+        self.user(2, 21, "admin")
+        self.report("failed", 1, 20, "failed")
+        self.report("admin", 2, 20)
+        result = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(sum(row[1] for row in result["weekly_cohorts"]), 1)
+        self.assertEqual(sum(row[2] for row in result["weekly_cohorts"]), 0)
+        self.assertIn("Not activated does not mean churned", founder_activation.panel_html(result))
+
+    def test_weekly_cohorts_are_bounded_to_eight(self):
+        for uid in range(1, 15):
+            self.user(uid, 8 + uid * 7)
+        result = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(len(result["weekly_cohorts"]), 8)
+        self.assertEqual(result["mature_seven_day_cohort"], 14)
+        self.assertEqual(list(result["weekly_cohorts"]), sorted(result["weekly_cohorts"], reverse=True))
+
+    def test_weekly_cohorts_no_mature_signups(self):
+        self.user(1, 1)
+        result = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(result["weekly_cohorts"], ())
+        self.assertIn("No mature signup weeks", founder_activation.panel_html(result))
+
 if __name__ == "__main__":
     unittest.main()
