@@ -225,9 +225,15 @@ class DemoSignupTests(unittest.TestCase):
             headers={'Cookie': session})
         self.assertEqual(status, 303)
         self.assertTrue(claim_headers.get('Location', '').startswith('/report?id='))
+        # Count only this test's user: the reports table is shared across
+        # test modules (portal.DATA_ROOT is fixed at first import), so a
+        # bare count(*) would see other modules' reports.
         with self.portal.db() as c:
+            user_id = c.execute(
+                'SELECT id FROM users WHERE email=?', (email,)).fetchone()[0]
             self.assertEqual(
-                c.execute('SELECT count(*) FROM reports').fetchone()[0], 1)
+                c.execute('SELECT count(*) FROM reports WHERE user_id=?',
+                          (user_id,)).fetchone()[0], 1)
 
 
 if __name__ == '__main__':

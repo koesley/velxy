@@ -182,17 +182,22 @@ def send_mail(recipient, subject, body, attachment=None):
         smtp.send_message(msg)
 
 
-def queue(conn, recipient, subject, body, kind, dedupe_key=None, user_id=None):
+def queue(conn, recipient, subject, body, kind, dedupe_key=None, user_id=None,
+          send_at=None):
     """Queue an email. With a dedupe_key, a second queue for the same key
-    is a no-op. Returns True when a row was queued."""
+    is a no-op. Returns True when a row was queued. send_at is a Unix
+    timestamp for a scheduled send; the delivery worker only picks a row
+    up once its next_attempt has arrived, so a future send_at makes this
+    a scheduled follow-up instead of an immediate send."""
     setup(conn)
+    due = int(time.time()) if send_at is None else int(send_at)
     cur = conn.execute(
         'INSERT INTO email_outbox'
         '(id,user_id,recipient,subject,body,kind,dedupe_key,status,next_attempt,created)'
         ' VALUES (?,?,?,?,?,?,?,?,?,?)'
         ' ON CONFLICT(dedupe_key) DO NOTHING',
         (secrets.token_hex(16), user_id, recipient, subject, body, kind,
-         dedupe_key, 'queued', int(time.time()), int(time.time())))
+         dedupe_key, 'queued', due, int(time.time())))
     claimed = cur.cursor.rowcount if hasattr(cur, 'cursor') else cur.rowcount
     return claimed == 1
 
