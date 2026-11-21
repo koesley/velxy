@@ -19,11 +19,18 @@ def dashboard(c,uid,wid=''):
  cards=''.join('<article class="asc-metric"><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong></article>' for label,value in counts.items())
  checks=launchpad_v27.evidence(c,wid)
  done=sum(bool(ok) for _,ok,_ in checks)
+ # Prioritize the first unmet, evidence-backed milestone; never imply automated execution.
+ pending=[(label,url) for label,ok,url in checks if not ok]
+ if pending:
+  next_label,next_url=pending[0]
+  next_step=('<section class="asc-next" aria-labelledby="asc-next-title"><div><span class="asc-kicker">RECOMMENDED NEXT ACTION</span><h2 id="asc-next-title">'+esc(next_label)+'</h2><p>This onboarding requirement has no qualifying saved evidence yet. Open the relevant tool to complete it.</p></div><a class="asc-primary" href="'+next_url+'?w='+esc(wid)+'">Continue setup ↗</a></section>')
+ else:
+  next_step=('<section class="asc-next" aria-labelledby="asc-next-title"><div><span class="asc-kicker">ONBOARDING MILESTONE</span><h2 id="asc-next-title">Workspace checklist complete</h2><p>All three saved-data requirements are met. Review pilot feedback before treating the workspace as customer-ready.</p></div><a class="asc-primary" href="/launchpad?w='+esc(wid)+'">Review customer pilots ↗</a></section>')
  steps=''.join('<li><span aria-hidden="true">'+('✓' if ok else '○')+'</span><div><strong>'+esc(label)+'</strong><a href="'+url+'?w='+esc(wid)+'">'+('Review' if ok else 'Get started')+' →</a></div></li>' for label,ok,url in checks)
  tools=''.join('<a class="asc-tool" href="'+url+'?w='+esc(wid)+'"><span class="asc-number">'+num+'</span><strong>'+esc(label)+'</strong><small>'+esc(desc)+'</small><span class="asc-arrow" aria-hidden="true">↗</span></a>' for label,desc,url,num in TOOLS)
  return ('<div class="ascension"><section class="asc-hero"><div class="asc-top"><span class="asc-kicker">VELXTRIA / COMMAND OS</span><span class="asc-tag">WORKSPACE INTELLIGENCE</span></div><h1>One workspace.<br><em>Every advantage.</em></h1><p>A focused operating surface for building applications, reviewing intelligence, managing approvals, and tracking readiness. Every metric comes from authorized workspace records.</p><a class="asc-primary" href="/genesis-prime?w='+esc(wid)+'">Open application builder ↗</a></section>'
  '<nav class="asc-quicknav" aria-label="Command center sections"><a href="#asc-overview">Overview</a><a href="#asc-toolkit">Capabilities</a><a href="#asc-onboarding">Readiness</a></nav><section id="asc-overview" class="asc-switch"><div><span class="asc-kicker">ACTIVE WORKSPACE</span><h2>'+esc(name)+'</h2></div><form method="get" action="/ascension"><label for="asc-workspace">Switch workspace</label><select id="asc-workspace" name="w">'+opts+'</select><button type="submit">Switch</button></form></section>'
- '<section aria-label="Workspace metrics" class="asc-metrics">'+cards+'</section>'
+ '<section aria-label="Workspace metrics" class="asc-metrics">'+cards+'</section>'+next_step
  '<section class="asc-columns"><div id="asc-toolkit" class="asc-panel"><div class="asc-sectionhead"><div><span class="asc-kicker">YOUR TOOLKIT</span><h2>Everything in one place</h2></div></div><div class="asc-tools">'+tools+'</div></div>'
  '<aside id="asc-onboarding" class="asc-panel"><span class="asc-kicker">GETTING STARTED</span><h2>Onboarding progress</h2><p>'+str(done)+' of '+str(len(checks))+' requirements completed</p><div class="asc-track" role="progressbar" aria-valuemin="0" aria-valuemax="'+str(len(checks))+'" aria-valuenow="'+str(done)+'" aria-label="Onboarding steps completed"><span style="width:'+str(int(100*done/max(1,len(checks))))+'%"></span></div><ol class="asc-steps">'+steps+'</ol><a class="asc-secondary" href="/launchpad?w='+esc(wid)+'">Open pilot launchpad ↗</a></aside></section>'
  '<section class="asc-footnote">Counts are derived from your authorized workspace records. This dashboard does not run automations, change records, or certify production readiness.</section></div>')
@@ -59,4 +66,13 @@ CSS+=r"""
 .ascension .asc-footnote{border-top:1px solid var(--asc-border);margin-top:22px}
 @media(max-width:600px){.ascension .asc-hero{min-height:0}.ascension .asc-hero:after{opacity:.4}.ascension .asc-metric{padding:17px}.ascension .asc-metric strong{font-size:clamp(24px,7vw,35px)}.ascension .asc-panel{padding:18px}.ascension .asc-quicknav a{flex:1;justify-content:center;padding:9px}}
 @media(prefers-reduced-motion:reduce){.ascension .asc-tool{transition:none}.ascension .asc-tool:hover{transform:none}}
+"""
+
+CSS+=r"""
+/* Evidence-based next action: real workspace checklist state, no simulated analytics. */
+.ascension .asc-next{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;padding:24px 28px;margin:0 0 16px;border:1px solid rgba(158,221,232,.27);border-radius:18px;background:linear-gradient(110deg,#14232e,#1d1932 75%)}
+.ascension .asc-next h2{font-size:clamp(20px,2.4vw,28px);margin:8px 0}
+.ascension .asc-next p{font-size:13px;margin:0;max-width:610px}
+.ascension .asc-next .asc-primary{margin:0;white-space:normal;text-align:center}
+@media(max-width:600px){.ascension .asc-next{padding:20px}.ascension .asc-next .asc-primary{width:100%}}
 """
