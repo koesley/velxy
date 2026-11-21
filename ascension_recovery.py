@@ -69,17 +69,16 @@ def dashboard(c,owner,csrf):
         AND NOT EXISTS (SELECT 1 FROM ascension_recovery_outcomes o
                         WHERE o.action_id=a.id AND o.owner_id=a.owner_id)
         ORDER BY a.updated_at DESC LIMIT 100""",(owner,)).fetchall()
-    # Aggregate the entire owner's ledger, not the 100-row history preview.
-    # Keep amounts as integer cents to avoid floating-point money rounding.
+    # Aggregate the complete owner's ledger; the history preview is limited to 100.
     summary=c.execute("""SELECT COUNT(*),
-        COALESCE(SUM(CASE WHEN outcome='payment_reported' THEN amount_cents ELSE 0 END),0),
-        COALESCE(SUM(CASE WHEN outcome='meeting_booked' THEN 1 ELSE 0 END),0),
-        COALESCE(SUM(CASE WHEN outcome='responded' THEN 1 ELSE 0 END),0)
-        FROM ascension_recovery_outcomes WHERE owner_id=?""",(owner,)).fetchone()
+      COALESCE(SUM(CASE WHEN outcome='payment_reported' THEN amount_cents ELSE 0 END),0),
+      COALESCE(SUM(CASE WHEN outcome='meeting_booked' THEN 1 ELSE 0 END),0),
+      COALESCE(SUM(CASE WHEN outcome='responded' THEN 1 ELSE 0 END),0)
+      FROM ascension_recovery_outcomes WHERE owner_id=?""",(owner,)).fetchone()
     total_outcomes,reported,meetings,responses=(int(v or 0) for v in summary)
     reported_display=f"{reported//100:,}.{reported%100:02d}"
     parts=['<section class="hero"><h1>Revenue Recovery Outcomes</h1><p>Track what happened after approved CRM follow-ups. No outbound messages or financial transactions occur here.</p></section>']
-    parts.append('<section class="panel"><h2>Outcome summary</h2><p>'+str(total_outcomes)+' recorded outcomes · 
+    parts.append('<section class="panel"><h2>Outcome summary</h2><p>'+str(total_outcomes)+' recorded outcomes · $'+reported_display+' user-reported payments · '+str(meetings)+' meetings booked · '+str(responses)+' responses recorded</p><p>These amounts are self-reported and are NOT verified payment receipts, independently proven incremental revenue, or guaranteed VELXTRIA attribution.</p></section>')
     parts.append('<section class="panel"><h2>Completed actions awaiting outcomes</h2>')
     if not pending:
         parts.append('<p>No completed actions awaiting outcome entry.</p>')
@@ -87,31 +86,6 @@ def dashboard(c,owner,csrf):
         parts.append('<article><h3>'+esc(business)+'</h3><p>'+esc(kind.replace('_',' '))+'</p><form method="post" action="/ascension-outcome"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><input type="hidden" name="action_id" value="'+esc(action_id)+'"><label>Outcome<select name="outcome"><option value="no_response">No response</option><option value="responded">Responded</option><option value="meeting_booked">Meeting booked</option><option value="deal_won_unverified">Deal won (unverified)</option><option value="payment_reported">Payment reported (unverified)</option></select></label><label>Reported payment USD (only for payment reported)<input name="amount" value="0"></label><label>Evidence / notes<input name="evidence" maxlength="500"></label><button type="submit">Record outcome</button></form></article>')
     parts.append('</section><section class="panel"><h2>Recent outcome history (latest 100)</h2>')
     for outcome,amount,evidence,business in rows:
-        parts.append('<article><strong>'+esc(business)+'</strong> — '+esc(outcome.replace('_',' '))+' · +esc(evidence)+'</p></article>')
-    parts.append('</section>')
-    return ''.join(parts)
-+reported_display+' user-reported payments · '+str(meetings)+' meetings booked · '+str(responses)+' responses recorded</p><p>These amounts are self-reported and are NOT verified payment receipts, independently proven incremental revenue, or guaranteed VELXTRIA attribution.</p></section>')
-    parts.append('<section class="panel"><h2>Completed actions awaiting outcomes</h2>')
-    if not pending:
-        parts.append('<p>No completed actions awaiting outcome entry.</p>')
-    for action_id,business,kind in pending:
-        parts.append('<article><h3>'+esc(business)+'</h3><p>'+esc(kind.replace('_',' '))+'</p><form method="post" action="/ascension-outcome"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><input type="hidden" name="action_id" value="'+esc(action_id)+'"><label>Outcome<select name="outcome"><option value="no_response">No response</option><option value="responded">Responded</option><option value="meeting_booked">Meeting booked</option><option value="deal_won_unverified">Deal won (unverified)</option><option value="payment_reported">Payment reported (unverified)</option></select></label><label>Reported payment USD (only for payment reported)<input name="amount" value="0"></label><label>Evidence / notes<input name="evidence" maxlength="500"></label><button type="submit">Record outcome</button></form></article>')
-    parts.append('</section><section class="panel"><h2>Outcome history</h2>')
-    for outcome,amount,evidence,business in rows:
-        parts.append('<article><strong>'+esc(business)+'</strong> — '+esc(outcome.replace('_',' '))+' · $'+format(amount/100,'.2f')+' reported<p>'+esc(evidence)+'</p></article>')
-    parts.append('</section>')
-    return ''.join(parts)
-+f"{amount//100:,}.{amount%100:02d}"+' reported<p>'+esc(evidence)+'</p></article>')
-    parts.append('</section>')
-    return ''.join(parts)
-+reported_display+' user-reported payments · '+str(meetings)+' meetings booked · '+str(responses)+' responses recorded</p><p>These amounts are self-reported and are NOT verified payment receipts, independently proven incremental revenue, or guaranteed VELXTRIA attribution.</p></section>')
-    parts.append('<section class="panel"><h2>Completed actions awaiting outcomes</h2>')
-    if not pending:
-        parts.append('<p>No completed actions awaiting outcome entry.</p>')
-    for action_id,business,kind in pending:
-        parts.append('<article><h3>'+esc(business)+'</h3><p>'+esc(kind.replace('_',' '))+'</p><form method="post" action="/ascension-outcome"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><input type="hidden" name="action_id" value="'+esc(action_id)+'"><label>Outcome<select name="outcome"><option value="no_response">No response</option><option value="responded">Responded</option><option value="meeting_booked">Meeting booked</option><option value="deal_won_unverified">Deal won (unverified)</option><option value="payment_reported">Payment reported (unverified)</option></select></label><label>Reported payment USD (only for payment reported)<input name="amount" value="0"></label><label>Evidence / notes<input name="evidence" maxlength="500"></label><button type="submit">Record outcome</button></form></article>')
-    parts.append('</section><section class="panel"><h2>Outcome history</h2>')
-    for outcome,amount,evidence,business in rows:
-        parts.append('<article><strong>'+esc(business)+'</strong> — '+esc(outcome.replace('_',' '))+' · $'+format(amount/100,'.2f')+' reported<p>'+esc(evidence)+'</p></article>')
+        parts.append('<article><strong>'+esc(business)+'</strong> — '+esc(outcome.replace('_',' '))+' · $'+f"{amount//100:,}.{amount%100:02d}"+' reported<p>'+esc(evidence)+'</p></article>')
     parts.append('</section>')
     return ''.join(parts)
