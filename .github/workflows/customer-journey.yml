@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'portal.py'
+      - 'decision_lens.py'
+      - 'revenue_scenario_lab.py'
       - 'subscriptions.py'
       - 'persistent.py'
       - 'automate.py'
@@ -12,6 +14,8 @@ on:
       - 'payhip_integration.py'
       - 'requirements.txt'
       - 'test_signup_path.py'
+      - 'test_decision_lens.py'
+      - 'test_revenue_scenario_lab.py'
       - 'test_landing_page.py'
       - 'test_seo.py'
       - 'test_btcpay_mainnet.py'
@@ -34,6 +38,8 @@ on:
   pull_request:
     paths:
       - 'portal.py'
+      - 'decision_lens.py'
+      - 'revenue_scenario_lab.py'
       - 'subscriptions.py'
       - 'persistent.py'
       - 'automate.py'
@@ -75,6 +81,8 @@ jobs:
       - name: Test complete customer conversion journey
         run: |
           python -m unittest -v \
+            test_decision_lens \
+            test_revenue_scenario_lab \
             test_signup_path \
             test_landing_page \
             test_seo \
