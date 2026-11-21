@@ -47,9 +47,9 @@ class RenderBlueprintContractTests(unittest.TestCase):
         )
         render_tests = set()
         for command in commands:
-            render_tests.update(re.findall(r"\\btest_[a-z0-9_]+\\b", command))
+            render_tests.update(re.findall(r"\btest_[a-z0-9_]+\b", command))
         self.assertTrue(render_tests, "No Render regression modules found")
-        ci_tests = set(re.findall(r"\\btest_[a-z0-9_]+\\b", workflow))
+        ci_tests = set(re.findall(r"\btest_[a-z0-9_]+\b", workflow))
         self.assertFalse(
             render_tests - ci_tests,
             "GitHub CI omits Render regression modules: "
