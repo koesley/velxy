@@ -15,6 +15,22 @@ so the cap cannot be probed).
 """
 import time
 
+MAX_EMAIL_ROWS = 25
+MAX_EMAIL_CELL_CHARS = 240
+
+
+def _safe_cell(value):
+    """Keep untrusted CSV-derived summaries readable in plain-text email."""
+    value = str(value).replace('\\r', ' ').replace('\\n', ' ').replace('\\x00', '')
+    return value[:MAX_EMAIL_CELL_CHARS]
+
+
+def _summary_lines(rows):
+    for row in rows[:MAX_EMAIL_ROWS]:
+        yield ' | '.join(_safe_cell(cell) for cell in row)
+    if len(rows) > MAX_EMAIL_ROWS:
+        yield '... %d additional summary rows; view the full report online.' % (len(rows) - MAX_EMAIL_ROWS)
+
 DAILY_CAP = 3
 DAY = 86400
 
@@ -56,25 +72,26 @@ def format_email_body(shared, share_link, site_url):
              '']
     if shared['stats']:
         lines.append('Headline:')
-        lines.extend(shared['stats'])
+        lines.extend(_safe_cell(item) for item in shared['stats'][:MAX_EMAIL_ROWS])
+        if len(shared['stats']) > MAX_EMAIL_ROWS:
+            lines.append('... additional headlines available online.')
         lines.append('')
     if shared['monthly_rows']:
         lines.append('Monthly summary:')
-        for row in shared['monthly_rows']:
-            lines.append(' | '.join(row))
+        lines.extend(_summary_lines(shared['monthly_rows']))
         lines.append('')
     if shared['product_rows']:
         lines.append('Product summary:')
-        for row in shared['product_rows']:
-            lines.append(' | '.join(row))
+        lines.extend(_summary_lines(shared['product_rows']))
         lines.append('')
     lines.append('View it online: ' + share_link)
     lines.append('The link shows only these summaries — never your file or '
                  'a raw row — and works for 30 days.')
     lines.append('')
-    lines.append('Keep your reports: create a free account (3 free reports) '
-                 'at ' + site_url.rstrip('/') + '/register — then claim this '
-                 'demo from your dashboard.')
+    lines.append('Want to keep this report? Open the report link above and ')
+    lines.append('create your free account directly from that page. ')
+    lines.append('Your demo can be saved as part of signup (3 free reports).')
+    lines.append('Already have an account? Sign in at ' + site_url.rstrip('/') + '/login and claim the demo before the link expires.')
     lines.append('')
     lines.append('— VELXTRIA')
     return '\n'.join(lines)
