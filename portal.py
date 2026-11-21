@@ -17,6 +17,7 @@ import btcpay_mainnet
 import referrals
 import demo_shares
 import demo_leads
+import followups
 import ledger
 import charts
 import trust_pages
@@ -3385,6 +3386,10 @@ class Handler(BaseHTTPRequestHandler):
       demo_leads.format_email_body(shared,share_link,site_url),
       'demo_report', dedupe_key='demo-email:'+email+':'+share_token)
      site_stats.record(c,'demo_email_sent',share_token)
+     # Automatic revenue engine: schedule the follow-up sequence that
+     # turns this demo lead into a free account, then PRO. Each step is
+     # a scheduled outbox row, sent by the delivery worker when due.
+     followups.queue_demo_sequence(c,email,share_token,share_link,site_url)
    return self.respond(200,shell('Report on its way','<section class="panel narrow"><h1>Check your email</h1><p>Your demo report is on its way to '+escape(email)+'. It includes the summaries, a link to view it online, and a link to create your free account.</p><p><a href="'+escape(share_link)+'">View the report online</a> · <a href="/register">Create your free account</a></p></section>'))
   if p=='/demo/signup':
    # One-step signup from the demo result page: create the free account
@@ -3844,6 +3849,10 @@ class Handler(BaseHTTPRequestHandler):
     if remaining<=0:
      pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
      site_stats.record(c,'paywall_shown','used='+str(count))
+     # Automatic revenue engine: schedule the PRO upsell sequence for
+     # this free-limit user. Queued once ever per user; the delivery
+     # worker sends each step when it comes due.
+     followups.queue_pro_upsell(c,user['id'],user['email'],btcpay_mainnet.site_url())
      return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
    try:
     ident=self._save_demo_report(user['id'],demo_token)
@@ -3923,6 +3932,10 @@ class Handler(BaseHTTPRequestHandler):
     if remaining<=0:
      pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
      site_stats.record(c,'paywall_shown','used='+str(count))
+     # Automatic revenue engine: schedule the PRO upsell sequence for
+     # this free-limit user. Queued once ever per user; the delivery
+     # worker sends each step when it comes due.
+     followups.queue_pro_upsell(c,user['id'],user['email'],btcpay_mainnet.site_url())
      return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
     data=ledger.to_csv_bytes(c,user['id'])
    ident=secrets.token_hex(16)
@@ -3953,6 +3966,10 @@ class Handler(BaseHTTPRequestHandler):
     if remaining<=0:
      pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
      site_stats.record(c,'paywall_shown','used='+str(count))
+     # Automatic revenue engine: schedule the PRO upsell sequence for
+     # this free-limit user. Queued once ever per user; the delivery
+     # worker sends each step when it comes due.
+     followups.queue_pro_upsell(c,user['id'],user['email'],btcpay_mainnet.site_url())
      return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
    ident=secrets.token_hex(16)
    try:

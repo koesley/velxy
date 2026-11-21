@@ -161,9 +161,13 @@ class DemoEmailFlowTests(unittest.TestCase):
         return body.decode('utf-8', 'replace'), match.group(1)
 
     def outbox_for(self, email):
+        # Only the demo REPORT email: the revenue engine also queues 3
+        # scheduled follow-ups per demo for the same address, and those
+        # are verified separately in test_revenue_engine.
         with self.portal.db() as c:
             return c.execute(
-                'SELECT subject,body,kind FROM email_outbox WHERE recipient=?',
+                'SELECT subject,body,kind FROM email_outbox'
+                " WHERE recipient=? AND kind='demo_report'",
                 (email,)).fetchall()
 
     def lead_rows(self, email):
