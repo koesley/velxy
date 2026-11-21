@@ -35,6 +35,27 @@ class RenderBlueprintContractTests(unittest.TestCase):
         self.assertIn("python smoke_http.py", build)
         self.assertIn("python -m compileall -q .", build)
 
+    def test_ci_runs_all_render_regression_modules(self):
+        workflow = (BLUEPRINT.parent / ".github/workflows/ascension-ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIsNotNone(self.build)
+        build = self.build.group(1)
+        # Extract only the Render unittest commands, not incidental comments.
+        commands = re.findall(
+            r"python -m unittest -(?:q|v) ([^&]+)", build
+        )
+        render_tests = set()
+        for command in commands:
+            render_tests.update(re.findall(r"\\btest_[a-z0-9_]+\\b", command))
+        self.assertTrue(render_tests, "No Render regression modules found")
+        ci_tests = set(re.findall(r"\\btest_[a-z0-9_]+\\b", workflow))
+        self.assertFalse(
+            render_tests - ci_tests,
+            "GitHub CI omits Render regression modules: "
+            + ", ".join(sorted(render_tests - ci_tests)),
+        )
+
     def test_ascension_suite_runs_in_local_mode(self):
         self.assertIsNotNone(self.build)
         self.assertIn(
