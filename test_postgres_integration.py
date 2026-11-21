@@ -31,6 +31,10 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         from unittest.mock import patch
         with patch.object(persistent, 'DATABASE_URL', TEST_URL):
             with persistent.PgConnection() as adapter:
+                # PostgreSQL forbids permanent invoice FKs to temporary users.
+                # This disposable CI database uses a permanent parent fixture.
+                adapter.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
+                adapter.execute("INSERT INTO users(id) VALUES (?)", (1,))
                 adapter.execute(
                     "CREATE TEMP TABLE vx4_invoices "
                     "(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,contact_id TEXT,"

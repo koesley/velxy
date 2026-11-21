@@ -38,7 +38,7 @@ class NextActionsTests(unittest.TestCase):
     def test_completed_action_needs_outcome(self):
         lid=self.lead()
         asc.action(self.c,1,lid,"stalled_deal","approved")
-        asc.action(self.c,1,lid,"stalled_deal","completed","Manual call")
+        asc.action(self.c,1,lid,"stalled_deal","completed","Manual call completed")
         self.assertEqual(engine.recommendations(self.c,1,now=self.now)[0]["state"],"awaiting_outcome")
     def test_html_escaping(self):
         self.lead(business="<script>evil</script>")
