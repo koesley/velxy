@@ -135,7 +135,12 @@ def dashboard(c, owner, csrf):
         parts.append('<p>No aging CRM opportunities detected. Add leads to Sales Pipeline to begin.</p>')
     for item in items[:50]:
         parts.append('<article><h3>'+esc(item['business'])+' — '+esc(item['kind'].replace('_',' ').title())+'</h3><p>Priority: '+esc(item['urgency'])+' · '+esc(item['evidence'])+'</p><p>'+esc(item['recommendation'])+'</p><p>Contact: '+esc(item['contact_state'])+' · Financial impact: '+esc(item['impact'])+'</p><p>'+esc(item['assumption'])+'</p>')
+        blocked=item['contact_state'] in ('do_not_contact','suppress_permanent','suppress_rejected')
+        if blocked:
+            parts.append('<p role="status"><strong>Approval blocked:</strong> this contact is suppressed. The opportunity can be dismissed, but approval will not override contact restrictions.</p>')
         for decision in ('approved','dismissed'):
+            if decision=='approved' and blocked:
+                continue
             parts.append('<form method="post" action="/ascension-action"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><input type="hidden" name="lead_id" value="'+esc(item['lead_id'])+'"><input type="hidden" name="kind" value="'+esc(item['kind'])+'"><input type="hidden" name="decision" value="'+decision+'"><button type="submit">'+decision.title()+'</button></form>')
         parts.append('</article>')
     parts.append('</section><section class="panel"><h2>Approved actions</h2>')
