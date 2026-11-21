@@ -19,6 +19,7 @@ on:
       - 'test_demo_claim.py'
       - 'test_instant_demo.py'
       - 'test_demo_shares.py'
+      - 'customer_journey_gate.py'
       - 'test_paywall_analytics.py'
       - 'test_email_delivery.py'
       - 'test_durable_deployment.py'
@@ -42,6 +43,7 @@ on:
       - 'payhip_integration.py'
       - 'requirements.txt'
       - 'test_*.py'
+      - 'customer_journey_gate.py'
       - '.github/workflows/customer-journey.yml'
   workflow_dispatch:
 permissions:
@@ -89,3 +91,8 @@ jobs:
             test_storage_probe \
             test_report_lifecycle \
             test_report_recovery
+
+      - name: Verify isolated acquisition test runner
+        run: python -m unittest -v test_customer_journey_gate
+      - name: Exercise full freemium demo-to-signup acquisition journey in isolated databases
+        run: python customer_journey_gate.py
