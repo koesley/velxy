@@ -131,6 +131,22 @@ class AscensionTests(unittest.TestCase):
   self.assertIn('1 rating(s) of 2/5 or lower',page)
   self.assertIn('href="/launchpad?w='+self.w1+'"',page)
   self.assertNotIn('Very poor experience',page)
+ def test_customer_risk_outweighs_onboarding_next_action(self):
+  import launchpad_v27
+  pilot=launchpad_v27.create(self.c,1,self.w1,'Priority trial')
+  launchpad_v27.feedback(self.c,1,self.w1,pilot,1,'Unresolved customer issue')
+  page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertIn('PRIORITY CUSTOMER RISK',page)
+  self.assertIn('Review low-rated customer feedback</h2>',page)
+  self.assertNotIn('Published business application</h2>',page)
+  self.assertIn('href="/launchpad?w='+self.w1+'"',page)
+ def test_other_workspace_risk_cannot_change_recommendation(self):
+  import launchpad_v27
+  pilot=launchpad_v27.create(self.c,2,self.w2,'Other trial')
+  launchpad_v27.feedback(self.c,2,self.w2,pilot,1,'Unresolved other issue')
+  page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertNotIn('PRIORITY CUSTOMER RISK',page)
+  self.assertIn('Published business application</h2>',page)
  def test_good_feedback_does_not_trigger_risk_alert(self):
   import launchpad_v27
   pilot=launchpad_v27.create(self.c,1,self.w1,'Alpha trial')
