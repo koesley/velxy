@@ -17,6 +17,7 @@ import btcpay_mainnet
 import referrals
 import demo_shares
 import demo_leads
+import ledger
 import charts
 import trust_pages
 import notifications
@@ -218,6 +219,7 @@ def _initialize_schema(c):
  referrals.setup(c)
  demo_shares.setup(c)
  demo_leads.setup(c)
+ ledger.setup(c)
  notifications.setup(c)
  password_reset.setup(c)
  business_v3.setup(c)
@@ -739,6 +741,55 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
   +keep
   +email_form
   +'<p class="v8-demo-note">Ready for more? <a href="/login?next='+nxt+'">Sign in to open PRO billing and checkout</a>. Payment is optional and verified before activation.</p></section></div>')
+
+def ledger_panel_html(user, csrf):
+ """The Sales Ledger panel on the dashboard: log one sale at a time and
+ watch a live summary of everything logged so far. The summary uses the
+ same monthly + product aggregation as the report engine, so the numbers
+ a user sees here always match the report they generate from the ledger."""
+ with db() as c:
+  count = ledger.count_entries(c, user['id'])
+  if not count:
+   return ('<section class="panel"><h2>Sales Ledger</h2>'
+    '<p>Log each sale as it happens and watch your totals grow — no CSV '
+    'needed. Your ledger stays private to your account.</p>'
+    '<form method="post" action="/ledger/add">'
+    '<input type="hidden" name="csrf" value="' + escape(csrf) + '">'
+    '<label>Order ID<input name="order_id" required maxlength="40"></label>'
+    '<label>Order Date<input name="order_date" placeholder="2026-11-20" required maxlength="10"></label>'
+    '<label>Customer<input name="customer" required maxlength="120"></label>'
+    '<label>Product<input name="product" required maxlength="120"></label>'
+    '<label>Quantity<input name="quantity" inputmode="numeric" required maxlength="10"></label>'
+    '<label>Unit Price<input name="unit_price" inputmode="decimal" placeholder="85.00" required maxlength="20"></label>'
+    '<label>Status<select name="status"><option>Paid</option><option>Pending</option><option>Refunded</option></select></label>'
+    '<label>Region<input name="region" required maxlength="120"></label>'
+    '<button>Log this sale</button></form></section>')
+  monthly_rows, product_rows, stats = ledger.summaries(c, user['id'])
+  recent = ledger.list_entries(c, user['id'], 5)
+ rows = ''.join(
+  '<tr><td>' + escape(r[1]) + '</td><td>' + escape(r[2]) + '</td><td>' + escape(r[3]) + '</td><td>' + escape(r[4]) + '</td><td>' + str(r[5]) + '</td><td>' + escape(r[6]) + '</td><td>' + escape(r[7]) + '</td></tr>'
+  for r in recent)
+ return ('<section class="panel"><h2>Sales Ledger</h2>'
+  '<p>' + str(count) + ' sale' + ('s' if count != 1 else '') + ' logged. Log each sale as it happens — your totals below update with every entry.</p>'
+  + report_summaries_html(monthly_rows, product_rows, stats)
+  + '<div class="scroll"><table><thead><tr><th>Order ID</th><th>Date</th><th>Customer</th><th>Product</th><th>Qty</th><th>Price</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+  '<form method="post" action="/ledger/add">'
+  '<input type="hidden" name="csrf" value="' + escape(csrf) + '">'
+  '<label>Order ID<input name="order_id" required maxlength="40"></label>'
+  '<label>Order Date<input name="order_date" placeholder="2026-11-20" required maxlength="10"></label>'
+  '<label>Customer<input name="customer" required maxlength="120"></label>'
+  '<label>Product<input name="product" required maxlength="120"></label>'
+  '<label>Quantity<input name="quantity" inputmode="numeric" required maxlength="10"></label>'
+  '<label>Unit Price<input name="unit_price" inputmode="decimal" placeholder="85.00" required maxlength="20"></label>'
+  '<label>Status<select name="status"><option>Paid</option><option>Pending</option><option>Refunded</option></select></label>'
+  '<label>Region<input name="region" required maxlength="120"></label>'
+  '<button>Log this sale</button></form>'
+  '<p><form method="post" action="/ledger/report" style="display:inline">'
+  '<input type="hidden" name="csrf" value="' + escape(csrf) + '">'
+  '<button>Generate a report from my ledger</button></form> '
+  '<a href="/ledger.csv">Download my sales as CSV</a></p>'
+  '<p class="v8-demo-note">A ledger report counts as one of your free reports, the same as uploading a CSV.</p></section>')
+
 
 def report_view_html(row,monthly_rows,product_rows,stats,rejected_rows=None,cleaned_rows=None):
  """A saved report, viewed on screen: the same monthly + product summaries
@@ -1666,7 +1717,8 @@ class Handler(BaseHTTPRequestHandler):
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
    limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '3 free reports total'
    upgrade_html=pro_upgrade_html(user,csrf,pending_mainnet) if ent['plan']!='pro' else ''
-   body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section><section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
+   ledger_html=ledger_panel_html(user,csrf)
+   body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section>{ledger_html}<section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
    if os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE: body+='<section class="panel"><h2>Site Studio</h2><a href="/site-studio">Create a company website draft</a></section>'
    body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
    body+=upgrade_html
@@ -3164,6 +3216,11 @@ class Handler(BaseHTTPRequestHandler):
    if not hmac.compare_digest(hashlib.sha256(report_bytes).hexdigest(),row[1]):
     return self.fail(503,'Report integrity verification failed. Please contact support.',user,csrf)
    return self.respond(200,report_bytes,'application/zip',[('Content-Disposition','attachment; filename="VELXTRIA_Report.zip"')])
+  if p=='/ledger.csv':
+   with db() as c:
+    if not ledger.count_entries(c,user['id']):return self.fail(404,'Your ledger is empty — log a sale first.',user,csrf)
+    data=ledger.to_csv_bytes(c,user['id'])
+   return self.respond(200,data,'text/csv',[('Content-Disposition','attachment; filename="VELXTRIA_Ledger.csv"')])
   return self.fail(404,'Page not found.',user,csrf)
  def redirect(self,path,headers=()):return self.respond(303,b'','text/plain',[('Location',path),*headers])
  def post_data(self):
@@ -3846,6 +3903,45 @@ class Handler(BaseHTTPRequestHandler):
      else:raise ValueError('Unknown action')
    except ValueError as e:return self.fail(400,str(e),user,csrf)
    return self.redirect('/')
+  if p=='/ledger/add':
+   # Log one sale into the user's ledger. Entries are validated with the
+   # report engine's own rules, so a ledger can never hold a row the
+   # engine would flag; the order ID must also be unique for this user.
+   try:
+    with db() as c:
+     ledger.add_entry(c,user['id'],fields.get('order_id',''),fields.get('order_date',''),fields.get('customer',''),fields.get('product',''),fields.get('quantity',''),fields.get('unit_price',''),fields.get('status',''),fields.get('region',''))
+   except ValueError as e:return self.fail(400,str(e),user,csrf)
+   return self.redirect('/')
+  if p=='/ledger/report':
+   # Turn the whole ledger into a full report, the same as uploading a
+   # CSV: the ledger is rendered as a CSV in the engine's input schema and
+   # run through the real engine, and the result counts against the same
+   # free allowance as an upload.
+   with db() as c:
+    if not ledger.count_entries(c,user['id']):return self.fail(400,'Your ledger is empty — log a sale first.',user,csrf)
+    ent,count,remaining=subscriptions.usage(c,user['id'])
+    if remaining<=0:
+     pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
+     site_stats.record(c,'paywall_shown','used='+str(count))
+     return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
+    data=ledger.to_csv_bytes(c,user['id'])
+   ident=secrets.token_hex(16)
+   try:
+    report=run_report_engine(data)
+    digest=hashlib.sha256(report['zip_bytes']).hexdigest()
+    begin_report_write(user['id'],ident)
+    store_verified_report(user['id'],ident,report['zip_bytes'])
+    with db() as c:
+     c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],'ledger-'+datetime.now(timezone.utc).strftime('%Y-%m-%d')+'.csv',now(),'ready',report['accepted'],report['rejected'],digest))
+     site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
+     complete_report_write(c,ident,user['id'])
+   except ValueError as e:
+    abandon_report_write(user['id'],ident)
+    return self.fail(422,'Could not process your ledger: '+str(e)[:180],user,csrf)
+   except Exception:
+    abandon_report_write(user['id'],ident)
+    return self.fail(503,'Your report could not be saved right now. Please try again later.',user,csrf)
+   return self.redirect('/report?id='+ident)
   if p!='/upload':return self.fail(404,'Page not found.',user,csrf)
   if not uploaded:return self.fail(400,'Choose a CSV file.',user,csrf)
   filename,data=uploaded
