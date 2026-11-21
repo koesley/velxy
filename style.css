@@ -74,3 +74,12 @@ tbody tr:hover{background:#ffffff09}
 .vx-charts h4{margin:0 0 8px;color:#d4e3f7}
 .vx-chart{width:100%;height:auto;display:block}
 @media(max-width:680px){.vx-charts{grid-template-columns:1fr}}
+
+
+/* Personal command center: pinned shortcuts, recents, and touch-friendly controls. */
+.vx-command-item{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:7px;align-items:stretch}
+.vx-command-item .vx-command-result{min-width:0}
+.vx-command-pin{display:grid!important;place-items:center;min-width:44px;min-height:44px;padding:0!important;border:1px solid #354760!important;border-radius:10px!important;background:#17263c!important;color:#94ddf0!important;font-size:1.45rem!important;box-shadow:none!important;cursor:pointer}
+.vx-command-pin[aria-pressed="true"]{background:#293153!important;color:#ffe49c!important;border-color:#d6ae71!important}
+.vx-command-pin:hover,.vx-command-pin:focus-visible{border-color:#a6e7f3!important;box-shadow:0 0 0 2px #78d6e544!important}
+.vx-command-dialog .vx-command-item:focus-within .vx-command-result{border-color:#84d8e9}
