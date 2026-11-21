@@ -1,16 +1,28 @@
 """Regression tests for opt-in invoice due-soon task workflow."""
 import time
+import sqlite3
 import unittest
 from unittest.mock import patch
 import business_v4
-from test_invoice_integrity import InvoiceIntegrityTests
 
-class DueSoonTaskTests(InvoiceIntegrityTests):
+class DueSoonTaskTests(unittest.TestCase):
     def setUp(self):
-        super().setUp()
+        self.db = sqlite3.connect(":memory:")
+        self.db.execute("PRAGMA foreign_keys=ON")
+        self.db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY)")
+        self.db.execute("INSERT INTO users VALUES (1)")
+        self.db.execute("CREATE TABLE vx3_contacts (id TEXT PRIMARY KEY, user_id INTEGER, name TEXT, stage TEXT, created_at INTEGER)")
+        self.db.execute("CREATE TABLE vx3_entries (id TEXT PRIMARY KEY, user_id INTEGER, kind TEXT, description TEXT, amount_cents INTEGER, created_at INTEGER)")
+        self.db.execute("CREATE TABLE vx3_tasks (id TEXT PRIMARY KEY, user_id INTEGER, title TEXT, status TEXT, created_at INTEGER)")
+        business_v4.setup(self.db)
+        self.db.execute("INSERT INTO vx4_invoices(id,user_id,description,amount_cents,status,due_at,created_at) VALUES (?,?,?,?,?,?,?)",
+                        ("invoice1",1,"Consulting",12500,"issued",2000000000,2000000000))
         self.fixed = 2000000000
         self.today = self.fixed - self.fixed % 86400
         self.db.execute("UPDATE vx4_invoices SET due_at=? WHERE id='invoice1'", (self.today,))
+
+    def tearDown(self):
+        self.db.close()
 
     def run_action(self):
         with patch.object(business_v4.time, "time", return_value=self.fixed):
