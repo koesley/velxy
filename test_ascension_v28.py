@@ -95,6 +95,22 @@ class AscensionTests(unittest.TestCase):
  def test_evidence_with_untrusted_route_is_rejected(self):
   with patch.object(self.asc.launchpad_v27,'evidence',return_value=[('Untrusted',False,'https://evil.example')]):
    with self.assertRaises(ValueError):self.asc.dashboard(self.c,1,self.w1)
+ def test_pilot_outcomes_are_real_and_workspace_scoped(self):
+  import launchpad_v27
+  pid=launchpad_v27.create(self.c,1,self.w1,'Alpha customer trial')
+  launchpad_v27.feedback(self.c,1,self.w1,pid,4,'Useful pilot feedback')
+  other=launchpad_v27.create(self.c,2,self.w2,'Beta customer trial')
+  launchpad_v27.feedback(self.c,2,self.w2,other,1,'Private beta feedback')
+  page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertIn('Real pilot outcomes',page)
+  self.assertIn('Average pilot rating',page)
+  self.assertIn('4.0 / 5',page)
+  self.assertNotIn('1.0 / 5',page)
+  self.assertNotIn('Private beta feedback',page)
+ def test_empty_pilot_outcomes_are_not_invented(self):
+  page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertIn('No ratings yet',page)
+  self.assertIn('Customer pilot outcomes',page)
  def test_no_mutation(self):
   before=self.c.total_changes
   self.asc.dashboard(self.c,1,self.w1)
