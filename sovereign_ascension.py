@@ -17,6 +17,13 @@ def setup(c):
       kind TEXT NOT NULL, status TEXT NOT NULL, note TEXT NOT NULL,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""")
     c.execute("CREATE INDEX IF NOT EXISTS ascension_actions_owner ON ascension_actions(owner_id,lead_id,status)")
+    # Append-only decision evidence. Existing actions are not rewritten on migration.
+    c.execute("""CREATE TABLE IF NOT EXISTS ascension_action_events (
+      id TEXT PRIMARY KEY, owner_id INTEGER NOT NULL, action_id TEXT NOT NULL,
+      lead_id TEXT NOT NULL, kind TEXT NOT NULL, event_type TEXT NOT NULL,
+      note TEXT NOT NULL, created_at INTEGER NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS ascension_events_owner ON ascension_action_events(owner_id,created_at)")
+
 
 def discover(c, owner, at=None):
     """Only report opportunities supported by the owner's existing CRM records."""
@@ -59,6 +66,12 @@ def discover(c, owner, at=None):
                           effort="Manual review required"))
     return sorted(items,key=lambda item:(-item['score'],item['business'].lower()))
 
+def _audit(c,owner,action_id,lead_id,kind,event_type,note,at):
+    c.execute("""INSERT INTO ascension_action_events
+      (id,owner_id,action_id,lead_id,kind,event_type,note,created_at)
+      VALUES (?,?,?,?,?,?,?,?)""",
+      (secrets.token_hex(12),owner,action_id,lead_id,kind,event_type,note,at))
+
 def action(c, owner, lead_id, kind, decision, note=""):
     """Records internal approval only. Never executes an external action."""
     sales_pipeline.setup(c)
@@ -84,6 +97,7 @@ def action(c, owner, lead_id, kind, decision, note=""):
                   (note,int(time.time()),existing[0],owner))
         if updated.rowcount!=1:
             raise ValueError("Action was already completed or changed")
+        _audit(c,owner,existing[0],lead_id,kind,'completed',note,int(time.time()))
         return existing[0]
     # Decisions must apply to a currently actionable CRM signal, not an
     # arbitrary caller-supplied lead/type pair or an already decided item.
@@ -100,8 +114,10 @@ def action(c, owner, lead_id, kind, decision, note=""):
         if state and state[0] in ('do_not_contact','suppress_permanent','suppress_rejected'):
             raise ValueError("Contact suppression blocks approval; review the lead instead")
     ident=secrets.token_hex(12)
+    now=int(time.time())
     c.execute("""INSERT INTO ascension_actions VALUES (?,?,?,?,?,?,?,?)""",
-              (ident,owner,lead_id,kind,decision,note,int(time.time()),int(time.time())))
+              (ident,owner,lead_id,kind,decision,note,now,now))
+    _audit(c,owner,ident,lead_id,kind,decision,note,now)
     return ident
 
 def dashboard(c, owner, csrf):
@@ -126,5 +142,16 @@ def dashboard(c, owner, csrf):
         parts.append('<article><p>'+esc(business)+' — '+esc(kind.replace('_',' '))+'</p><form method="post" action="/ascension-action"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><input type="hidden" name="lead_id" value="'+esc(lid)+'"><input type="hidden" name="kind" value="'+esc(kind)+'"><input type="hidden" name="decision" value="completed"><label>Outcome note<input name="note" maxlength="500" required></label><button type="submit">Mark completed</button></form></article>')
     if not approvals:
         parts.append('<p>No approved actions pending.</p>')
+    parts.append('</section>')
+    events=c.execute("""SELECT e.event_type,e.note,e.created_at,l.business
+      FROM ascension_action_events e JOIN sales_pipeline_leads l
+      ON l.id=e.lead_id AND l.owner_id=e.owner_id
+      WHERE e.owner_id=? ORDER BY e.created_at DESC,e.id DESC LIMIT 50""",(owner,)).fetchall()
+    parts.append('<section class="panel"><h2>Decision audit trail</h2><p>Recorded approvals, dismissals and completions. This history does not imply messages were sent or payments received.</p>')
+    if not events:
+        parts.append('<p>No recorded decisions yet.</p>')
+    for event_type,event_note,created,business in events:
+        parts.append('<article><strong>'+esc(business)+'</strong> · '+esc(event_type.title())+
+                     ' · <time>'+esc(created)+'</time><p>'+esc(event_note or 'No note supplied')+'</p></article>')
     parts.append('</section>')
     return ''.join(parts)
