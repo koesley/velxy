@@ -9,6 +9,10 @@ class WorkflowTests(unittest.TestCase):
     def setUp(self):
         self.c=sqlite3.connect(":memory:")
         self.lead=sales_pipeline.save(self.c,1,{"business":"Example Cafe","email":"hello@example.com","stage":"proposal"})
+        # A newly created proposal is not stalled. Age this synthetic
+        # fixture so it qualifies under the real seven-day eligibility rule.
+        import time
+        self.c.execute("UPDATE sales_pipeline_leads SET updated_at=? WHERE id=?", (int(time.time())-8*86400, self.lead))
         self.action=asc.action(self.c,1,self.lead,"stalled_deal","approved")
     def tearDown(self):self.c.close()
     def test_creation_requires_approval(self):
