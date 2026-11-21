@@ -31,9 +31,17 @@ def discover(c, owner, at=None):
     sales_pipeline.setup(c)
     setup(c)
     now=int(time.time() if at is None else at)
+    # Do not silently ignore actionable records after the first 500 leads.
+    # Filter at the database level, including the minimum age for each stage.
+    stale_week=now-7*86400
+    stale_reply=now-2*86400
     leads=c.execute("""SELECT id,business,email,stage,estimated_value,updated_at
-                       FROM sales_pipeline_leads WHERE owner_id=?
-                       AND stage NOT IN ('won','lost') ORDER BY updated_at ASC LIMIT 500""",(owner,)).fetchall()
+                       FROM sales_pipeline_leads
+                       WHERE owner_id=? AND (
+                         (stage IN ('proposal','meeting','new','contacted') AND updated_at<=?)
+                         OR (stage='replied' AND updated_at<=?)
+                       ) ORDER BY updated_at ASC,id ASC""",
+                    (owner,stale_week,stale_reply)).fetchall()
     existing={(row[0],row[1]) for row in c.execute(
         "SELECT lead_id,kind FROM ascension_actions WHERE owner_id=? AND status IN ('approved','completed','dismissed')",(owner,)).fetchall()}
     items=[]
