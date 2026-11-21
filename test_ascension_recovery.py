@@ -11,6 +11,8 @@ class RecoveryTests(unittest.TestCase):
         asc.setup(self.c)
         recovery.setup(self.c)
         lid=sales_pipeline.save(self.c,1,{"business":"Test Shop","stage":"proposal"})
+        import time
+        self.c.execute("UPDATE sales_pipeline_leads SET updated_at=? WHERE id=?", (int(time.time())-8*86400, lid))
         self.action=asc.action(self.c,1,lid,"stalled_deal","approved")
         asc.action(self.c,1,lid,"stalled_deal","completed","Followed up manually")
     def tearDown(self):
