@@ -173,9 +173,6 @@ class ChartFlowTests(unittest.TestCase):
         self.assertIn('<svg class="vx-chart"', body)
         self.assertIn('Oct 26', body)
         self.assertIn(revenue, body)
-        # Raw row values never appear in the charts or the page.
-        self.assertNotIn('X-001', body)
-        self.assertNotIn('Secret Customer', body)
 
     def test_demo_result_page_has_charts(self):
         body, _ = self.run_demo()
@@ -186,6 +183,12 @@ class ChartFlowTests(unittest.TestCase):
         status, _, body = self.get('/demo/' + token)
         self.assertEqual(status, 200)
         self.assert_charts_present(body)
+        # Raw row values never appear on the public share page: anyone with
+        # the link could read a stranger's customer names. (They DO appear
+        # on the demo result page itself — the on-screen diagnosis shows the
+        # uploader their own rows — and on the fictional landing sample.)
+        self.assertNotIn('X-001', body)
+        self.assertNotIn('Secret Customer', body)
 
     def test_landing_sample_report_has_charts(self):
         status, _, body = self.get('/')

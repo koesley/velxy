@@ -75,6 +75,12 @@ tbody tr:hover{background:#ffffff09}
 .vx-chart{width:100%;height:auto;display:block}
 @media(max-width:680px){.vx-charts{grid-template-columns:1fr}}
 
+/* "What we found wrong" diagnosis on report views (demo result, saved report, landing sample). Never on the public share page. */
+.vx-diagnosis{margin-top:18px}
+.vx-diagnosis h4{margin:0 0 8px;color:#d4e3f7}
+.vx-diagnosis table{width:100%}
+.vx-flagged td:last-child{color:#f0b4b4}
+
 
 /* Personal command center: pinned shortcuts, recents, and touch-friendly controls. */
 .vx-command-item{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:7px;align-items:stretch}
