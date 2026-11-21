@@ -79,19 +79,24 @@ def summary(conn, days=14):
     {event: count})] for the last `days` days, oldest first. recent:
     [(created, event, detail)] newest first, capped at 50.
     """
+    if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 366:
+        raise ValueError('days must be an integer between 1 and 366')
     ensure(conn)
     totals = {e: 0 for e in EVENTS}
     for event, n in conn.execute(
             'SELECT event, count(*) FROM site_events GROUP BY event'):
         if event in totals:
             totals[event] = n
-    since = int(time.time()) - days * 86400
+    # Align the window to complete UTC calendar-day buckets, including today.
+    today = (int(time.time()) // 86400) * 86400
+    since = today - (days - 1) * 86400
+    until = today + 86400
     by_day = {}
     for event, day, n in conn.execute(
             'SELECT event, CAST(created / 86400 AS INTEGER), count(*) FROM site_events '
-            'WHERE created>=? GROUP BY event, CAST(created / 86400 AS INTEGER) '
+            'WHERE created>=? AND created<? GROUP BY event, CAST(created / 86400 AS INTEGER) '
             'ORDER BY CAST(created / 86400 AS INTEGER)',
-            (since,)):
+            (since, until)):
         by_day.setdefault(int(day) * 86400, {})[event] = n
     daily = [(day, by_day[day]) for day in sorted(by_day)]
     recent = conn.execute(
@@ -112,7 +117,9 @@ def stats_html(totals, daily, recent):
         count = totals.get(event, 0)
         conv = ''
         if prev is not None:
-            conv = ('%.1f%%' % (100.0 * count / prev)) if prev else '—'
+            # Counts are events, not linked visitor cohorts. A percentage
+            # would falsely imply a measured person-level conversion rate.
+            conv = '—'
         funnel_rows += ('<tr><td>' + LABELS[event] + '</td><td>' + str(count) +
                         '</td><td>' + conv + '</td></tr>')
         prev = count
@@ -130,9 +137,11 @@ def stats_html(totals, daily, recent):
         '</td><td>' + html.escape(str(LABELS.get(r[1], r[1])), quote=True) +
         '</td><td>' + html.escape(str(r[2] or ''), quote=True) + '</td></tr>'
         for r in recent)
-    return ('<section class="panel"><h2>Funnel</h2><p>All-time counts; '
-            'conversion is against the previous step.</p><table><thead><tr>'
-            '<th>Step</th><th>Count</th><th>Conversion</th></tr></thead><tbody>' +
+    return ('<section class="panel"><h2>Funnel activity</h2><p>All-time event counts, '
+            'not unique visitors or cohort conversions. Steps are not linked '
+            'to individual people; do not interpret their ratios as conversion rates.</p>'
+            '<table><thead><tr><th>Step</th><th>Events</th><th>Conversion</th>'
+            '</tr></thead><tbody>' +
             funnel_rows + '</tbody></table></section>'
             '<section class="panel"><h2>Totals</h2><table><thead><tr>'
             '<th>Event</th><th>All time</th></tr></thead><tbody>' +
