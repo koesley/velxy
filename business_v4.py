@@ -53,6 +53,36 @@ def process(c,uid,fields):
             if due_at<0 or due_at>4102444800: raise ValueError()
         except (ValueError,OverflowError): raise ValueError('Choose a valid due date.')
         c.execute('INSERT INTO vx4_invoices(id,user_id,contact_id,description,amount_cents,due_at,created_at) VALUES (?,?,?,?,?,?,?)',(secrets.token_hex(16),uid,cid,desc,amount_cents(fields.get('amount','')),due_at,int(time.time())))
+    elif action=='invoice_duplicate':
+        # Explicit internal action: reuse an invoice without issuing, sending,
+        # collecting payment, or copying a stale due date.
+        ident=fields.get('id','')
+        source=c.execute(
+            'SELECT contact_id,description,amount_cents FROM vx4_invoices WHERE id=? AND user_id=?',
+            (ident,uid)
+        ).fetchone()
+        if not source: raise ValueError('Invoice not found.')
+        cid,desc,cents=source
+        if cid and not c.execute(
+            'SELECT 1 FROM vx3_contacts WHERE id=? AND user_id=?',(cid,uid)
+        ).fetchone():
+            raise ValueError('Linked customer is no longer available.')
+        if not isinstance(cents,int) or cents<=0 or cents>10000000000:
+            raise ValueError('Source invoice amount is invalid.')
+        # Due date defaults to seven UTC calendar days from now. The owner
+        # must review and issue the new draft explicitly.
+        ts=int(time.time())
+        today=ts-ts%86400
+        new_id=secrets.token_hex(16)
+        c.execute(
+            'INSERT INTO vx4_invoices(id,user_id,contact_id,description,amount_cents,status,due_at,created_at) '
+            'VALUES (?,?,?,?,?,?,?,?)',
+            (new_id,uid,cid,desc,cents,'draft',today+7*86400,ts)
+        )
+        c.execute(
+            'INSERT INTO vx4_events(id,user_id,invoice_id,event_type,created_at) VALUES (?,?,?,?,?)',
+            (secrets.token_hex(16),uid,new_id,'draft_copied',ts)
+        )
     elif action in ('invoice_issue','invoice_pay','invoice_void'):
         ident=fields.get('id','')
         row=c.execute('SELECT contact_id,description,amount_cents,status FROM vx4_invoices WHERE id=? AND user_id=?',(ident,uid)).fetchone()
@@ -177,7 +207,8 @@ def render(c,uid,csrf):
         body+='</table></div>'
     body+='<h3>Due within 7 days</h3><p><strong>'+money(due_soon[1])+'</strong> across '+str(due_soon[0])+' issued invoices. These are not yet overdue.</p>'
     if due_soon_items:
-        body+='<div class="scroll"><table><tr><th>Invoice</th><th>Amount</th><th>Due (UTC)</th></tr>'
+        body+='<p><small>Copy as draft reuses the customer, description, and amount with a new due date seven UTC days ahead. Review before issuing; no message or payment is sent.</small></p>'
+    body+='<div class="scroll"><table><tr><th>Invoice</th><th>Amount</th><th>Due (UTC)</th></tr>'
         for description,cents,due_at in due_soon_items:
             body+='<tr><td>'+e(description)+'</td><td>'+money(cents)+'</td><td>'+datetime.fromtimestamp(due_at,timezone.utc).strftime('%Y-%m-%d')+'</td></tr>'
         body+='</table></div>'
@@ -201,7 +232,7 @@ def render(c,uid,csrf):
     body+='<div class="scroll"><table><tr><th>Invoice</th><th>Amount</th><th>Due (UTC)</th><th>Status</th><th>Actions</th></tr>'
     for ident,cid,desc,cents,status,due in invoices:
         controls=''
-        for action,label,allowed in [('invoice_issue','Issue',status=='draft'),('invoice_pay','Mark paid',status=='issued'),('invoice_void','Void',status in ('draft','issued'))]:
+        for action,label,allowed in [('invoice_duplicate','Copy as draft',True),('invoice_issue','Issue',status=='draft'),('invoice_pay','Mark paid',status=='issued'),('invoice_void','Void',status in ('draft','issued'))]:
             if allowed: controls+='<form method="post" action="/workspace">'+token+'<input type="hidden" name="action" value="'+action+'"><input type="hidden" name="id" value="'+e(ident)+'"><button>'+label+'</button></form>'
         body+='<tr><td>'+e(desc)+'</td><td>'+money(cents)+'</td><td>'+datetime.fromtimestamp(due,timezone.utc).strftime('%Y-%m-%d')+'</td><td>'+e(status)+(' · overdue' if status=='issued' and due<today else '')+'</td><td>'+controls+'</td></tr>'
     body+='</table></div><p><small>Mark paid only after verifying payment outside VELXTRIA. Marking paid records income once and updates linked CRM status. This is not an accounting or payment-processing system.</small></p></section>'
