@@ -16,6 +16,10 @@ so the cap cannot be probed).
 import time
 
 DAILY_CAP = 3
+# Anonymous public form: bound abuse across many recipient addresses and
+# across many different public demo links, not just per recipient.
+SHARE_DAILY_CAP = 25
+SITE_DAILY_CAP = 500
 DAY = 86400
 
 
@@ -27,19 +31,27 @@ def setup(conn):
 
 def record(conn, email, share_token, now=None):
     """Record a demo-report email request. Returns True when this is a
-    new (email, demo) pair under the daily cap and the email should be
-    sent; False when it is a duplicate or the address is over its cap."""
+    new (email, demo) pair under all three daily caps and the email should
+    be sent; False for duplicates or exhausted budgets."""
     setup(conn)
-    now = int(time.time()) if now is None else now
-    row = conn.execute(
-        'SELECT COUNT(*) FROM demo_leads WHERE email=? AND created>?',
-        (email, now - DAY)).fetchone()
-    if row and row[0] >= DAILY_CAP:
+    email = email.strip().lower()
+    if not email or not share_token:
         return False
+    now = int(time.time()) if now is None else int(now)
+    # One SQL statement checks all three budgets and inserts only if eligible.
+    # This is portable to SQLite and PostgreSQL, avoids multiple read/write
+    # round trips, and retains the existing unique-pair idempotency rule.
     cur = conn.execute(
-        'INSERT INTO demo_leads (email, share_token, created) VALUES (?,?,?)'
-        ' ON CONFLICT(email, share_token) DO NOTHING',
-        (email, share_token, now))
+        'INSERT INTO demo_leads (email, share_token, created) '
+        'SELECT ?, ?, ? WHERE '
+        '(SELECT COUNT(*) FROM demo_leads WHERE email=? AND created>?) < ? '
+        'AND (SELECT COUNT(*) FROM demo_leads WHERE share_token=? AND created>?) < ? '
+        'AND (SELECT COUNT(*) FROM demo_leads WHERE created>?) < ? '
+        'ON CONFLICT(email, share_token) DO NOTHING',
+        (email, share_token, now,
+         email, now - DAY, DAILY_CAP,
+         share_token, now - DAY, SHARE_DAILY_CAP,
+         now - DAY, SITE_DAILY_CAP))
     claimed = cur.cursor.rowcount if hasattr(cur, 'cursor') else cur.rowcount
     return claimed == 1
 
