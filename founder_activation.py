@@ -31,8 +31,18 @@ def report_activation(conn, as_of=None):
     first_day = 0
     late_saved = 0
     never_saved = 0
+    invalid_timestamps = 0
+    middle_saved = 0
     for created, first_report in rows:
-        created = int(created)
+        try:
+            created = int(created)
+            first_report = None if first_report is None else int(first_report)
+        except (TypeError, ValueError, OverflowError):
+            invalid_timestamps += 1
+            continue
+        if created < 0 or (first_report is not None and first_report < created):
+            invalid_timestamps += 1
+            continue
         if first_report is not None:
             all_saved += 1
         if created + 7 * SECONDS_PER_DAY <= cutoff:
@@ -41,8 +51,10 @@ def report_activation(conn, as_of=None):
                 never_saved += 1
             elif int(first_report) < created + SECONDS_PER_DAY:
                 first_day += 1
-            elif int(first_report) >= created + 7 * SECONDS_PER_DAY:
+            elif first_report >= created + 7 * SECONDS_PER_DAY:
                 late_saved += 1
+            else:
+                middle_saved += 1
             if first_report is not None and int(first_report) < created + 7 * SECONDS_PER_DAY:
                 converted += 1
             week = (created // (7 * SECONDS_PER_DAY)) * (7 * SECONDS_PER_DAY)
@@ -50,11 +62,15 @@ def report_activation(conn, as_of=None):
             bucket[0] += 1
             bucket[1] += int(first_report is not None and int(first_report) < created + 7 * SECONDS_PER_DAY)
     return {
-        "signup_accounts": len(rows),
+        "signup_accounts": len(rows) - invalid_timestamps,
+        "excluded_invalid_timestamp_accounts": invalid_timestamps,
         "accounts_with_saved_report": all_saved,
         "mature_seven_day_cohort": mature,
         "saved_report_within_seven_days": converted,
         "saved_report_within_one_day": first_day,
+        "saved_report_days_one_to_seven": middle_saved,
+        "one_day_rate_pct": round(100 * first_day / mature, 2) if mature else None,
+        "seven_day_lift_pct_points": round(100 * middle_saved / mature, 2) if mature else None,
         "saved_report_after_seven_days": late_saved,
         "mature_accounts_without_saved_report": never_saved,
         "seven_day_rate_pct": round(100 * converted / mature, 2) if mature else None,
@@ -70,6 +86,10 @@ def panel_html(metrics):
         ("Signups with seven full days of observation", metrics["mature_seven_day_cohort"]),
         ("Mature signups saving a ready report within seven days", metrics["saved_report_within_seven_days"]),
         ("Mature signups saving within 24 hours", metrics["saved_report_within_one_day"]),
+        ("Mature signups first saving between 24 hours and seven days", metrics["saved_report_days_one_to_seven"]),
+        ("24-hour saved-report activation", "Not available (no mature cohort)" if metrics["one_day_rate_pct"] is None else str(metrics["one_day_rate_pct"]) + "%"),
+        ("Additional activation between 24 hours and seven days", "Not available (no mature cohort)" if metrics["seven_day_lift_pct_points"] is None else str(metrics["seven_day_lift_pct_points"]) + " percentage points"),
+        ("Excluded accounts with invalid timestamps", metrics["excluded_invalid_timestamp_accounts"]),
         ("Mature signups first saving after seven days", metrics["saved_report_after_seven_days"]),
         ("Mature signups with no ready saved report observed", metrics["mature_accounts_without_saved_report"]),
         ("Seven-day saved-report activation", "Not available (no mature cohort)" if rate is None else str(rate) + "%"),
@@ -87,7 +107,7 @@ def panel_html(metrics):
             "denominator. This is an observed product milestone, not proof of "
             "customer business value, payment, or retention. Anonymous demo "
             "runs and unsaved results are excluded.</p>"
-            "<p>Diagnostic: compare 24-hour activation with seven-day activation to identify early onboarding friction. Late saves show delayed adoption, while no saved report is an observed missing milestone, not proof of churn. These are descriptive counts, not causal conclusions.</p>"
+            "<p>Diagnostic: compare 24-hour activation with seven-day activation to identify early onboarding friction. The 24-hour-to-seven-day lift isolates customers who reached the milestone later in the first week. Late saves show delayed adoption, while no saved report is an observed missing milestone, not proof of churn. These are descriptive counts, not causal conclusions.</p>"
             "<table><tbody>" + rows + "</tbody></table>" + cohort_html
-            + "<p>Older records and late report imports may affect counts. "
+            + "<p>Older records, malformed timestamps, and late report imports may affect counts. Invalid signup timestamps are excluded rather than treated as customer activity. "
             "No individual customer information is shown.</p></section>")
