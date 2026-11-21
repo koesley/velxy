@@ -118,6 +118,26 @@ class AscensionTests(unittest.TestCase):
   self.assertIn('4.0 / 5',page)
   self.assertNotIn('1.0 / 5',page)
   self.assertNotIn('Private beta feedback',page)
+ def test_low_rating_alert_is_evidence_based_and_tenant_scoped(self):
+  import launchpad_v27
+  alpha=launchpad_v27.create(self.c,1,self.w1,'Alpha trial')
+  beta=launchpad_v27.create(self.c,2,self.w2,'Beta trial')
+  launchpad_v27.feedback(self.c,2,self.w2,beta,1,'Very poor experience')
+  page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertNotIn('Customer feedback needs attention',page)
+  launchpad_v27.feedback(self.c,1,self.w1,alpha,2,'Needs improvement')
+  page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertIn('Customer feedback needs attention',page)
+  self.assertIn('1 rating(s) of 2/5 or lower',page)
+  self.assertIn('href="/launchpad?w='+self.w1+'"',page)
+  self.assertNotIn('Very poor experience',page)
+ def test_good_feedback_does_not_trigger_risk_alert(self):
+  import launchpad_v27
+  pilot=launchpad_v27.create(self.c,1,self.w1,'Alpha trial')
+  launchpad_v27.feedback(self.c,1,self.w1,pilot,5,'Excellent experience')
+  page=self.asc.dashboard(self.c,1,self.w1)
+  self.assertIn('No ratings of 2/5 or lower',page)
+  self.assertNotIn('Customer feedback needs attention',page)
  def test_empty_pilot_outcomes_are_not_invented(self):
   page=self.asc.dashboard(self.c,1,self.w1)
   self.assertIn('No ratings yet',page)
