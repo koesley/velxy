@@ -83,3 +83,7 @@ tbody tr:hover{background:#ffffff09}
 .vx-command-pin[aria-pressed="true"]{background:#293153!important;color:#ffe49c!important;border-color:#d6ae71!important}
 .vx-command-pin:hover,.vx-command-pin:focus-visible{border-color:#a6e7f3!important;box-shadow:0 0 0 2px #78d6e544!important}
 .vx-command-dialog .vx-command-item:focus-within .vx-command-result{border-color:#84d8e9}
+
+
+/* Quick-launch section heading with restrained high-tech typography. */
+.vx-command-section{grid-column:1/-1;margin:2px 0 5px;padding:6px 2px;color:#9fd8ef;font-size:.73rem;font-weight:750;letter-spacing:.12em;text-transform:uppercase}
