@@ -36,6 +36,19 @@ def dashboard(c,uid,wid=''):
  ).fetchone()
  feedback_count=int(feedback_row[0] or 0)
  average_rating=feedback_row[1]
+ # Explicit customer-risk signal: low scores require human review, not auto-action.
+ low_rating_row=c.execute(
+  "SELECT COUNT(*) FROM launchpad_feedback WHERE workspace_id=? AND rating<=2",
+  (wid,),
+ ).fetchone()
+ low_rating_count=int(low_rating_row[0] or 0)
+ if low_rating_count:
+  pilot_alert=('<div class="asc-pilot-alert" role="status"><div><strong>Customer feedback needs attention</strong><p>'
+   +esc(low_rating_count)+' rating(s) of 2/5 or lower were recorded. Review the feedback and follow up with customers before expanding this pilot.</p></div>'
+   +'<a class="asc-secondary" href="'+route_url('/launchpad',wid)+'">Review feedback ↗</a></div>')
+ else:
+  pilot_alert=('<p class="asc-pilot-clear">No ratings of 2/5 or lower have been recorded in this workspace.</p>' if feedback_count else
+   '<p class="asc-pilot-clear">Collect pilot feedback to identify customer risks.</p>')
  pilot_metrics=(
   ('Active pilots',pilot_counts.get('active',0)),
   ('Completed pilots',pilot_counts.get('completed',0)),
@@ -59,7 +72,7 @@ def dashboard(c,uid,wid=''):
  tools=''.join('<a class="asc-tool" href="'+route_url(url,wid)+'"><span class="asc-number">'+num+'</span><strong>'+esc(label)+'</strong><small>'+esc(desc)+'</small><span class="asc-arrow" aria-hidden="true">↗</span></a>' for label,desc,url,num in TOOLS)
  return ('<div class="ascension"><section class="asc-hero"><div class="asc-top"><span class="asc-kicker">VELXTRIA / COMMAND OS</span><span class="asc-tag">WORKSPACE INTELLIGENCE</span></div><h1>One workspace.<br><em>Every advantage.</em></h1><p>A focused operating surface for building applications, reviewing intelligence, managing approvals, and tracking readiness. Every metric comes from authorized workspace records.</p><a class="asc-primary" href="'+route_url('/genesis-prime',wid)+'">Open application builder ↗</a></section>'
  '<nav class="asc-quicknav" aria-label="Command center sections"><a href="#asc-overview">Overview</a><a href="#asc-toolkit">Capabilities</a><a href="#asc-onboarding">Readiness</a></nav><section id="asc-overview" class="asc-switch"><div><span class="asc-kicker">ACTIVE WORKSPACE</span><h2>'+esc(name)+'</h2></div><form method="get" action="/ascension"><label for="asc-workspace">Switch workspace</label><select id="asc-workspace" name="w">'+opts+'</select><button type="submit">Switch</button></form></section>'
- '<section aria-label="Workspace metrics" class="asc-metrics">'+cards+'</section><section aria-label="Customer pilot outcomes" class="asc-pilots"><div class="asc-sectionhead"><div><span class="asc-kicker">CUSTOMER VALIDATION</span><h2>Real pilot outcomes</h2></div></div><div class="asc-metrics">'+pilot_cards+'</div><p>Counts and ratings come from saved feedback in this workspace only; they are not forecasts or simulated results.</p></section>'+next_step+
+ '<section aria-label="Workspace metrics" class="asc-metrics">'+cards+'</section><section aria-label="Customer pilot outcomes" class="asc-pilots"><div class="asc-sectionhead"><div><span class="asc-kicker">CUSTOMER VALIDATION</span><h2>Real pilot outcomes</h2></div></div><div class="asc-metrics">'+pilot_cards+'</div>'+pilot_alert+'<p>Counts and ratings come from saved feedback in this workspace only; they are not forecasts or simulated results.</p></section>'+next_step+
  '<section class="asc-columns"><div id="asc-toolkit" class="asc-panel"><div class="asc-sectionhead"><div><span class="asc-kicker">YOUR TOOLKIT</span><h2>Everything in one place</h2></div></div><div class="asc-tools">'+tools+'</div></div>'
  '<aside id="asc-onboarding" class="asc-panel"><span class="asc-kicker">GETTING STARTED</span><h2>Onboarding progress</h2><p>'+str(done)+' of '+str(len(checks))+' requirements completed</p><div class="asc-track" role="progressbar" aria-valuemin="0" aria-valuemax="'+str(len(checks))+'" aria-valuenow="'+str(done)+'" aria-label="Onboarding steps completed"><span style="width:'+str(int(100*done/max(1,len(checks))))+'%"></span></div><ol class="asc-steps">'+steps+'</ol><a class="asc-secondary" href="'+route_url('/launchpad',wid)+'">Open pilot launchpad ↗</a></aside></section>'
  '<section class="asc-footnote">Counts are derived from your authorized workspace records. This dashboard does not run automations, change records, or certify production readiness.</section></div>')
@@ -111,4 +124,11 @@ CSS+=r"""
 .ascension .asc-pilots .asc-sectionhead{margin-bottom:14px}
 .ascension .asc-pilots .asc-metrics{margin-bottom:8px}
 .ascension .asc-pilots p{font-size:12px;margin:12px 0 0}
+"""
+
+CSS+=r"""
+.ascension .asc-pilot-alert{border:1px solid rgba(255,190,116,.45);background:rgba(150,83,30,.13);border-radius:14px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.ascension .asc-pilot-alert strong{color:#ffcf97}.ascension .asc-pilot-alert p{margin:6px 0 0;color:var(--asc-ink)}
+.ascension .asc-pilot-alert .asc-secondary{margin:0;white-space:nowrap}
+.ascension .asc-pilot-clear{margin:12px 0;color:var(--asc-muted)}
 """
