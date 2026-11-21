@@ -60,7 +60,7 @@ jobs:
           VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT: '0'
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
-          python -m unittest -v \\
-            test_revenue_dominion_v60 test_first_value_v61 \\
-            test_site_stats test_signup_path test_instant_demo \\
+          python -m unittest -v \
+            test_revenue_dominion_v60 test_first_value_v61 \
+            test_site_stats test_signup_path test_instant_demo \
             test_demo_claim test_ledger test_revenue_engine
