@@ -65,8 +65,14 @@ def analyze(scenario: SaaSScenario) -> dict:
     break_even = None
     if margin > 0:
         break_even = int((fixed / margin).to_integral_value(rounding="ROUND_CEILING"))
+    # With zero churn, lifetime is undefined; do not imply infinite revenue.
     ltv = None if churn == 0 or margin <= 0 else (margin / churn).quantize(CENT)
     payback = None if margin <= 0 else (cac / margin).quantize(CENT)
+    # Acquisition spend belongs in the break-even calculation when the
+    # scenario explicitly assumes new customers and their acquisition cost.
+    break_even_with_acquisition = None
+    if margin > 0:
+        break_even_with_acquisition = int(((fixed + acquisition_spend) / margin).to_integral_value(rounding="ROUND_CEILING"))
     return {
         "active_customers": count,
         "new_customers_per_month": new,
@@ -76,6 +82,8 @@ def analyze(scenario: SaaSScenario) -> dict:
         "monthly_operating_contribution": str(operating_contribution),
         "contribution_per_customer": str(margin),
         "break_even_active_customers_excluding_acquisition": break_even,
+        "break_even_active_customers_including_assumed_acquisition": break_even_with_acquisition,
+        "monthly_contribution_margin_pct": None if price == 0 else str((margin / price * 100).quantize(CENT)),
         "simplified_contribution_ltv": None if ltv is None else str(ltv),
         "simplified_cac_payback_months": None if payback is None else str(payback),
         "ltv_to_cac": None if ltv is None or cac == 0 else str((ltv / cac).quantize(CENT)),
@@ -83,7 +91,8 @@ def analyze(scenario: SaaSScenario) -> dict:
             "Inputs are user-supplied assumptions, not verified transactions.",
             "No taxes, refunds, payment fees beyond entered costs, expansion, or discounting.",
             "LTV assumes constant monthly churn and contribution; zero churn has no finite LTV.",
-            "Break-even excludes acquisition spend and uses static customer counts.",
+            "Two break-even thresholds show fixed costs alone versus fixed plus assumed acquisition spend.",
+            "Negative contribution margin percentages mean the assumed variable cost exceeds price.",
             "No guarantee of future revenue, profit, or customer retention.",
         ],
     }

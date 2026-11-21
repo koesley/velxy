@@ -39,5 +39,18 @@ class RevenueDominionTests(unittest.TestCase):
             compare({})
 
 
+    def test_acquisition_inclusive_break_even_and_margin(self):
+        result = analyze(SaaSScenario(100, "49", "9", "1000", ".05", "100", 10))
+        self.assertEqual(result["break_even_active_customers_including_assumed_acquisition"], 50)
+        self.assertEqual(result["monthly_contribution_margin_pct"], "81.63")
+        self.assertEqual(result["break_even_active_customers_excluding_acquisition"], 25)
+
+    def test_negative_margin_and_zero_price_are_not_hidden(self):
+        loss = analyze(SaaSScenario(1, 10, 20, 0, ".1", 5, 1))
+        self.assertEqual(loss["monthly_contribution_margin_pct"], "-100.00")
+        self.assertIsNone(loss["break_even_active_customers_including_assumed_acquisition"])
+        zero = analyze(SaaSScenario(0, 0, 0, 0, 0, 0))
+        self.assertIsNone(zero["monthly_contribution_margin_pct"])
+
 if __name__ == "__main__":
     unittest.main()

@@ -71,6 +71,14 @@ def analyze_activation(events: Iterable[ProductEvent], workspace_id: str, as_of:
                        for signup, activated, _, _ in eligible if activated is not None)
     retention = {}
     from datetime import timedelta
+    # A seven-day activation metric must exclude signups too recent to
+    # have had seven full days of observation.
+    activation_window_days = 7
+    mature_activation = [(signup, activated) for signup, activated, _, _ in eligible
+                         if signup + timedelta(days=activation_window_days) <= cutoff]
+    activated_within_window = sum(activated is not None and
+                                  signup <= activated < signup + timedelta(days=activation_window_days)
+                                  for signup, activated in mature_activation)
     for days in WINDOW_DAYS:
         mature = [(signup, returns) for signup, _, _, returns in eligible
                   if signup + timedelta(days=days) <= cutoff]
@@ -87,6 +95,12 @@ def analyze_activation(events: Iterable[ProductEvent], workspace_id: str, as_of:
         "activated": activated_count,
         "activation_rate_pct": round(100 * activated_count / total, 2) if total else None,
         "paid_customers_observed": paid_count,
+        "seven_day_activation": {
+            "eligible": len(mature_activation),
+            "activated": activated_within_window,
+            "rate_pct": round(100 * activated_within_window / len(mature_activation), 2)
+                        if mature_activation else None,
+        },
         "signup_to_paid_rate_pct": round(100 * paid_count / total, 2) if total else None,
         "median_time_to_first_value_hours": (
             round((durations[(len(durations)-1)//2] + durations[len(durations)//2])/2, 2)
@@ -97,6 +111,7 @@ def analyze_activation(events: Iterable[ProductEvent], workspace_id: str, as_of:
         "notes": [
             "Only events supplied to this function are counted; no billing verification.",
             "First value must represent an independently defined customer outcome.",
+            "Seven-day activation excludes immature signup cohorts and requires first value within seven days.",
             "Day-N retention means a return event during that specific 24-hour window.",
             "Late-arriving events and incomplete instrumentation can change metrics.",
             "No inference of causal uplift, profit, or future conversion.",

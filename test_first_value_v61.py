@@ -46,5 +46,22 @@ class FirstValueTests(unittest.TestCase):
         self.assertEqual((r["signups"], r["activated"]), (1, 1))
 
 
+    def test_seven_day_activation_uses_only_mature_signups(self):
+        rows = [ev("a", "fast", "signup"), ev("a", "fast", "first_value", days=2),
+                ev("a", "late", "signup"), ev("a", "late", "first_value", days=8),
+                ev("a", "recent", "signup", days=8),
+                ev("a", "recent", "first_value", days=8, hours=1),
+                ev("b", "other", "signup"), ev("b", "other", "first_value")]
+        result = analyze_activation(rows, "a", T + timedelta(days=10))
+        self.assertEqual(result["seven_day_activation"],
+                         {"eligible": 2, "activated": 1, "rate_pct": 50.0})
+        self.assertEqual(result["activated"], 3)
+
+    def test_seven_day_activation_no_mature_cohort(self):
+        result = analyze_activation([ev("a", "new", "signup", days=8)],
+                                    "a", T + timedelta(days=10))
+        self.assertEqual(result["seven_day_activation"],
+                         {"eligible": 0, "activated": 0, "rate_pct": None})
+
 if __name__ == "__main__":
     unittest.main()
