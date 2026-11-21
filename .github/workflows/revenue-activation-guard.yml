@@ -6,6 +6,14 @@ on:
       - 'revenue_dominion_v60.py'
       - 'test_revenue_dominion_v60.py'
       - 'first_value_v61.py'
+      - 'portal.py'
+      - 'ledger.py'
+      - 'revenue_engine.py'
+      - 'site_stats.py'
+      - 'test_ledger.py'
+      - 'test_revenue_engine.py'
+      - 'test_signup_path.py'
+      - 'test_instant_demo.py'
       - 'test_first_value_v61.py'
       - '.github/workflows/revenue-activation-guard.yml'
   pull_request:
@@ -42,7 +50,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install runtime dependencies
+        run: python -m pip install -r requirements.txt
       - name: Syntax check
         run: python -m py_compile revenue_dominion_v60.py first_value_v61.py
-      - name: Run unit tests
-        run: python -m unittest -v test_revenue_dominion_v60 test_first_value_v61
+      - name: Run V60/V61 analytics and real customer-path regressions
+        env:
+          VELXTRIA_DEPLOYMENT_MODE: local
+          VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT: '0'
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -m unittest -v \\
+            test_revenue_dominion_v60 test_first_value_v61 \\
+            test_site_stats test_signup_path test_instant_demo \\
+            test_demo_claim test_ledger test_revenue_engine
