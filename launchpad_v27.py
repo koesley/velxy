@@ -1,8 +1,14 @@
 """V27 Launchpad: local-only, tenant-scoped pilot onboarding and feedback."""
 import html, secrets, time
+from urllib.parse import urlencode
 import empire_v19
 
 def esc(v): return html.escape(str(v),quote=True)
+
+SAFE_TOOL_ROUTES=frozenset(('/genesis-prime','/nexus-intelligence'))
+def tool_url(path,wid):
+ if path not in SAFE_TOOL_ROUTES:raise ValueError('Unsupported launchpad destination')
+ return esc(path+'?'+urlencode({'w':str(wid)}))
 
 def setup(c):
  c.execute("CREATE TABLE IF NOT EXISTS launchpad_pilots(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,created_by INTEGER NOT NULL,name TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('active','completed')),created INTEGER NOT NULL,completed INTEGER)")
@@ -58,13 +64,14 @@ def render(c,uid,csrf,wid='',message=''):
  parts=['<section class="hero"><p class="eyebrow">VELXTRIA V27 · PROJECT LAUNCHPAD</p><h1>Customer Pilot Launchpad</h1><p>Guide a real trial from setup to feedback. Checklist items reflect saved workspace data, not self-reported completion.</p></section>', '<section class="panel"><form method="get" action="/launchpad"><label>Workspace<select name="w">'+options+'</select></label><button>Switch</button></form></section>']
  if message:parts.append('<section class="panel"><p>'+esc(message)+'</p></section>')
  checks=evidence(c,wid)
- parts.append('<section class="panel"><h2>Readiness checklist</h2><ul>'+''.join('<li>'+('✓ ' if ok else '○ ')+esc(label)+' · <a href="'+url+'?w='+esc(wid)+'">Open tool</a></li>' for label,ok,url in checks)+'</ul><p>Use test data for initial pilots. Completion requires all three steps and written feedback.</p></section>')
+ parts.append('<section class="panel"><h2>Readiness checklist</h2><ul>'+''.join('<li>'+('✓ ' if ok else '○ ')+esc(label)+' · <a href="'+tool_url(url,wid)+'">Open tool</a></li>' for label,ok,url in checks)+'</ul><p>Use test data for initial pilots. Completion requires all three steps and written feedback.</p></section>')
  if role in ('owner','editor'):
   parts.append('<section class="panel"><h2>Start a pilot</h2><form method="post" action="/launchpad"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><input type="hidden" name="workspace" value="'+esc(wid)+'"><input type="hidden" name="action" value="create"><label>Pilot name<input name="name" minlength="3" maxlength="90" required placeholder="e.g. Inventory trial"></label><button>Create pilot</button></form></section>')
  pilots=c.execute('SELECT id,name,status,created FROM launchpad_pilots WHERE workspace_id=? ORDER BY created DESC LIMIT 40',(wid,)).fetchall()
  for pid,name,status,created in pilots:
   feedback_rows=c.execute('SELECT rating,comment,created FROM launchpad_feedback WHERE workspace_id=? AND pilot_id=? ORDER BY created DESC LIMIT 30',(wid,pid)).fetchall()
-  parts.append('<section class="panel"><h2>'+esc(name)+'</h2><p>Status: '+esc(status)+' · Feedback entries: '+str(len(feedback_rows))+'</p>')
+  total_feedback=c.execute('SELECT COUNT(*) FROM launchpad_feedback WHERE workspace_id=? AND pilot_id=?',(wid,pid)).fetchone()[0]
+  parts.append('<section class="panel"><h2>'+esc(name)+'</h2><p>Status: '+esc(status)+' · Feedback entries: '+str(total_feedback)+'</p>')
   if status=='active' and role in ('owner','editor'):
    parts.append('<form method="post" action="/launchpad"><input type="hidden" name="csrf" value="'+esc(csrf)+'"><input type="hidden" name="workspace" value="'+esc(wid)+'"><input type="hidden" name="pilot" value="'+esc(pid)+'"><input type="hidden" name="action" value="feedback"><label>Trial rating (1–5)<select name="rating">'+''.join('<option>'+str(i)+'</option>' for i in range(1,6))+'</select></label><label>What worked, what failed?<textarea name="comment" minlength="5" maxlength="1500" required></textarea></label><button>Save feedback</button></form>')
   if status=='active' and role=='owner':
