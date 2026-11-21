@@ -147,4 +147,5 @@ def stats_html(totals, daily, recent):
             '</tbody></table><p>Counts include automated traffic (no bot '
             'filtering yet). No personal data is stored here — no IP '
             'addresses, no user agents, no emails.</p></section>'
-            '<p><a href="/">Back to dashboard</a></p>')
+            '<p><a href="/founder-economics">Revenue scenario console (V60)</a> · '
+            '<a href="/">Back to dashboard</a></p>')
