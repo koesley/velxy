@@ -70,17 +70,38 @@ def action(c, owner, lead_id, kind, decision, note=""):
     lead=c.execute("SELECT id FROM sales_pipeline_leads WHERE owner_id=? AND id=?",(owner,lead_id)).fetchone()
     if not lead:
         raise ValueError("Lead not found")
+    note=str(note or "").strip()
+    if len(note)>500:
+        raise ValueError("Action note exceeds 500 characters")
     if decision=='completed':
+        if len(note)<12:
+            raise ValueError("Completion requires an outcome note of at least 12 characters")
         existing=c.execute("""SELECT id FROM ascension_actions WHERE owner_id=? AND lead_id=?
           AND kind=? AND status='approved' ORDER BY created_at DESC LIMIT 1""",(owner,lead_id,kind)).fetchone()
         if not existing:
             raise ValueError("An approved action is required before completion")
-        c.execute("UPDATE ascension_actions SET status='completed',note=?,updated_at=? WHERE id=? AND owner_id=?",
-                  (note[:500],int(time.time()),existing[0],owner))
+        updated=c.execute("UPDATE ascension_actions SET status='completed',note=?,updated_at=? WHERE id=? AND owner_id=? AND status='approved'",
+                  (note,int(time.time()),existing[0],owner))
+        if updated.rowcount!=1:
+            raise ValueError("Action was already completed or changed")
         return existing[0]
+    # Decisions must apply to a currently actionable CRM signal, not an
+    # arbitrary caller-supplied lead/type pair or an already decided item.
+    eligible=any(item['lead_id']==lead_id and item['kind']==kind
+                 for item in discover(c,owner))
+    if not eligible:
+        raise ValueError("Opportunity is no longer eligible for a new decision")
+    if decision=='approved':
+        # A suppression is never overridden by an internal approval.
+        contact=c.execute("SELECT email FROM sales_pipeline_leads WHERE owner_id=? AND id=?",
+                          (owner,lead_id)).fetchone()
+        state=c.execute("SELECT status FROM outreach_suppression WHERE owner_id=? AND email=?",
+                        (owner,(contact[0] or '').strip().lower())).fetchone()
+        if state and state[0] in ('do_not_contact','suppress_permanent','suppress_rejected'):
+            raise ValueError("Contact suppression blocks approval; review the lead instead")
     ident=secrets.token_hex(12)
     c.execute("""INSERT INTO ascension_actions VALUES (?,?,?,?,?,?,?,?)""",
-              (ident,owner,lead_id,kind,decision,note[:500],int(time.time()),int(time.time())))
+              (ident,owner,lead_id,kind,decision,note,int(time.time()),int(time.time())))
     return ident
 
 def dashboard(c, owner, csrf):
