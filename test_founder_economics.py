@@ -22,7 +22,8 @@ class FounderEconomicsTests(unittest.TestCase):
         html = render({})
         self.assertIn('action="/founder-economics"', html)
         self.assertNotIn("Calculated scenario", html)
-        self.assertIn("not shown here", html)
+        self.assertIn("observed saved-report activation cohorts", html)
+        self.assertIn('href="/founder-stats"', html)
 
     def test_duplicate_parameters_rejected(self):
         query = {name: [value] for name, value in defaults().items()}
@@ -81,7 +82,8 @@ class FounderEconomicsTests(unittest.TestCase):
     def test_no_false_activation_rate(self):
         html = render({name: [value] for name, value in defaults().items()})
         self.assertIn("Calculated scenario", html)
-        self.assertIn("aggregate site events do not", html)
+        self.assertIn("Anonymous site events alone cannot establish", html)
+        self.assertIn("not verified payment, retention, or business value", html)
         self.assertNotIn("verified subscriptions", html.split("<h3>Calculated scenario</h3>")[1])
 
 
