@@ -21,7 +21,7 @@ MAX_EMAIL_CELL_CHARS = 240
 
 def _safe_cell(value):
     """Keep untrusted CSV-derived summaries readable in plain-text email."""
-    value = str(value).replace('\\r', ' ').replace('\\n', ' ').replace('\\x00', '')
+    value = str(value).replace('\r', ' ').replace('\n', ' ').replace('\x00', '')
     return value[:MAX_EMAIL_CELL_CHARS]
 
 
