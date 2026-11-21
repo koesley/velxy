@@ -12,6 +12,7 @@ import agent_core
 import license_verification
 import subscriptions
 import site_stats
+import founder_economics
 import btcpay_integration
 import btcpay_mainnet
 import referrals
@@ -587,6 +588,7 @@ def robots_txt(base):
   'Disallow: /dashboard\n'
   'Disallow: /report\n'
   'Disallow: /founder-stats\n'
+  'Disallow: /founder-economics\n'
   'Disallow: /login\n'
   'Disallow: /signup\n'
   'Disallow: /account\n'
@@ -1238,6 +1240,13 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,shell('Contact',trust_pages.CONTACT_HTML))
   if p in ('/favicon.svg','/favicon.ico'):
    return self.respond(200,trust_pages.FAVICON_SVG,'image/svg+xml',headers=[('Cache-Control','public, max-age=86400')])
+  if p=='/founder-economics':
+   user,csrf,_=self.identity()
+   if not user:return self.fail(401,'Please sign in first.')
+   if user['role']!='admin':return self.fail(403,'Founder access required.',user,csrf)
+   try:params=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True,max_num_fields=12)
+   except ValueError:return self.fail(400,'Invalid scenario query.',user,csrf)
+   return self.respond(200,shell('Revenue scenario console',founder_economics.render(params),user,csrf),headers=[('Cache-Control','no-store'),('Referrer-Policy','no-referrer')])
   if p=='/founder-stats':
    user,csrf,_=self.identity()
    if not user:return self.fail(401,'Please sign in first.')
