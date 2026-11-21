@@ -81,6 +81,11 @@ tbody tr:hover{background:#ffffff09}
 .vx-diagnosis table{width:100%}
 .vx-flagged td:last-child{color:#f0b4b4}
 
+/* One-click sample demo: the form is a flex item in the hero actions and a
+block above the upload form — no margins, so the button sits flush. */
+.v8-sample-run{display:inline-flex;margin:0}
+.v8-sample-run button{white-space:nowrap}
+
 
 /* Personal command center: pinned shortcuts, recents, and touch-friendly controls. */
 .vx-command-item{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:7px;align-items:stretch}

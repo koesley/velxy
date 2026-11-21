@@ -690,7 +690,7 @@ def landing_demo_html():
  report. No account, no email, nothing saved — the file is processed once
  and never stored.
  """
- return '''<section id="try" class="v8-demo"><div class="v8-sectiontop"><span>TRY IT NOW</span><span>NO ACCOUNT. NO WAITING.</span></div><h2>YOUR FILE.<br><em>YOUR NUMBERS. RIGHT NOW.</em></h2><p>See how VELXTRIA works in minutes. <a href="/sample-sales.csv" download="VELXTRIA_Sample_Sales.csv">Download the sample sales CSV</a>, then select that file below and generate a real report. The sample is fictional and contains intentionally invalid rows to demonstrate data cleaning.</p><p>Already have a supported export? Upload it below instead. Use only sample or non-sensitive data in this preview.</p><form method="post" action="/try" enctype="multipart/form-data"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><button class="v8-primary" type="submit">Generate my report</button></form><p class="v8-demo-note">5 MB maximum · 20,000 rows · Your download link works for 10 minutes — create a free account to keep your reports.</p><details><summary>Required column headers</summary><code>'''+escape(', '.join(REQUIRED))+'''</code></details></section>'''
+ return '''<section id="try" class="v8-demo"><div class="v8-sectiontop"><span>TRY IT NOW</span><span>NO ACCOUNT. NO WAITING.</span></div><h2>YOUR FILE.<br><em>YOUR NUMBERS. RIGHT NOW.</em></h2><p>See how VELXTRIA works in minutes. <a href="/sample-sales.csv" download="VELXTRIA_Sample_Sales.csv">Download the sample sales CSV</a>, then select that file below and generate a real report. The sample is fictional and contains intentionally invalid rows to demonstrate data cleaning.</p><form class="v8-sample-run" method="post" action="/try-sample"><input type="hidden" name="sample" value="1"><button class="v8-primary" type="submit">Run the sample — one click, no file needed</button></form><p class="v8-demo-note">Runs the real engine on the built-in sample data and shows the full report — charts, flagged rows, and all. No download, no upload.</p><p>Already have a supported export? Upload it below instead. Use only sample or non-sensitive data in this preview.</p><form method="post" action="/try" enctype="multipart/form-data"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><button class="v8-primary" type="submit">Generate my report</button></form><p class="v8-demo-note">5 MB maximum · 20,000 rows · Your download link works for 10 minutes — create a free account to keep your reports.</p><details><summary>Required column headers</summary><code>'''+escape(', '.join(REQUIRED))+'''</code></details></section>'''
 
 def demo_result_html(result,token,share_token=None,user=None,csrf=''):
  """The instant demo result: the report summaries on screen, a ZIP download,
@@ -770,7 +770,7 @@ def landing_page(user=None,csrf=''):
    <div class="v8-status"><span class="v8-live"></span> VELXTRIA / INTELLIGENT REPORTING <span class="v8-status-right">PRIVATE PREVIEW</span></div>
    <h1>RUN YOUR BUSINESS.<br><span>WITH MORE</span><br><i>CLARITY.</i></h1>
    <p>VELXTRIA helps small businesses turn supported sales exports into organized reports, spot data problems, and explore the business tools already available in one workspace. Start with a demo using sample data.</p>
-   <div class="v8-actions"><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a><a class="v8-ghost" href="/register">CREATE FREE ACCOUNT <span>↗</span></a><a class="v8-ghost" href="/login">SIGN IN <span>↗</span></a><a class="v8-ghost" href="#v8-process">EXPLORE THE SYSTEM <span>↓</span></a></div>
+   <div class="v8-actions"><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a><form class="v8-sample-run" method="post" action="/try-sample"><input type="hidden" name="sample" value="1"><button class="v8-primary" type="submit">RUN THE SAMPLE — ONE CLICK <span>↗</span></button></form><a class="v8-ghost" href="/register">CREATE FREE ACCOUNT <span>↗</span></a><a class="v8-ghost" href="/login">SIGN IN <span>↗</span></a><a class="v8-ghost" href="#v8-process">EXPLORE THE SYSTEM <span>↓</span></a></div>
    <div class="v8-disclaimer">PRIVATE PREVIEW <span>•</span> SAMPLE OR NON-SENSITIVE DATA ONLY <span>•</span> PAID ACCESS REQUIRES VERIFIED PAYMENT; DO NOT SEND FUNDS WITHOUT CONFIRMING THE CURRENT CHECKOUT PROCESS</div>
   </div>
   <div class="v8-stage" aria-label="Illustrative reporting command center">
@@ -1064,6 +1064,19 @@ class Handler(BaseHTTPRequestHandler):
   # not at a dashboard the visitor does not have.
   body='<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>TRY THE DEMO</span><span>THAT FILE DID NOT WORK.</span></div><h2>COULD NOT RUN<br><em>THAT FILE.</em></h2><p>'+escape(message)+'</p><p><a class="v8-primary" href="/#try">Try another file</a></p></section></div>'
   return self.respond(400,shell('Try the demo',body))
+
+ def _demo_response(self,report,filename,detail):
+  """Shared tail of a demo run: store the ZIP in memory, record the run,
+  create the share link, and render the result page. Used by /try (an
+  uploaded CSV) and /try-sample (the built-in sample data), so both give
+  the exact same full demo experience."""
+  token=store_demo_zip(report['zip_bytes'],report['accepted'],report['rejected'],filename)
+  with db() as c:
+   site_stats.record(c,'demo_run',detail)
+   share_token=demo_shares.create(c,report)
+  user,csrf,_=self.identity()
+  headers=[('Set-Cookie',DEMO_COOKIE+'='+token+'; Path=/; Max-Age=600; SameSite=Lax')]
+  return self.respond(200,shell('Your demo report',demo_result_html(report,token,share_token,user,csrf)),headers=headers)
  def identity(self):
   cookie=SimpleCookie()
   try:cookie.load(self.headers.get('Cookie',''))
@@ -1263,6 +1276,7 @@ class Handler(BaseHTTPRequestHandler):
    headers=[referral_cookie_header(ref)] if ref else ()
    return self.respond(200,shell('Register','<section class="panel narrow"><h1>Create a local demo account</h1><p>This account does not verify Payhip payments.</p><form method="post" action="/register"><input type="hidden" name="next" value="'+escape(nxt)+'">'+ref_field+'<label>Email<input name="email" type="email" required></label><label>Password (12+ characters)<input name="password" type="password" minlength="12" required></label><button>Create account</button></form><p>Already have an account? <a href="'+login+'">Sign in</a></p></section>'),headers=headers)
   if p=='/try':return self.redirect('/#try')
+  if p=='/try-sample':return self.redirect('/#try')
   if p=='/try-download':
    # Anonymous demo ZIP: held in memory only, token expires after 10 minutes.
    token=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('token',[''])[0]
@@ -3231,13 +3245,18 @@ class Handler(BaseHTTPRequestHandler):
     report=run_report_engine(data)
    except ValueError as exc:return self.demo_fail(str(exc))
    except Exception as exc:return self.demo_fail('Could not process this file: '+str(exc)[:240])
-   token=store_demo_zip(report['zip_bytes'],report['accepted'],report['rejected'],filename)
-   with db() as c:
-    site_stats.record(c,'demo_run','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
-    share_token=demo_shares.create(c,report)
-   user,csrf,_=self.identity()
-   headers=[('Set-Cookie',DEMO_COOKIE+'='+token+'; Path=/; Max-Age=600; SameSite=Lax')]
-   return self.respond(200,shell('Your demo report',demo_result_html(report,token,share_token,user,csrf)),headers=headers)
+   return self._demo_response(report,filename,'accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
+  if p=='/try-sample':
+   # One-click sample demo: run the real engine on the built-in sample
+   # data — no download, no upload, no account, no file to find. The
+   # visitor gets the exact same result page as /try (charts, diagnosis,
+   # ZIP download, share link). Same rationale as /try for no CSRF: the
+   # POST changes no account state, and the sample report is already
+   # public on the landing page.
+   try:
+    report=run_report_engine(SAMPLE_SALES_CSV.encode('utf-8'))
+   except Exception as exc:return self.demo_fail('Could not run the sample demo: '+str(exc)[:240])
+   return self._demo_response(report,'VELXTRIA_Sample_Sales.csv','sample=1 accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
   if p=='/demo/email':
    # Anonymous demo lead capture: email the demo report to the runner.
    # No account, no session, no CSRF token — like /try, the request
