@@ -706,7 +706,8 @@ def demo_result_html(result,token,share_token=None,user=None,csrf=''):
         '<p class="v8-demo-note">Saves as one of your free reports — no re-upload.</p>')
   email_form=''
  else:
-  keep=('<p class="v8-demo-note">Want to keep it? <a href="/register">Create a free account</a> — then claim this report from your dashboard, with the full list of what\'s wrong with your data. It stays claimable for 10 minutes; your download expires then too, but a free account keeps it forever.</p>')
+  keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Save this report — create your free account<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Save this report to my free account</button></form>'
+        '<p class="v8-demo-note">One step: creates your free account and saves this report to it — the full list of what\'s wrong with your data, kept forever. Your download expires in 10 minutes, but a free account keeps it.</p>')
   email_form=''
   if share_token:
    # Anonymous runners vanish after the demo — this is the only chance
@@ -1077,6 +1078,38 @@ class Handler(BaseHTTPRequestHandler):
   user,csrf,_=self.identity()
   headers=[('Set-Cookie',DEMO_COOKIE+'='+token+'; Path=/; Max-Age=600; SameSite=Lax')]
   return self.respond(200,shell('Your demo report',demo_result_html(report,token,share_token,user,csrf)),headers=headers)
+
+ def _save_demo_report(self,user_id,demo_token):
+  """Claim an anonymous demo ZIP into a user's account: the ZIP is moved
+  out of memory into persistent storage and recorded as a report, so it
+  counts against the same free allowance as an upload. Returns the report
+  ident. Raises ValueError with a user-facing message when the demo is
+  gone or the save fails; a failed save restores the demo so the visitor
+  can retry until its original expiry. The caller checks the free
+  allowance first. Used by /claim-demo (signed-in) and /demo/signup (a
+  brand-new account created from the demo result page)."""
+  if not peek_demo_zip(demo_token):
+   raise ValueError('That demo report has expired or was already claimed — run the demo again to generate a new report.')
+  entry=claim_demo_zip(demo_token)
+  if not entry:
+   raise ValueError('That demo report has expired or was already claimed — run the demo again to generate a new report.')
+  zip_bytes,_exp,accepted,rejected,filename=entry
+  ident=secrets.token_hex(16);digest=hashlib.sha256(zip_bytes).hexdigest()
+  try:
+   begin_report_write(user_id,ident)
+   store_verified_report(user_id,ident,zip_bytes)
+   with db() as c:
+    c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user_id,Path(filename).name[:120],now(),'ready',accepted,rejected,digest))
+    site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(accepted,rejected))
+    complete_report_write(c,ident,user_id)
+  except Exception:
+   # A failed database insert or object-store write must not consume the
+   # visitor's one-time demo. Restore it until its original TTL expires.
+   restore_demo_zip(demo_token,entry)
+   abandon_report_write(user_id,ident)
+   raise ValueError('Could not save this report right now. Your demo remains available for retry until its original expiry.')
+  return ident
+
  def identity(self):
   cookie=SimpleCookie()
   try:cookie.load(self.headers.get('Cookie',''))
@@ -3282,6 +3315,50 @@ class Handler(BaseHTTPRequestHandler):
       'demo_report', dedupe_key='demo-email:'+email+':'+share_token)
      site_stats.record(c,'demo_email_sent',share_token)
    return self.respond(200,shell('Report on its way','<section class="panel narrow"><h1>Check your email</h1><p>Your demo report is on its way to '+escape(email)+'. It includes the summaries, a link to view it online, and a link to create your free account.</p><p><a href="'+escape(share_link)+'">View the report online</a> · <a href="/register">Create your free account</a></p></section>'))
+  if p=='/demo/signup':
+   # One-step signup from the demo result page: create the free account
+   # AND save this demo report to it in a single POST, then land the
+   # visitor on their saved report, already signed in. The old path made
+   # them register, log in again with the same password, then find the
+   # claim on the dashboard — five steps, two password entries — and the
+   # funnel shows almost nobody finished it (197 demo runs, 1 signup).
+   # No CSRF token, like /register: this is a public signup form with no
+   # authenticated session to forge, and the demo token is a random secret
+   # only the runner knows.
+   email=fields.get('email','').strip().lower();password=fields.get('password','')
+   demo_token=fields.get('token','').strip()
+   if not valid_email(email) or len(password)<12 or len(password)>256:return self.fail(400,'Use a valid email and password of 12–256 characters.')
+   if not peek_demo_zip(demo_token):
+    return self.fail(400,'That demo report has expired or was already claimed — run the demo again to generate a new report.')
+   salt=secrets.token_hex(16)
+   try:
+    with db() as c:
+     c.execute('INSERT INTO users(email,salt,pw_hash,role,access,created) VALUES (?,?,?,?,?,?)',(email,salt,pw_hash(password,salt),'customer','demo',now()))
+     site_stats.record(c,'signup')
+     uid=c.execute('SELECT id FROM users WHERE email=?',(email,)).fetchone()[0]
+     ref=fields.get('ref','').strip()
+     if not ref:
+      cookie=SimpleCookie()
+      try:cookie.load(self.headers.get('Cookie',''))
+      except Exception:pass
+      morsel=cookie.get(referrals.COOKIE_NAME)
+      ref=morsel.value if morsel else ''
+     if referrals.record_signup(c,uid,ref) is not None:
+      site_stats.record(c,'referral_signup')
+   except (sqlite3.IntegrityError, persistent_integrity_error()):return self.fail(409,'Account already exists. Sign in, then claim this report from your dashboard.')
+   try:
+    ident=self._save_demo_report(uid,demo_token)
+   except ValueError as exc:
+    # The account exists now, so sign the visitor in and send them to
+    # the dashboard instead of leaving them stranded on an error page.
+    token=secrets.token_hex(32);csrf=secrets.token_hex(16)
+    with db() as c:c.execute('INSERT INTO sessions VALUES (?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),uid,now()+86400,csrf))
+    secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
+    return self.redirect('/',[('Set-Cookie','velxtria_session='+token+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400'+secure),('Set-Cookie',DEMO_COOKIE+'=; Path=/; Max-Age=0; SameSite=Lax')])
+   token=secrets.token_hex(32);csrf=secrets.token_hex(16)
+   with db() as c:c.execute('INSERT INTO sessions VALUES (?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),uid,now()+86400,csrf))
+   secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
+   return self.redirect('/report?id='+ident,[('Set-Cookie','velxtria_session='+token+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400'+secure),('Set-Cookie',DEMO_COOKIE+'=; Path=/; Max-Age=0; SameSite=Lax')])
   ident=self.require()
   if not ident:return
   user,csrf,token=ident
@@ -3688,7 +3765,7 @@ class Handler(BaseHTTPRequestHandler):
    # counts against the same free allowance as an upload. The claim is
    # one-time — the in-memory entry is popped — and the free-limit check
    # runs first, so a paywalled user keeps their demo download.
-   demo_token=fields.get('token','')
+   demo_token=fields.get('token','').strip()
    if not peek_demo_zip(demo_token):
     return self.fail(400,'That demo report has expired or was already claimed — run the demo again to generate a new report.',user,csrf)
    with db() as c:
@@ -3697,24 +3774,10 @@ class Handler(BaseHTTPRequestHandler):
      pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
      site_stats.record(c,'paywall_shown','used='+str(count))
      return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
-   entry=claim_demo_zip(demo_token)
-   if not entry:
-    return self.fail(400,'That demo report has expired or was already claimed — run the demo again to generate a new report.',user,csrf)
-   zip_bytes,_exp,accepted,rejected,filename=entry
-   ident=secrets.token_hex(16);digest=hashlib.sha256(zip_bytes).hexdigest()
    try:
-    begin_report_write(user['id'],ident)
-    store_verified_report(user['id'],ident,zip_bytes)
-    with db() as c:
-     c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',accepted,rejected,digest))
-     site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(accepted,rejected))
-     complete_report_write(c,ident,user['id'])
-   except Exception:
-    # A failed database insert or object-store write must not consume the
-    # visitor's one-time demo. Restore it until its original TTL expires.
-    restore_demo_zip(demo_token,entry)
-    abandon_report_write(user['id'],ident)
-    return self.fail(503,'Could not save this report right now. Your demo remains available for retry until its original expiry.',user,csrf)
+    ident=self._save_demo_report(user['id'],demo_token)
+   except ValueError as exc:
+    return self.fail(503 if 'Could not save' in str(exc) else 400,str(exc),user,csrf)
    return self.redirect('/report?id='+ident,[('Set-Cookie',DEMO_COOKIE+'=; Path=/; Max-Age=0; SameSite=Lax')])
   if p=='/btcpay/mainnet/checkout':
    if not btcpay_mainnet.checkout_enabled():
