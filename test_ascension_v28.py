@@ -6,24 +6,36 @@ from unittest.mock import patch
 class AscensionTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory()
-  # Unset the production database URL too: the Render build runs with
-  # VELXTRIA_DATABASE_URL set, and persistent.REMOTE is computed from it
-  # at import — so portal.db() would connect to PRODUCTION Postgres and
-  # this INSERT of user id 1 would fail with a UniqueViolation (id 1 is a
-  # real account there), failing every test and blocking every deploy.
-  # These tests must run against an isolated temp sqlite file, never prod.
-  self.env=patch.dict(os.environ,{'VELXTRIA_DATA_DIR':self.tmp.name,'VELXTRIA_LOCAL_STUDIO':'1','VELXTRIA_DEPLOYMENT_MODE':'local','VELXTRIA_DATABASE_URL':''})
+  # Isolation, third attempt — the first two fixes each hit a different
+  # fail-closed guard, and the lesson is: do NOT route this test through
+  # portal.db() / persistent.connect() at all.
+  #  * The Render build sets VELXTRIA_DATABASE_URL, so portal.db()
+  #    connects to PRODUCTION Postgres and the setUp INSERT of user id 1
+  #    fails with a UniqueViolation (id 1 is a real account) — every
+  #    deploy fails and the live site is stuck.
+  #  * Unsetting the URL is no good either: the build also sets
+  #    VELXTRIA_REQUIRE_PERSISTENCE=1, and persistent.py raises at
+  #    import ("Persistent mode requires VELXTRIA_DATABASE_URL") when the
+  #    URL is empty, and persistent.connect() raises again ("Persistent
+  #    storage is required") whenever REQUIRE is on and REMOTE is off.
+  # So: keep the URL set (import stays happy), flip persistent.REMOTE
+  # off AFTER import so _initialize_schema uses the sqlite DDL and sets
+  # up the local modules, and open the temp sqlite file DIRECTLY with
+  # sqlite3 — never through persistent.connect. empire_v19 and
+  # ascension_v28 take the connection as an argument and never touch
+  # portal.db(), so this isolated connection is all they need.
+  self.env=patch.dict(os.environ,{'VELXTRIA_DATA_DIR':self.tmp.name,'VELXTRIA_LOCAL_STUDIO':'1','VELXTRIA_DEPLOYMENT_MODE':'local'})
   self.env.start()
   import portal,empire_v19,ascension_v28,persistent
   self.portal=portal;self.empire=empire_v19;self.asc=ascension_v28
   self.old_db=portal.DB
   self.old_remote=persistent.REMOTE
-  # Belt and braces: persistent may already be imported (by an earlier
-  # test module in the same process), so REMOTE was already computed True
-  # from the real URL. Force it off so portal.db() uses local sqlite.
   persistent.REMOTE=False
   portal.DB=Path(self.tmp.name)/"portal.sqlite3"
-  self.c=portal.db()
+  import sqlite3
+  self.c=sqlite3.connect(str(portal.DB),timeout=15)
+  self.c.execute('PRAGMA foreign_keys=ON')
+  portal._initialize_schema(self.c)
   self.c.execute("INSERT INTO users(id,email,salt,pw_hash,role,access,created) VALUES(1,'one@example.test','a','b','customer','demo',0),(2,'two@example.test','a','b','customer','demo',0)")
   self.w1=self.empire.create(self.c,1,'Alpha <Workspace>');self.w2=self.empire.create(self.c,2,'Beta')
   self.c.commit()
