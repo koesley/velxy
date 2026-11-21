@@ -390,7 +390,7 @@ _FLAGGED_SHOW_HEAD=('Source Line','Order ID','Customer','Product',"What's wrong"
 # Quantity, Unit Price, Status, Region, Revenue.
 _CLEANED_SHOW_IDX=(0,1,2,3,4,5,8)
 
-def report_diagnosis_html(rejected_rows,cleaned_rows,rejected_total,accepted_total):
+def report_diagnosis_html(rejected_rows,cleaned_rows,rejected_total,accepted_total,preview=False):
  """The "what we found wrong" diagnosis, shown on screen where the report
  is viewed — the demo result, a saved report, and the landing sample.
 
@@ -416,21 +416,25 @@ def report_diagnosis_html(rejected_rows,cleaned_rows,rejected_total,accepted_tot
     for issue in r[9].split(';'):
      issue=issue.strip()
      if issue:counts[issue]=counts.get(issue,0)+1
-  shown=body[:DIAGNOSIS_FLAGGED_SHOW]
+  shown=body[:2 if preview else DIAGNOSIS_FLAGGED_SHOW]
   rows=[list(_FLAGGED_SHOW_HEAD)]+[[r[i] if i<len(r) else '' for i in _FLAGGED_SHOW_IDX] for r in shown]
   out.append('<div class="vx-diagnosis"><h4>What we found wrong</h4>')
   if counts and rejected_total<=len(body):
    summary=' · '.join(escape(issue)+' ×'+str(n) for issue,n in sorted(counts.items(),key=lambda kv:(-kv[1],kv[0])))
    out.append('<p class="v8-demo-note">'+summary+'</p>')
   out.append('<div class="vx-flagged">'+_csv_rows_html(rows)+'</div>')
-  if rejected_total>DIAGNOSIS_FLAGGED_SHOW:
+  if preview and rejected_total>2:
+   out.append('<p class="v8-demo-note">Showing 2 of '+str(rejected_total)+' flagged rows — create a free account to see the full list and download your cleaned data.</p>')
+  elif rejected_total>DIAGNOSIS_FLAGGED_SHOW:
    out.append('<p class="v8-demo-note">Showing '+str(DIAGNOSIS_FLAGGED_SHOW)+' of '+str(rejected_total)+' flagged rows — the full list is in the ZIP.</p>')
   out.append('</div>')
  if cleaned_rows and len(cleaned_rows)>1:
-  body=cleaned_rows[1:DIAGNOSIS_CLEANED_SHOW+1]
+  body=cleaned_rows[1:(2 if preview else DIAGNOSIS_CLEANED_SHOW)+1]
   rows=[['Order ID','Order Date','Customer','Product','Quantity','Unit Price','Revenue']]+[[r[i] if i<len(r) else '' for i in _CLEANED_SHOW_IDX] for r in body]
   out.append('<div class="vx-diagnosis"><h4>Your data, cleaned</h4>'+_csv_rows_html(rows))
-  if accepted_total>DIAGNOSIS_CLEANED_SHOW:
+  if preview and accepted_total>2:
+   out.append('<p class="v8-demo-note">First 2 of '+str(accepted_total)+' clean rows — create a free account to download the full cleaned file.</p>')
+  elif accepted_total>DIAGNOSIS_CLEANED_SHOW:
    out.append('<p class="v8-demo-note">First '+str(DIAGNOSIS_CLEANED_SHOW)+' of '+str(accepted_total)+' clean rows — the full cleaned file is in the ZIP.</p>')
   out.append('</div>')
  return ''.join(out)
@@ -725,10 +729,12 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
                '<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>')
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
-  +report_diagnosis_html(result.get('rejected_rows') or [],result.get('cleaned_rows') or [],result['rejected'],result['accepted'])
-  +'<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
-  +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
-  +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>'
+  +report_diagnosis_html(result.get('rejected_rows') or [],result.get('cleaned_rows') or [],result['rejected'],result['accepted'],preview=user is None)
+  +('<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows.</p>'
+   +'<p class="v8-demo-note">This is a preview — the full list of what is wrong, the full cleaned file and the ZIP download unlock with a free account. No card, no purchase.</p>' if user is None else
+   '<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
+   +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
+   +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>')
   +share
   +keep
   +email_form
