@@ -63,7 +63,11 @@ def dashboard(c,uid,wid=''):
  done=sum(bool(ok) for _,ok,_ in checks)
  # Prioritize the first unmet, evidence-backed milestone; never imply automated execution.
  pending=[(label,url) for label,ok,url in checks if not ok]
- if pending:
+ if low_rating_count:
+  next_step=('<section class="asc-next" aria-labelledby="asc-next-title"><div><span class="asc-kicker">PRIORITY CUSTOMER RISK</span><h2 id="asc-next-title">Review low-rated customer feedback</h2><p>'
+   +esc(low_rating_count)+' rating(s) of 2/5 or lower need a human review. Investigate the feedback before continuing onboarding or expanding the pilot.</p></div>'
+   +'<a class="asc-primary" href="'+route_url('/launchpad',wid)+'">Review customer feedback ↗</a></section>')
+ elif pending:
   next_label,next_url=pending[0]
   next_step=('<section class="asc-next" aria-labelledby="asc-next-title"><div><span class="asc-kicker">RECOMMENDED NEXT ACTION</span><h2 id="asc-next-title">'+esc(next_label)+'</h2><p>This onboarding requirement has no qualifying saved evidence yet. Open the relevant tool to complete it.</p></div><a class="asc-primary" href="'+route_url(next_url,wid)+'">Continue setup ↗</a></section>')
  else:
