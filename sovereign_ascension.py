@@ -6,6 +6,7 @@ Uses existing sales_pipeline_leads as its source of truth.
 import html
 import secrets
 import time
+from datetime import datetime, timezone
 import sales_pipeline
 
 def esc(value):
@@ -151,7 +152,8 @@ def dashboard(c, owner, csrf):
     if not events:
         parts.append('<p>No recorded decisions yet.</p>')
     for event_type,event_note,created,business in events:
+        timestamp=datetime.fromtimestamp(int(created),timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
         parts.append('<article><strong>'+esc(business)+'</strong> · '+esc(event_type.title())+
-                     ' · <time>'+esc(created)+'</time><p>'+esc(event_note or 'No note supplied')+'</p></article>')
+                     ' · <time>'+esc(timestamp)+'</time><p>'+esc(event_note or 'No note supplied')+'</p></article>')
     parts.append('</section>')
     return ''.join(parts)
