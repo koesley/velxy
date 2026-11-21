@@ -64,6 +64,13 @@
       results.append(empty);
       return;
     }
+    if (!q) {
+      const heading = document.createElement('p');
+      heading.className = 'vx-command-section';
+      heading.textContent = state.pinned.length ? '★ Pinned & recent workspaces' :
+        state.recent.length ? 'Recently visited & all tools' : 'Explore VELXTRIA tools';
+      results.append(heading);
+    }
     matches.forEach(({title,url},index) => {
       const link = document.createElement('a');
       link.href = url;
