@@ -12,6 +12,9 @@ import io
 import secrets
 import time
 
+MAX_TOKEN_LENGTH = 128
+CLEANUP_BATCH = 100
+
 SHARE_TTL_DAYS = 30
 
 
@@ -32,9 +35,25 @@ def _csv_to_rows(text):
     return list(csv.reader(io.StringIO(text)))
 
 
+def cleanup_expired(conn, now=None, batch=CLEANUP_BATCH):
+    """Bound expiration cleanup to a small batch on write paths only."""
+    if not isinstance(batch, int) or not 1 <= batch <= 1000:
+        raise ValueError('invalid cleanup batch')
+    cutoff = int(time.time()) if now is None else int(now)
+    tokens = conn.execute(
+        'SELECT token FROM demo_shares WHERE expires<=? '
+        'ORDER BY expires, token LIMIT ?', (cutoff, batch)).fetchall()
+    if not tokens:
+        return 0
+    conn.executemany('DELETE FROM demo_shares WHERE token=? AND expires<=?',
+                     [(row[0], cutoff) for row in tokens])
+    return len(tokens)
+
+
 def create(conn, report):
     """Store a demo run's summaries and return its public share token."""
     setup(conn)
+    cleanup_expired(conn)
     token = secrets.token_urlsafe(24)
     now = int(time.time())
     conn.execute(
@@ -52,11 +71,12 @@ def create(conn, report):
 def get(conn, token):
     """A shared demo's summaries, or None when unknown or expired."""
     setup(conn)
+    if not isinstance(token, str) or not token or len(token) > MAX_TOKEN_LENGTH or not all(c.isalnum() or c in '-_' for c in token):
+        return None
     now = int(time.time())
-    conn.execute('DELETE FROM demo_shares WHERE expires<=?', (now,))
     row = conn.execute(
         'SELECT monthly_csv,product_csv,stats,accepted,rejected'
-        ' FROM demo_shares WHERE token=?', (token,)).fetchone()
+        ' FROM demo_shares WHERE token=? AND expires>?', (token, now)).fetchone()
     if not row:
         return None
     return {
