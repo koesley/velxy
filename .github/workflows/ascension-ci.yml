@@ -3,19 +3,9 @@ name: Ascension Security and Regression Checks
 on:
   push:
     branches: [main]
-    paths:
-      - 'ascension_v28.py'
-      - 'test_ascension_v28.py'
-      - 'foundation_v26.py'
-      - 'launchpad_v27.py'
-      - 'empire_v19.py'
-      - 'portal.py'
-      - 'requirements.txt'
-      - 'render.yaml'
-      - 'test_render_blueprint_contract.py'
-      - '.github/workflows/ascension-ci.yml'
   pull_request:
     branches: [main]
+  merge_group:
   workflow_dispatch:
 
 permissions:
