@@ -1,0 +1,48 @@
+name: VELXTRIA revenue and activation regression guard
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'revenue_dominion_v60.py'
+      - 'test_revenue_dominion_v60.py'
+      - 'first_value_v61.py'
+      - 'test_first_value_v61.py'
+      - '.github/workflows/revenue-activation-guard.yml'
+  pull_request:
+    paths:
+      - 'revenue_dominion_v60.py'
+      - 'test_revenue_dominion_v60.py'
+      - 'first_value_v61.py'
+      - 'test_first_value_v61.py'
+      - '.github/workflows/revenue-activation-guard.yml'
+  schedule:
+    - cron: '19 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: revenue-activation-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic-analytics:
+    name: Test V60/V61 analytics on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Syntax check
+        run: python -m py_compile revenue_dominion_v60.py first_value_v61.py
+      - name: Run unit tests
+        run: python -m unittest -v test_revenue_dominion_v60 test_first_value_v61
