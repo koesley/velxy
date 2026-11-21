@@ -52,6 +52,8 @@ jobs:
             test_verify_readiness
       - name: Verify live CRM decision safety
         run: python -m unittest -v test_sovereign_ascension_safety
+      - name: Verify full-ledger revenue recovery reporting
+        run: python -m unittest -v test_ascension_recovery_ledger
       - name: Verify deployment safety contract
         run: python -m unittest -v test_render_blueprint_contract
       - name: Execute Ascension regression suite
