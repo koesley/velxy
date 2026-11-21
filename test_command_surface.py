@@ -35,6 +35,20 @@ class CommandSurfaceTests(unittest.TestCase):
         self.assertIn("link.setAttribute('aria-current', 'page')", script)
         self.assertIn('.velx-nav a[aria-current="page"]', self.css)
 
+    def test_personal_quick_launch_is_scoped_and_accessible(self):
+        script = (ROOT / "command-palette.js").read_text(encoding="utf-8")
+        self.assertIn("const STORE = 'vx-command-launch-v1'", script)
+        self.assertIn("allowed.has(url)", script)
+        self.assertIn("localStorage.getItem(STORE)", script)
+        self.assertIn("localStorage.setItem(STORE", script)
+        self.assertIn("state.pinned.includes(url)", script)
+        self.assertIn("state.recent.includes(url)", script)
+        self.assertIn("pin.setAttribute('aria-pressed'", script)
+        self.assertIn("pin.setAttribute('aria-label'", script)
+        self.assertIn("pin.addEventListener('click'", script)
+        self.assertIn(".vx-command-pin", self.css)
+        self.assertNotIn("innerHTML", script)
+
     def test_command_palette_indexes_actual_navigation(self):
         script = (ROOT / "command-palette.js").read_text(encoding="utf-8")
         self.assertIn("document.querySelectorAll('header nav a[href]')", script)
