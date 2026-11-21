@@ -72,6 +72,8 @@ def process(c,uid,fields):
                 "INSERT INTO vx4_events(id,user_id,invoice_id,event_type,created_at) VALUES (?,?,?,?,?)",
                 (secrets.token_hex(16),uid,ident,'voided',int(time.time()))
             )
+            # Close only invoice-specific system reminders, never arbitrary user tasks.
+            c.execute("UPDATE vx3_tasks SET status='done' WHERE user_id=? AND title=? AND status='open'", (uid,'Invoice due soon ['+ident+']'))
             # A voided invoice must not leave an actionable overdue task.
             c.execute(
                 "UPDATE vx3_tasks SET status='done' WHERE user_id=? AND title=? AND status='open'",
@@ -87,9 +89,38 @@ def process(c,uid,fields):
                 c.execute("UPDATE vx3_contacts SET stage='won' WHERE id=? AND user_id=? AND stage NOT IN ('won','lost')",(cid,uid))
             c.execute('INSERT INTO vx4_events(id,user_id,invoice_id,event_type,created_at) VALUES (?,?,?,?,?)',(secrets.token_hex(16),uid,ident,'paid',ts))
             # Close only system-created overdue reminder, not user-created tasks.
+            c.execute("UPDATE vx3_tasks SET status='done' WHERE user_id=? AND title=? AND status='open'", (uid,'Invoice due soon ['+ident+']'))
             task_title='Invoice follow-up ['+ident+']'
             c.execute("UPDATE vx3_tasks SET status='done' WHERE user_id=? AND title=? AND status='open'",(uid,task_title))
         else: raise ValueError('Invoice action is not allowed in its current status.')
+    elif action=='invoice_due_soon_tasks':
+        # Explicit user action only. UTC calendar-day boundaries, including today
+        # through the next six days. The unique event is the idempotency key.
+        ts=int(time.time())
+        today=ts-ts%86400
+        rows=c.execute(
+            "SELECT id FROM vx4_invoices WHERE user_id=? AND status='issued' "
+            "AND due_at>=? AND due_at<?",
+            (uid,today,today+7*86400)
+        ).fetchall()
+        for (ident,) in rows:
+            # Lock/recheck state to avoid creating a task after concurrent payment.
+            claimed_invoice=c.execute(
+                "UPDATE vx4_invoices SET status=status WHERE id=? AND user_id=? "
+                "AND status='issued' AND due_at>=? AND due_at<?",
+                (ident,uid,today,today+7*86400)
+            ).rowcount
+            if claimed_invoice != 1: continue
+            claimed=c.execute(
+                "INSERT INTO vx4_events(id,user_id,invoice_id,event_type,created_at) "
+                "VALUES (?,?,?,?,?) ON CONFLICT(user_id,invoice_id,event_type) DO NOTHING",
+                (secrets.token_hex(16),uid,ident,'due_soon_task',ts)
+            ).rowcount
+            if claimed != 1: continue
+            c.execute(
+                "INSERT INTO vx3_tasks(id,user_id,title,status,created_at) VALUES (?,?,?,?,?)",
+                (secrets.token_hex(16),uid,'Invoice due soon ['+ident+']','open',ts)
+            )
     elif action=='invoice_reminders':
         ts=int(time.time())
         today=ts-ts%86400
@@ -181,6 +212,7 @@ def render(c,uid,csrf):
         for description,cents,due_at in due_soon_items:
             body+='<tr><td>'+e(description)+'</td><td>'+money(cents)+'</td><td>'+datetime.fromtimestamp(due_at,timezone.utc).strftime('%Y-%m-%d')+'</td></tr>'
         body+='</table></div>'
+    body+='<form method="post" action="/workspace">'+token+'<input type="hidden" name="action" value="invoice_due_soon_tasks"><button>Create due-soon review tasks</button></form><p><small>Creates internal tasks only, once per invoice. No customer messages are sent.</small></p>'
     body+='<h3>Overdue receivables by age</h3><div class="stats">'
     for label,amount,count in (
         ('1–7 days overdue',aging[0],aging[3]),
