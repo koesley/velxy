@@ -113,5 +113,54 @@ class FounderActivationTests(unittest.TestCase):
         self.assertEqual(result["weekly_cohorts"], ())
         self.assertIn("No mature signup weeks", founder_activation.panel_html(result))
 
+
+    def test_mature_dropoff_segments_are_disjoint(self):
+        self.user(1, 20)
+        self.user(2, 20)
+        self.user(3, 20)
+        self.user(4, 20)
+        self.report("fast", 1, 20)
+        self.report("within-week", 2, 15)
+        self.report("late", 3, 10)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["saved_report_within_one_day"], 1)
+        self.assertEqual(m["saved_report_within_seven_days"], 2)
+        self.assertEqual(m["saved_report_after_seven_days"], 1)
+        self.assertEqual(m["mature_accounts_without_saved_report"], 1)
+        self.assertEqual(m["mature_seven_day_cohort"],
+                         m["saved_report_within_seven_days"] +
+                         m["saved_report_after_seven_days"] +
+                         m["mature_accounts_without_saved_report"])
+
+    def test_one_day_and_seven_day_boundaries_are_exclusive(self):
+        self.user(1, 10)
+        self.user(2, 10)
+        self.report("one-day-exact", 1, 9)
+        self.report("seven-day-exact", 2, 3)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["saved_report_within_one_day"], 0)
+        self.assertEqual(m["saved_report_within_seven_days"], 1)
+        self.assertEqual(m["saved_report_after_seven_days"], 1)
+
+    def test_immature_admin_and_failed_reports_not_in_diagnostics(self):
+        self.user(1, 2)
+        self.user(2, 20, "admin")
+        self.user(3, 20)
+        self.report("young", 1, 1)
+        self.report("admin", 2, 19)
+        self.report("failed", 3, 19, "failed")
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["mature_accounts_without_saved_report"], 1)
+        self.assertEqual(m["saved_report_within_one_day"], 0)
+        self.assertEqual(m["saved_report_after_seven_days"], 0)
+
+    def test_dashboard_diagnostics_are_aggregate_and_explained(self):
+        self.user(1, 20)
+        self.report("private-report-id", 1, 10)
+        markup = founder_activation.panel_html(founder_activation.report_activation(self.db, NOW))
+        self.assertIn("24-hour activation", markup)
+        self.assertIn("not proof of churn", markup)
+        self.assertNotIn("private-report-id", markup)
+
 if __name__ == "__main__":
     unittest.main()
