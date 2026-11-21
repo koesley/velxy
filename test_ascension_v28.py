@@ -58,6 +58,17 @@ class AscensionTests(unittest.TestCase):
   self.assertIn('Private Alpha task',page)
   with self.assertRaises(ValueError):
    self.asc.dashboard(self.c,1,self.w2)
+ def test_action_link_rejects_untrusted_destinations(self):
+  for path in ('https://evil.example','//evil.example','javascript:alert(1)','/unknown','/oracle" onclick="alert(1)'):
+   with self.subTest(path=path):
+    with self.assertRaises(ValueError):self.asc.route_url(path,self.w1)
+ def test_workspace_query_is_encoded_in_links(self):
+  url=self.asc.route_url('/oracle','a&b"<c')
+  self.assertIn('w=a%26b%22%3Cc',url)
+  self.assertNotIn('"<c',url)
+ def test_evidence_with_untrusted_route_is_rejected(self):
+  with patch.object(self.asc.launchpad_v27,'evidence',return_value=[('Untrusted',False,'https://evil.example')]):
+   with self.assertRaises(ValueError):self.asc.dashboard(self.c,1,self.w1)
  def test_no_mutation(self):
   before=self.c.total_changes
   self.asc.dashboard(self.c,1,self.w1)
