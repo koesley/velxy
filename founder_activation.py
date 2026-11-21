@@ -28,12 +28,21 @@ def report_activation(conn, as_of=None):
     mature = 0
     converted = 0
     all_saved = 0
+    first_day = 0
+    late_saved = 0
+    never_saved = 0
     for created, first_report in rows:
         created = int(created)
         if first_report is not None:
             all_saved += 1
         if created + 7 * SECONDS_PER_DAY <= cutoff:
             mature += 1
+            if first_report is None:
+                never_saved += 1
+            elif int(first_report) < created + SECONDS_PER_DAY:
+                first_day += 1
+            elif int(first_report) >= created + 7 * SECONDS_PER_DAY:
+                late_saved += 1
             if first_report is not None and int(first_report) < created + 7 * SECONDS_PER_DAY:
                 converted += 1
             week = (created // (7 * SECONDS_PER_DAY)) * (7 * SECONDS_PER_DAY)
@@ -45,6 +54,9 @@ def report_activation(conn, as_of=None):
         "accounts_with_saved_report": all_saved,
         "mature_seven_day_cohort": mature,
         "saved_report_within_seven_days": converted,
+        "saved_report_within_one_day": first_day,
+        "saved_report_after_seven_days": late_saved,
+        "mature_accounts_without_saved_report": never_saved,
         "seven_day_rate_pct": round(100 * converted / mature, 2) if mature else None,
         "weekly_cohorts": tuple((week, counts[0], counts[1]) for week, counts in sorted(weekly.items(), reverse=True)[:8]),
     }
@@ -57,6 +69,9 @@ def panel_html(metrics):
         ("Accounts with at least one ready saved report", metrics["accounts_with_saved_report"]),
         ("Signups with seven full days of observation", metrics["mature_seven_day_cohort"]),
         ("Mature signups saving a ready report within seven days", metrics["saved_report_within_seven_days"]),
+        ("Mature signups saving within 24 hours", metrics["saved_report_within_one_day"]),
+        ("Mature signups first saving after seven days", metrics["saved_report_after_seven_days"]),
+        ("Mature signups with no ready saved report observed", metrics["mature_accounts_without_saved_report"]),
         ("Seven-day saved-report activation", "Not available (no mature cohort)" if rate is None else str(rate) + "%"),
     )
     rows = "".join("<tr><th scope='row'>" + html.escape(label) +
@@ -72,6 +87,7 @@ def panel_html(metrics):
             "denominator. This is an observed product milestone, not proof of "
             "customer business value, payment, or retention. Anonymous demo "
             "runs and unsaved results are excluded.</p>"
+            "<p>Diagnostic: compare 24-hour activation with seven-day activation to identify early onboarding friction. Late saves show delayed adoption, while no saved report is an observed missing milestone, not proof of churn. These are descriptive counts, not causal conclusions.</p>"
             "<table><tbody>" + rows + "</tbody></table>" + cohort_html
             + "<p>Older records and late report imports may affect counts. "
             "No individual customer information is shown.</p></section>")
