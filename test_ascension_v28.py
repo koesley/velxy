@@ -158,6 +158,21 @@ class AscensionTests(unittest.TestCase):
   page=self.asc.dashboard(self.c,1,self.w1)
   self.assertIn('No ratings yet',page)
   self.assertIn('Customer pilot outcomes',page)
+ def test_launchpad_feedback_count_is_not_capped_at_visible_limit(self):
+  import launchpad_v27
+  pilot=launchpad_v27.create(self.c,1,self.w1,'Long running pilot')
+  for index in range(31):
+   launchpad_v27.feedback(self.c,1,self.w1,pilot,4,'Feedback entry '+str(index))
+  page=launchpad_v27.render(self.c,1,'csrf-test',self.w1)
+  self.assertIn('Feedback entries: 31',page)
+  self.assertIn('Feedback entry 30',page)
+ def test_launchpad_tool_urls_are_encoded_and_allowlisted(self):
+  import launchpad_v27
+  self.assertIn('w=a%26b%22',launchpad_v27.tool_url('/genesis-prime','a&b"'))
+  for path in ('https://malicious.example','//malicious.example','javascript:alert(1)','/oracle'):
+   with self.subTest(path=path):
+    with self.assertRaises(ValueError):
+     launchpad_v27.tool_url(path,self.w1)
  def test_no_mutation(self):
   before=self.c.total_changes
   self.asc.dashboard(self.c,1,self.w1)
