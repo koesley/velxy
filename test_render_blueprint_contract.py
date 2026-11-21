@@ -65,7 +65,7 @@ class RenderBlueprintContractTests(unittest.TestCase):
                 self.assertIn(trigger, workflow)
         self.assertIn("    branches: [main]", workflow)
         self.assertNotIn("    paths:", workflow)
-        self.assertRegex(workflow, r"(?m)^permissions:\\n  contents: read$")
+        self.assertRegex(workflow, r"(?m)^permissions:\n  contents: read$")
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("cancel-in-progress: true", workflow)
 
