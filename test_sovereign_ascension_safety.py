@@ -35,6 +35,26 @@ class AscensionSafetyTests(unittest.TestCase):
     def tearDown(self):
         self.c.close()
 
+    def test_opportunity_discovery_does_not_ignore_leads_after_500(self):
+        self.c.executemany(
+            """INSERT INTO sales_pipeline_leads
+            (id,owner_id,business,contact,email,industry,stage,estimated_value,
+             notes,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            [(f"extra-{i}",1,f"Business {i}","Contact",f"extra{i}@example.com",
+              "services","proposal",100,"",1,1) for i in range(510)])
+        items=sovereign_ascension.discover(self.c,1)
+        self.assertEqual(len(items),511)
+        self.assertTrue(any(item["lead_id"]=="extra-509" for item in items))
+        self.assertFalse(any(item["lead_id"]=="lead-b" for item in items))
+
+    def test_recent_leads_are_not_falsely_flagged(self):
+        import time
+        now=int(time.time())
+        self.c.execute("UPDATE sales_pipeline_leads SET updated_at=? WHERE id='lead-a'",(now,))
+        self.assertFalse(any(item["lead_id"]=="lead-a"
+                             for item in sovereign_ascension.discover(self.c,1,at=now)))
+
     def test_requires_current_evidence_and_owner(self):
         with self.assertRaises(ValueError):
             sovereign_ascension.action(self.c, 1, "lead-b", "stalled_deal", "approved")
