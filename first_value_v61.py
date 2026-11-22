@@ -34,6 +34,7 @@ def analyze_activation(events: Iterable[ProductEvent], workspace_id: str, as_of:
     Retention requires a separate 'returned' event after signup, within
     the day-N window and on or after day N (not mere elapsed presence).
     Cohorts without full observation time are excluded from each rate.
+    Day-N retention requires observing the entire day-N 24-hour window.
     """
     if not isinstance(workspace_id, str) or not workspace_id.strip():
         raise ValueError("workspace_id required")
@@ -81,7 +82,7 @@ def analyze_activation(events: Iterable[ProductEvent], workspace_id: str, as_of:
                                   for signup, activated in mature_activation)
     for days in WINDOW_DAYS:
         mature = [(signup, returns) for signup, _, _, returns in eligible
-                  if signup + timedelta(days=days) <= cutoff]
+                  if signup + timedelta(days=days + 1) <= cutoff]
         retained = sum(any(signup + timedelta(days=days) <= t <
                            signup + timedelta(days=days + 1) for t in returns)
                        for signup, returns in mature)
@@ -113,6 +114,7 @@ def analyze_activation(events: Iterable[ProductEvent], workspace_id: str, as_of:
             "First value must represent an independently defined customer outcome.",
             "Seven-day activation excludes immature signup cohorts and requires first value within seven days.",
             "Day-N retention means a return event during that specific 24-hour window.",
+            "Retention denominators require the complete day-N window to have elapsed.",
             "Late-arriving events and incomplete instrumentation can change metrics.",
             "No inference of causal uplift, profit, or future conversion.",
         ],
