@@ -81,5 +81,32 @@ class FirstValueTests(unittest.TestCase):
         at_boundary = analyze_activation(rows, "a", T + timedelta(days=8))
         self.assertEqual(at_boundary["day_n_retention"]["7"]["eligible"], 1)
 
+    def test_all_retention_windows_exclude_immature_and_foreign_customers(self):
+        rows = [ev("a", "old", "signup"),
+                ev("a", "old", "returned", days=30, hours=12),
+                ev("a", "old", "returned", days=90, hours=12),
+                ev("a", "recent", "signup", days=84),
+                ev("a", "recent", "returned", days=91),
+                ev("b", "foreign", "signup"),
+                ev("b", "foreign", "returned", days=30)]
+        result = analyze_activation(rows, "a", T + timedelta(days=90, hours=23))
+        self.assertEqual(result["day_n_retention"]["30"],
+                         {"eligible": 1, "retained": 1, "rate_pct": 100.0})
+        self.assertEqual(result["day_n_retention"]["90"],
+                         {"eligible": 0, "retained": 0, "rate_pct": None})
+        mature = analyze_activation(rows, "a", T + timedelta(days=91))
+        self.assertEqual(mature["day_n_retention"]["90"],
+                         {"eligible": 1, "retained": 1, "rate_pct": 100.0})
+        self.assertEqual(mature["signups"], 2)
+
+    def test_return_outside_day_window_not_counted(self):
+        rows = [ev("a", "x", "signup"),
+                ev("a", "x", "returned", days=6, hours=23),
+                ev("a", "x", "returned", days=8),
+                ev("b", "x", "returned", days=7)]
+        result = analyze_activation(rows, "a", T + timedelta(days=9))
+        self.assertEqual(result["day_n_retention"]["7"],
+                         {"eligible": 1, "retained": 0, "rate_pct": 0.0})
+
 if __name__ == "__main__":
     unittest.main()
