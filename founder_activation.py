@@ -40,6 +40,9 @@ def report_activation(conn, as_of=None):
     middle_saved = 0
     thirty_day_eligible = 0
     thirty_day_repeat = 0
+    # Separate mature first-day and delayed-first-week cohorts for actionable
+    # onboarding diagnostics; these are associations, not causal effects.
+    repeat_by_activation_speed = {"within_24h": [0, 0], "24h_to_7d": [0, 0]}
     for created, first_report, has_repeat in rows:
         try:
             created = int(created)
@@ -67,6 +70,9 @@ def report_activation(conn, as_of=None):
                 if created + 30 * SECONDS_PER_DAY <= cutoff:
                     thirty_day_eligible += 1
                     thirty_day_repeat += int(has_repeat == 1)
+                    speed = "within_24h" if first_report < created + SECONDS_PER_DAY else "24h_to_7d"
+                    repeat_by_activation_speed[speed][0] += 1
+                    repeat_by_activation_speed[speed][1] += int(has_repeat == 1)
             week = (created // (7 * SECONDS_PER_DAY)) * (7 * SECONDS_PER_DAY)
             bucket = weekly.setdefault(week, [0, 0])
             bucket[0] += 1
@@ -75,7 +81,13 @@ def report_activation(conn, as_of=None):
             stages[0] += 1
             stages[1] += int(first_report is not None and first_report < created + SECONDS_PER_DAY)
             stages[2] += int(first_report is not None and created + SECONDS_PER_DAY <= first_report < created + 7 * SECONDS_PER_DAY)
+    speed_metrics = {
+        key: {"eligible": counts[0], "repeat_users": counts[1],
+              "rate_pct": round(100 * counts[1] / counts[0], 2) if counts[0] else None}
+        for key, counts in repeat_by_activation_speed.items()
+    }
     return {
+        "repeat_usage_by_first_save_speed": speed_metrics,
         "first_week_activated_with_30_day_observation": thirty_day_eligible,
         "first_week_activated_with_later_ready_report": thirty_day_repeat,
         "later_report_usage_rate_pct": round(100 * thirty_day_repeat / thirty_day_eligible, 2) if thirty_day_eligible else None,
@@ -118,6 +130,21 @@ def panel_html(metrics):
     rows = "".join("<tr><th scope='row'>" + html.escape(label) +
                    "</th><td>" + html.escape(str(value)) + "</td></tr>"
                    for label, value in fields)
+    speed = metrics.get("repeat_usage_by_first_save_speed", {})
+    speed_labels = (("within_24h", "First saved within 24 hours"),
+                    ("24h_to_7d", "First saved between 24 hours and seven days"))
+    speed_rows = "".join(
+        "<tr><th scope='row'>" + html.escape(label) + "</th><td>" +
+        html.escape(str(speed.get(key, {}).get("eligible", 0))) + "</td><td>" +
+        html.escape(str(speed.get(key, {}).get("repeat_users", 0))) + "</td><td>" +
+        ("Not available" if speed.get(key, {}).get("rate_pct") is None else
+         html.escape(str(speed[key]["rate_pct"])) + "%") + "</td></tr>"
+        for key, label in speed_labels)
+    speed_html = ("<h3>30-day repeat use by first-save timing</h3>"
+                  "<p>Only first-week activated customers with a complete 30-day observation window are included. "
+                  "Compare the two segments to prioritize onboarding research; differences do not establish causation or paid retention.</p>"
+                  "<table><thead><tr><th>First ready report</th><th>Eligible</th><th>Further ready report</th><th>Observed rate</th></tr></thead><tbody>"
+                  + speed_rows + "</tbody></table>")
     from datetime import datetime, timezone
     cohorts = metrics.get("weekly_cohorts", ())
     stages = {week: (total, day_one, delayed) for week, total, day_one, delayed in metrics.get("weekly_activation_stages", ())}
@@ -131,6 +158,6 @@ def panel_html(metrics):
             "runs and unsaved results are excluded.</p>"
             "<p>Repeat-usage diagnostic: among accounts that first saved within seven days and have at least 30 days of observation, count a further ready saved report from day 7 up to (but excluding) day 30. This is observed repeat product use, not proof of paid retention, recurring revenue, or customer outcomes. No eligible accounts means the rate is unavailable.</p>"
             "<p>Diagnostic: compare 24-hour activation with seven-day activation to identify early onboarding friction. The 24-hour-to-seven-day lift isolates customers who reached the milestone later in the first week. Late saves show delayed adoption, while no saved report is an observed missing milestone, not proof of churn. These are descriptive counts, not causal conclusions.</p>"
-            "<table><tbody>" + rows + "</tbody></table>" + cohort_html
+            "<table><tbody>" + rows + "</tbody></table>" + speed_html + cohort_html
             + "<p>Older records, malformed timestamps, and late report imports may affect counts. Invalid signup timestamps are excluded rather than treated as customer activity. "
             "No individual customer information is shown.</p></section>")
