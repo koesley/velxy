@@ -23,8 +23,14 @@ Sequences:
 - PRO upsell (per user, once ever): day 0 (the moment they hit the
   paywall) and day 3. Each points at the account page, where the BTCPay
   checkout lives. Only queued for non-PRO users.
+- Welcome (per user, once ever, at signup): day 0, day 1, day 3. The
+  third leg the engine was missing: a new signup heard nothing after
+  the account was created, so the seeded ledger Demo-to-Workspace
+  leaves behind sat unused and the 3 free reports never got touched.
+  Day 0 welcomes them (naming the seeded ledger when the signup came
+  from an own-CSV demo), day 1 nudges the ledger, day 3 points at PRO.
 
-Both sequences record a 'followup_queued' site event so the funnel on
+All three sequences record a 'followup_queued' site event so the funnel on
 /founder-stats shows the engine working.
 """
 import time
@@ -64,6 +70,38 @@ PRO_STEPS = (
      'You hit your free-report limit a few days ago. PRO is $49 for 30 '
      'days, 50 reports, Bitcoin only — and your reports are waiting.\n\n'
      'Upgrade here: {site_url}/account\n\n— VELXTRIA'),
+)
+
+# Welcome + activation (per user, once ever, at signup). Day 0 has two
+# versions: one for a signup that arrived with a seeded ledger (an
+# own-CSV demo claimed into the account), one for a plain register.
+# {site_url} is filled in.
+WELCOME_SEEDED_DAY0 = (
+    0, 'Welcome to VELXTRIA — your workspace is ready',
+    'Your demo report is saved to your free account, and your sales are '
+    'already in your Sales Ledger — your dashboard opens on your real '
+    'numbers. Log a sale as it happens, or turn your ledger into a full '
+    'cleaned report.\n\n'
+    'You have 3 free reports, lifetime.\n\n'
+    'Open your dashboard: {site_url}/\n\n— VELXTRIA')
+WELCOME_PLAIN_DAY0 = (
+    0, 'Welcome to VELXTRIA — your free account is ready',
+    'Your free account is ready. Upload a sales CSV to get a cleaned '
+    'report with the problems flagged, or log sales as they happen in '
+    'your Sales Ledger.\n\n'
+    'You have 3 free reports, lifetime.\n\n'
+    'Open your dashboard: {site_url}/\n\n— VELXTRIA')
+WELCOME_STEPS = (
+    (1, 'Your Sales Ledger is waiting',
+     'Your Sales Ledger keeps your sales in one place. Log a sale as it '
+     'happens and watch your monthly totals grow — or turn your ledger '
+     'into a full cleaned report (uses 1 of your 3 free reports).\n\n'
+     'Open your dashboard: {site_url}/\n\n— VELXTRIA'),
+    (3, 'You have free reports waiting',
+     'You have 3 free reports, lifetime. When you need more, PRO is $49 '
+     'for 30 days, 50 reports, Bitcoin only — and it unlocks the moment '
+     'payment settles.\n\n'
+     'See PRO on your account page: {site_url}/account\n\n— VELXTRIA'),
 )
 
 
@@ -109,4 +147,28 @@ def queue_pro_upsell(conn, user_id, email, site_url, now=None):
             queued += 1
     if queued:
         site_stats.record(conn, 'followup_queued', 'pro:%d' % user_id)
+    return queued
+
+
+def queue_welcome(conn, user_id, email, site_url, seeded=False, now=None):
+    """Queue the welcome + activation sequence for a new signup, once
+    ever. Day 0 welcomes them (naming the seeded ledger when the signup
+    came from an own-CSV demo), day 1 nudges the ledger, day 3 points
+    at PRO. Returns how many steps were newly queued (0 when already
+    queued for this user)."""
+    import notifications
+    import site_stats
+    now = int(time.time()) if now is None else now
+    steps = [WELCOME_SEEDED_DAY0 if seeded else WELCOME_PLAIN_DAY0]
+    steps.extend(WELCOME_STEPS)
+    queued = 0
+    for days, subject, template in steps:
+        body = template.format(site_url=site_url)
+        if notifications.queue(
+                conn, email, subject, body, 'welcome',
+                dedupe_key='welcome:%d:%d:%s' % (days, user_id, email),
+                send_at=now + days * DAY):
+            queued += 1
+    if queued:
+        site_stats.record(conn, 'followup_queued', 'welcome:%d' % user_id)
     return queued

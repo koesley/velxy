@@ -507,11 +507,18 @@ class EmailFlowTests(unittest.TestCase):
         with self.portal.db() as c:
             return c.execute('SELECT id FROM users WHERE email=?', (email,)).fetchone()[0]
 
-    def outbox_for(self, email):
+    def outbox_for(self, email, kind=None):
+        # Scoped by kind when given: registering a user now queues the
+        # welcome sequence, so an unscoped count would include those
+        # rows alongside the email the test is actually about.
         with self.portal.db() as c:
+            if kind is None:
+                return c.execute(
+                    'SELECT subject,body,kind FROM email_outbox WHERE recipient=?',
+                    (email,)).fetchall()
             return c.execute(
-                'SELECT subject,body,kind FROM email_outbox WHERE recipient=?',
-                (email,)).fetchall()
+                'SELECT subject,body,kind FROM email_outbox WHERE recipient=? AND kind=?',
+                (email, kind)).fetchall()
 
     def test_pro_confirmation_queued_on_settlement(self):
         import btcpay_mainnet
@@ -531,7 +538,7 @@ class EmailFlowTests(unittest.TestCase):
                           ('inv1', 'https://btcpay.example.com/i/inv1', order_id))
             with self.portal.db() as c:
                 self.assertTrue(btcpay_mainnet.reconcile(c, uid, req=fake))
-        rows = self.outbox_for(email)
+        rows = self.outbox_for(email, kind='pro_activated')
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0][2], 'pro_activated')
         self.assertIn('PRO is active', rows[0][0])
@@ -542,7 +549,7 @@ class EmailFlowTests(unittest.TestCase):
             status, _, body = self.post_form('/forgot', {'email': email})
         self.assertEqual(status, 200)
         self.assertIn('Check your email', body)
-        rows = self.outbox_for(email)
+        rows = self.outbox_for(email, kind='password_reset')
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0][2], 'password_reset')
         match = re.search(r'/reset\?token=([A-Za-z0-9_-]+)', rows[0][1])
@@ -587,13 +594,15 @@ class EmailFlowTests(unittest.TestCase):
         status, _, body = self.post_form('/forgot', {'email': email})
         self.assertEqual(status, 200)
         self.assertIn('not available yet', body)
-        self.assertEqual(self.outbox_for(email), [])
+        # The forgot flow queues nothing when delivery is unavailable;
+        # the welcome rows from registration are a different kind.
+        self.assertEqual(self.outbox_for(email, kind='password_reset'), [])
 
     def test_reset_link_expired(self):
         email, _ = self.new_user()
         with patch.dict(os.environ, SMTP_ENV):
             self.post_form('/forgot', {'email': email})
-        rows = self.outbox_for(email)
+        rows = self.outbox_for(email, kind='password_reset')
         token = re.search(r'/reset\?token=([A-Za-z0-9_-]+)', rows[0][1]).group(1)
         with self.portal.db() as c:
             c.execute('UPDATE password_resets SET expires=? WHERE user_id=?',
