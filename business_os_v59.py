@@ -530,10 +530,19 @@ def overview(c,uid,wid):
                     row)) for row in c.execute("SELECT id,name,contact,source,value,status,created,updated FROM bos59_leads WHERE workspace_id=? ORDER BY created DESC,id DESC LIMIT 300",(wid,))]
     actions=[dict(zip(("id","lead_id","message","decision","reason","created"),
                       row)) for row in c.execute("SELECT id,lead_id,message,decision,reason,created FROM bos59_actions WHERE workspace_id=? ORDER BY created DESC,id DESC LIMIT 300",(wid,))]
+    # Dashboard previews are capped at 300, but headline metrics must reflect
+    # the full authorized workspace rather than only the preview.
+    total_leads,open_value,won_value=c.execute(
+        """SELECT COUNT(*),
+                  COALESCE(SUM(CASE WHEN status IN ('new','contacted') THEN value ELSE 0 END),0),
+                  COALESCE(SUM(CASE WHEN status='won' THEN value ELSE 0 END),0)
+           FROM bos59_leads WHERE workspace_id=?""",(wid,)).fetchone()
+    pending=c.execute(
+        "SELECT COUNT(*) FROM bos59_actions WHERE workspace_id=? AND decision='pending'",(wid,)).fetchone()[0]
     return {"role":role,"workspace_id":wid,"leads":leads,"actions":actions,
-            "metrics":{"leads":len(leads),"open_pipeline":round(sum(x["value"] for x in leads if x["status"] in ("new","contacted")),2),
-                       "won_reported":round(sum(x["value"] for x in leads if x["status"]=="won"),2),
-                       "pending_approvals":sum(x["decision"]=="pending" for x in actions)},
+            "metrics":{"leads":total_leads,"open_pipeline":round(open_value,2),
+                       "won_reported":round(won_value,2),
+                       "pending_approvals":pending},
             "limitations":["Values are user-entered, not verified transactions.",
                            "Won status does not prove collected revenue.",
                            "Approving a draft never sends it externally.",
