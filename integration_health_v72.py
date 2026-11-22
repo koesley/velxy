@@ -9,6 +9,7 @@ import sync_control_v68 as sync
 import business_os_v59 as crm
 import sync_recovery_v74 as recovery
 import contact_checkpoints_v75 as checkpoints
+import data_trust_v76 as trust
 
 MAX_PAGES=10
 PAGE_SIZE=100
@@ -68,6 +69,7 @@ def render(c,uid,wid):
     reliability=recovery.render(c,uid,wid)
     progress=checkpoints.status(c,uid,wid)
     d=health(c,uid,wid)
+    trust_report=trust.assess(d)
     h=lambda x:html.escape(str(x),quote=True)
     def stamp(value):return time.strftime("%Y-%m-%d %H:%M UTC",time.gmtime(value)) if value else "—"
     return ('<section class="panel"><h1>VELXTRIA V72 · Integration Health</h1>'
@@ -77,4 +79,7 @@ def render(c,uid,wid):
         '<p>Last sync: '+h(d["last_state"])+' · '+h(stamp(d["last_run"]))+
         ' · Imported: '+h(d["last_added"])+'</p>'
         '<p>Checkpoint pages: '+h(progress['pages_done'])+' · Added: '+h(progress['contacts_added'])+' · Completed scans: '+h(progress['cycles'])+'</p>'
+        '<p>Data trust: '+h(trust_report['status'])+'</p>'+
+        '<p>Trust details: '+h('; '.join(trust_report['reasons']))+'</p>'+
+        '<p>Automated decisions remain blocked pending independently verified source completeness.</p>'+
         '<p>Imports process up to 1,000 contacts per scheduled run.</p></section>'+reliability)
