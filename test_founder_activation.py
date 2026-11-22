@@ -197,5 +197,42 @@ class FounderActivationTests(unittest.TestCase):
         self.assertEqual(m["saved_report_within_seven_days"], 1)
         self.assertNotIn("private-valid-report-token", founder_activation.panel_html(m))
 
+    def test_weekly_first_day_and_delayed_stages_reconcile(self):
+        for uid in range(1, 6):
+            self.user(uid, 21)
+        self.report("instant", 1, 21)
+        self.report("day-one-boundary", 2, 20)
+        self.report("six-days", 3, 15)
+        self.report("late", 4, 13)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(len(m["weekly_activation_stages"]), 1)
+        week, total, fast, delayed = m["weekly_activation_stages"][0]
+        self.assertEqual((total, fast, delayed), (5, 1, 2))
+        self.assertEqual(m["weekly_cohorts"][0], (week, 5, fast + delayed))
+        page = founder_activation.panel_html(m)
+        self.assertIn("Saved within 24h", page)
+        self.assertIn("First saved 24h", page)
+        self.assertNotIn("instant", page)
+
+    def test_weekly_stages_exclude_immature_admin_and_failed(self):
+        self.user(1, 21)
+        self.user(2, 2)
+        self.user(3, 21, "admin")
+        self.report("failed", 1, 20, "failed")
+        self.report("young", 2, 1)
+        self.report("admin", 3, 20)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(sum(row[1] for row in m["weekly_activation_stages"]), 1)
+        self.assertEqual(sum(row[2] + row[3] for row in m["weekly_activation_stages"]), 0)
+
+    def test_weekly_stages_keep_existing_cohort_contract_and_eight_week_cap(self):
+        for uid in range(1, 15):
+            self.user(uid, 8 + uid * 7)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(len(m["weekly_activation_stages"]), 8)
+        self.assertEqual(tuple(row[:2] for row in m["weekly_activation_stages"]),
+                         tuple(row[:2] for row in m["weekly_cohorts"]))
+        self.assertTrue(all(len(row) == 3 for row in m["weekly_cohorts"]))
+
 if __name__ == "__main__":
     unittest.main()
