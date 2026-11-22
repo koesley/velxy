@@ -460,9 +460,13 @@ class ReportEngineTests(unittest.TestCase):
         import portal
         token = portal.store_demo_zip(b'zip-bytes', 6, 3, 'sales.csv')
         self.assertEqual(portal.take_demo_zip(token), b'zip-bytes')
-        self.assertEqual(portal.peek_demo_zip(token)[2:], (6, 3, 'sales.csv'))
+        # The entry carries (accepted, rejected, filename, is_sample):
+        # an own-CSV demo is not a sample.
+        self.assertEqual(portal.peek_demo_zip(token)[2:], (6, 3, 'sales.csv', False))
+        sample = portal.store_demo_zip(b'zip-bytes', 6, 3, 'VELXTRIA_Sample_Sales.csv', True)
+        self.assertEqual(portal.peek_demo_zip(sample)[2:], (6, 3, 'VELXTRIA_Sample_Sales.csv', True))
         # Expired entries are gone on the next read.
-        portal._DEMO_ZIPS[token] = (b'stale', 0, 6, 3, 'sales.csv')
+        portal._DEMO_ZIPS[token] = (b'stale', 0, 6, 3, 'sales.csv', False)
         self.assertIsNone(portal.take_demo_zip(token))
         self.assertNotIn(token, portal._DEMO_ZIPS)
 

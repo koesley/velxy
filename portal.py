@@ -517,12 +517,12 @@ DEMO_COOKIE='velxtria_demo'
 _DEMO_ZIPS={}
 _DEMO_ZIPS_LOCK=Lock()
 
-def store_demo_zip(zip_bytes,accepted,rejected,filename):
+def store_demo_zip(zip_bytes,accepted,rejected,filename,is_sample=False):
  token=secrets.token_urlsafe(24);now_s=time.time()
  with _DEMO_ZIPS_LOCK:
   for key in [k for k,(_,exp,*_rest) in _DEMO_ZIPS.items() if exp<=now_s]:del _DEMO_ZIPS[key]
   while len(_DEMO_ZIPS)>=DEMO_ZIP_MAX:del _DEMO_ZIPS[min(_DEMO_ZIPS,key=lambda k:_DEMO_ZIPS[k][1])]
-  _DEMO_ZIPS[token]=(zip_bytes,now_s+DEMO_ZIP_TTL,accepted,rejected,filename)
+  _DEMO_ZIPS[token]=(zip_bytes,now_s+DEMO_ZIP_TTL,accepted,rejected,filename,is_sample)
  return token
 
 def take_demo_zip(token):
@@ -725,7 +725,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
          '<p class="v8-demo-note">One step: creates your free account and saves this report to it — the full list of what\'s wrong with your data, kept forever. Your download expires in 10 minutes, but a free account keeps it.</p>')
   else:
    keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Save your report — create your free account<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Save your report to my free account</button></form>'
-         '<p class="v8-demo-note">One step: creates your free account and saves YOUR report to it — the full list of what\'s wrong with YOUR data, kept forever. Your download expires in 10 minutes, but a free account keeps it.</p>')
+         '<p class="v8-demo-note">One step: creates your free account and saves YOUR report to it — the full list of what\'s wrong with YOUR data, kept forever. Your sales land in your Sales Ledger too, so your dashboard opens on your real numbers. Your download expires in 10 minutes, but a free account keeps it.</p>')
   email_form=''
   if share_token:
    # Anonymous runners vanish after the demo — this is the only chance
@@ -1140,7 +1140,7 @@ class Handler(BaseHTTPRequestHandler):
   create the share link, and render the result page. Used by /try (an
   uploaded CSV) and /try-sample (the built-in sample data), so both give
   the exact same full demo experience."""
-  token=store_demo_zip(report['zip_bytes'],report['accepted'],report['rejected'],filename)
+  token=store_demo_zip(report['zip_bytes'],report['accepted'],report['rejected'],filename,is_sample)
   with db() as c:
    site_stats.record(c,'demo_run',detail)
    share_token=demo_shares.create(c,report)
@@ -1162,7 +1162,8 @@ class Handler(BaseHTTPRequestHandler):
   entry=claim_demo_zip(demo_token)
   if not entry:
    raise ValueError('That demo report has expired or was already claimed — run the demo again to generate a new report.')
-  zip_bytes,_exp,accepted,rejected,filename=entry
+  zip_bytes,_exp,accepted,rejected,filename,*rest=entry
+  is_sample=bool(rest[0]) if rest else filename=='VELXTRIA_Sample_Sales.csv'
   ident=secrets.token_hex(16);digest=hashlib.sha256(zip_bytes).hexdigest()
   try:
    begin_report_write(user_id,ident)
@@ -1177,6 +1178,20 @@ class Handler(BaseHTTPRequestHandler):
    restore_demo_zip(demo_token,entry)
    abandon_report_write(user_id,ident)
    raise ValueError('Could not save this report right now. Your demo remains available for retry until its original expiry.')
+  # Demo-to-Workspace: an own-CSV demo already knows this business, so its
+  # cleaned sales become the starting Sales Ledger — the new account opens
+  # on their real numbers instead of an empty dashboard. Sample demos
+  # never seed (the sample is fictional). Seeding is best-effort: a row
+  # that cannot be stored is skipped, and a seeding failure never fails
+  # the report save above.
+  if not is_sample:
+   try:
+    with db() as c:
+     seeded=ledger.seed_from_zip_bytes(c,user_id,zip_bytes)
+     if seeded:
+      site_stats.record(c,'demo_workspace_seeded','seeded=%d'%seeded)
+   except Exception:
+    pass
   return ident
 
  def identity(self):
@@ -1344,7 +1359,7 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/checkout-feedback.js':
    js="""document.addEventListener('submit',function(e){var f=e.target;if(!f || !f.action || !f.action.includes('/btcpay/mainnet/checkout'))return;var b=f.querySelector('button[type="submit"],button:not([type])');if(!b)return;if(b.disabled){e.preventDefault();return;}b.disabled=true;b.textContent='Preparing secure Bitcoin checkout…';b.setAttribute('aria-busy','true');var note=document.createElement('span');note.setAttribute('role','status');note.textContent=' Creating your invoice; please wait.';f.appendChild(note);});"""
    return self.respond(200,js,'application/javascript',headers=[('Cache-Control','public, max-age=3600')])
-  if p=='/style.css':return self.respond(200,(LANDING_CSS+WORKSPACE_CSS+V51_CSS+sovereign_v56.CSS+omega_intelligence_v55.CSS+aegis_v54.CSS+sentinel_v53.CSS+titan_intelligence_v52.CSS+ascendancy_v51.CSS+singularity_v6.CSS+omni_v7.CSS+sovereign_v8.CSS+constellation_v9.CSS+trinity_v10.CSS+omnipotence_v12.CSS+singularity_x_v13.CSS+prometheus_v14.CSS+omega_v15.CSS+evolution_v16.CSS+phoenix_v17.CSS+infinity_v18.CSS+ascension_v28.CSS+integration_v29.CSS+atlas_v38.CSS+nexus_reforged_v41.CSS).encode('utf-8')+b'\n'+(ROOT/'site-studio.css').read_bytes()+b'\n'+(ROOT/'style.css').read_bytes(),'text/css; charset=utf-8',headers=[('Cache-Control','public, max-age=300, must-revalidate')])
+  if p=='/style.css':return self.respond(200,(LANDING_CSS+WORKSPACE_CSS+V51_CSS+sovereign_v56.CSS+omega_intelligence_v55.CSS+aegis_v54.CSS+sentinel_v53.CSS+titan_intelligence_v52.CSS+ascendancy_v51.CSS+singularity_v6.CSS+omni_v7.CSS+sovereign_v8.CSS+constellation_v9.CSS+trinity_v10.CSS+omnipotence_v12.CSS+singularity_x_v13.CSS+prometheus_v14.CSS+omega_v15.CSS+evolution_v16.CSS+phoenix_v17.CSS+infinity_v18.CSS+ascension_v28.CSS+integration_v29.CSS+atlas_v38.CSS+nexus_reforged_v41.CSS).encode('utf-8')+b'\n'+(ROOT/'site-studio.css').read_bytes()+b'\n'+(ROOT/'style.css').read_bytes(),'text/css; charset=utf-8',headers=[('Cache-Control','public, max-age=3600, must-revalidate')])
   if p in ('/site-studio.css','/site-preview.css') and os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE:
    return self.respond(200,(ROOT/p.lstrip('/')).read_bytes(),'text/css; charset=utf-8')
   if p.startswith('/assistant-v64/'):
