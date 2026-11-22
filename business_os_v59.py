@@ -648,7 +648,7 @@ def _safe_spreadsheet_cell(value):
     if not isinstance(value,str):
         return value
     # Leading whitespace and control characters can conceal formula prefixes.
-    if value.lstrip(" \\t\\r\\n").startswith(("=", "+", "-", "@")):
+    if value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
         return "'" + value
     return value
 
