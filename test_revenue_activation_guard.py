@@ -14,7 +14,7 @@ MODULES = (
 SOURCES = (
     "revenue_dominion_v60.py", "first_value_v61.py",
     "founder_economics.py", "founder_activation.py",
-    "portal.py", "ledger.py", "revenue_engine.py", "site_stats.py",
+    "portal.py", "ledger.py", "site_stats.py",
 )
 
 
