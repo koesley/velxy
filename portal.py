@@ -4163,4 +4163,18 @@ if __name__=='__main__':
   print('Email delivery queue enabled (' + ('Brevo' if notifications.brevo_configured() else 'SendGrid' if notifications.sendgrid_configured() else 'SMTP') + ')')
  else:print('Email not configured: reports available for download only')
  print('PRIVATE TEST ONLY — not production ready; no real customer data or payments.')
- ThreadingHTTPServer((host,port),Handler).serve_forever()
+ if mode == 'render-preview':
+  # One-time diagnostic only; results contain no secrets or upstream error text.
+  # Run after binding so the health-check listener is not delayed by probes.
+  def _log_readiness_dependencies():
+   try:
+    import verify_database, verify_storage
+    print('RENDER READINESS DIAGNOSTIC: database=' + verify_database.check(), flush=True)
+    print('RENDER READINESS DIAGNOSTIC: storage=' + verify_storage.check(), flush=True)
+   except Exception:
+    print('RENDER READINESS DIAGNOSTIC: probe_error', flush=True)
+  server=ThreadingHTTPServer((host,port),Handler)
+  Thread(target=_log_readiness_dependencies,daemon=True).start()
+  server.serve_forever()
+ else:
+  ThreadingHTTPServer((host,port),Handler).serve_forever()
