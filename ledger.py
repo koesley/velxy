@@ -140,7 +140,12 @@ def seed_from_zip_bytes(conn, user_id, zip_bytes, limit=SEED_LIMIT):
     except Exception:
         return 0
     seeded = 0
-    for row in csv.DictReader(io.StringIO(text)):
+    # Give each seeded row its own created timestamp, increasing in CSV
+    # order: they are all inserted in the same second, and created is the
+    # only thing ordering them, so identical timestamps would leave the
+    # order to chance.
+    base = int(time.time())
+    for idx, row in enumerate(csv.DictReader(io.StringIO(text))):
         if seeded >= limit:
             break
         try:
@@ -148,7 +153,8 @@ def seed_from_zip_bytes(conn, user_id, zip_bytes, limit=SEED_LIMIT):
                       row.get('Order ID'), row.get('Order Date'),
                       row.get('Customer'), row.get('Product'),
                       row.get('Quantity'), row.get('Unit Price'),
-                      row.get('Status'), row.get('Region'))
+                      row.get('Status'), row.get('Region'),
+                      now=base + idx)
         except ValueError:
             continue
         seeded += 1
@@ -161,7 +167,7 @@ def list_entries(conn, user_id, limit=10):
     rows = conn.execute(
         'SELECT id,order_id,order_date,customer,product,quantity,'
         'unit_price,status,region,created FROM ledger_entries'
-        ' WHERE user_id=? ORDER BY created DESC, rowid DESC LIMIT ?',
+        ' WHERE user_id=? ORDER BY created DESC, id DESC LIMIT ?',
         (user_id, limit)).fetchall()
     return rows
 
@@ -178,7 +184,7 @@ def _all_rows(conn, user_id):
     rows = conn.execute(
         'SELECT order_id,order_date,customer,product,quantity,unit_price,'
         'status,region FROM ledger_entries WHERE user_id=?'
-        ' ORDER BY created ASC, rowid ASC',
+        ' ORDER BY created ASC, id ASC',
         (user_id,)).fetchall()
     return [dict(zip(HEADER, [r[0], r[1], r[2], r[3], str(r[4]), r[5],
                               r[6], r[7]])) for r in rows]
