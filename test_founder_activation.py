@@ -279,5 +279,58 @@ class FounderActivationTests(unittest.TestCase):
         self.assertIsNone(m["later_report_usage_rate_pct"])
         self.assertIn("no eligible 30-day cohort", founder_activation.panel_html(m))
 
+
+    def test_repeat_usage_speed_segments_reconcile_and_exclude_immature(self):
+        self.user(1, 45)
+        self.user(2, 45)
+        self.user(3, 45)
+        self.user(4, 45)
+        self.user(5, 15)
+        self.report("fast-first", 1, 45)
+        self.report("fast-repeat", 1, 35)
+        self.report("fast-no-repeat", 2, 45)
+        self.report("delayed-first", 3, 43)
+        self.report("delayed-repeat", 3, 35)
+        self.report("delayed-no-repeat", 4, 43)
+        self.report("young-first", 5, 15)
+        self.report("young-repeat", 5, 7)
+        m = founder_activation.report_activation(self.db, NOW)
+        speed = m["repeat_usage_by_first_save_speed"]
+        self.assertEqual(speed["within_24h"], {"eligible": 2, "repeat_users": 1, "rate_pct": 50.0})
+        self.assertEqual(speed["24h_to_7d"], {"eligible": 2, "repeat_users": 1, "rate_pct": 50.0})
+        self.assertEqual(sum(v["eligible"] for v in speed.values()),
+                         m["first_week_activated_with_30_day_observation"])
+        self.assertEqual(sum(v["repeat_users"] for v in speed.values()),
+                         m["first_week_activated_with_later_ready_report"])
+        page = founder_activation.panel_html(m)
+        self.assertIn("30-day repeat use by first-save timing", page)
+        self.assertNotIn("fast-repeat", page)
+
+    def test_repeat_usage_speed_boundaries_and_empty_segment(self):
+        self.user(1, 35)
+        self.user(2, 35)
+        self.report("exact-day-one", 1, 34)
+        self.report("repeat-day-seven", 1, 28)
+        self.report("exact-day-seven", 2, 28)
+        self.report("later", 2, 25)
+        m = founder_activation.report_activation(self.db, NOW)
+        speed = m["repeat_usage_by_first_save_speed"]
+        self.assertEqual(speed["within_24h"], {"eligible": 0, "repeat_users": 0, "rate_pct": None})
+        self.assertEqual(speed["24h_to_7d"], {"eligible": 1, "repeat_users": 1, "rate_pct": 100.0})
+        self.assertEqual(m["first_week_activated_with_30_day_observation"], 1)
+        self.assertIn("Not available", founder_activation.panel_html(m))
+
+    def test_repeat_usage_speed_excludes_admin_failed_and_duplicates(self):
+        self.user(1, 50)
+        self.user(2, 50, "admin")
+        self.report("first", 1, 50)
+        self.report("failed", 1, 40, "failed")
+        self.report("admin-first", 2, 50)
+        self.report("admin-repeat", 2, 40)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["repeat_usage_by_first_save_speed"]["within_24h"]["eligible"], 1)
+        self.assertEqual(m["repeat_usage_by_first_save_speed"]["within_24h"]["repeat_users"], 0)
+        self.assertEqual(m["first_week_activated_with_later_ready_report"], 0)
+
 if __name__ == "__main__":
     unittest.main()
