@@ -25,6 +25,7 @@ def report_activation(conn, as_of=None):
         (cutoff, cutoff),
     ).fetchall()
     weekly = {}
+    weekly_stages = {}
     mature = 0
     converted = 0
     all_saved = 0
@@ -61,6 +62,10 @@ def report_activation(conn, as_of=None):
             bucket = weekly.setdefault(week, [0, 0])
             bucket[0] += 1
             bucket[1] += int(first_report is not None and int(first_report) < created + 7 * SECONDS_PER_DAY)
+            stages = weekly_stages.setdefault(week, [0, 0, 0])
+            stages[0] += 1
+            stages[1] += int(first_report is not None and first_report < created + SECONDS_PER_DAY)
+            stages[2] += int(first_report is not None and created + SECONDS_PER_DAY <= first_report < created + 7 * SECONDS_PER_DAY)
     return {
         "signup_accounts": len(rows) - invalid_timestamps,
         "excluded_invalid_timestamp_accounts": invalid_timestamps,
@@ -75,6 +80,7 @@ def report_activation(conn, as_of=None):
         "mature_accounts_without_saved_report": never_saved,
         "seven_day_rate_pct": round(100 * converted / mature, 2) if mature else None,
         "weekly_cohorts": tuple((week, counts[0], counts[1]) for week, counts in sorted(weekly.items(), reverse=True)[:8]),
+        "weekly_activation_stages": tuple((week, *counts) for week, counts in sorted(weekly_stages.items(), reverse=True)[:8]),
     }
 
 
@@ -99,8 +105,9 @@ def panel_html(metrics):
                    for label, value in fields)
     from datetime import datetime, timezone
     cohorts = metrics.get("weekly_cohorts", ())
-    cohort_rows = "".join("<tr><th scope='row'>" + datetime.fromtimestamp(week, timezone.utc).strftime("%Y-%m-%d") + "</th><td>" + str(total) + "</td><td>" + str(activated) + "</td><td>" + str(total - activated) + "</td><td>" + str(round(100 * activated / total, 2)) + "%</td></tr>" for week, total, activated in cohorts)
-    cohort_html = ("<h3>Recent mature signup weeks (UTC)</h3><p>Only accounts with seven full days of observation are included. Not activated does not mean churned or lost.</p><table><thead><tr><th>Week starting</th><th>Mature signups</th><th>Activated</th><th>Not activated</th><th>Rate</th></tr></thead><tbody>" + cohort_rows + "</tbody></table>") if cohorts else "<p>No mature signup weeks available.</p>"
+    stages = {week: (total, day_one, delayed) for week, total, day_one, delayed in metrics.get("weekly_activation_stages", ())}
+    cohort_rows = "".join("<tr><th scope='row'>" + datetime.fromtimestamp(week, timezone.utc).strftime("%Y-%m-%d") + "</th><td>" + str(total) + "</td><td>" + str(stages.get(week, (total, 0, activated))[1]) + "</td><td>" + str(stages.get(week, (total, 0, activated))[2]) + "</td><td>" + str(activated) + "</td><td>" + str(total - activated) + "</td><td>" + str(round(100 * activated / total, 2)) + "%</td></tr>" for week, total, activated in cohorts)
+    cohort_html = ("<h3>Recent mature signup weeks (UTC)</h3><p>Only accounts with seven full days of observation are included. 24-hour and later first-week saves are mutually exclusive; the seven-day total is their sum. Not activated does not mean churned or lost.</p><table><thead><tr><th>Week starting</th><th>Mature signups</th><th>Saved within 24h</th><th>First saved 24h–7d</th><th>Activated within 7d</th><th>Not activated within 7d</th><th>7d rate</th></tr></thead><tbody>" + cohort_rows + "</tbody></table>") if cohorts else "<p>No mature signup weeks available.</p>"
     return ("<section class='panel'><h2>V61 — Verified saved-report activation</h2>"
             "<p>Based on existing customer account creation and ready saved-report "
             "timestamps. Only signups at least seven days old enter the seven-day "
