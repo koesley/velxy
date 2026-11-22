@@ -643,13 +643,24 @@ def suggested_followup(name,status,days):
         body="Following up on our conversation. Do you have any questions I can help answer, or would you like to discuss the next steps?"
     return greeting+"\\n\\n"+body+"\\n\\nBest regards"
 
+def _safe_spreadsheet_cell(value):
+    """Prevent spreadsheet formula execution from untrusted CRM text fields."""
+    if not isinstance(value,str):
+        return value
+    # Leading whitespace and control characters can conceal formula prefixes.
+    if value.lstrip(" \\t\\r\\n").startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
 def export_csv(c,uid,wid):
     data=overview(c,uid,wid)
     f=io.StringIO()
     w=csv.writer(f)
     w.writerow(["id","name","contact","source","value","status","created"])
     for x in data["leads"]:
-        w.writerow([x[k] for k in ("id","name","contact","source","value","status","created")])
+        w.writerow([_safe_spreadsheet_cell(x[k]) if k in ("id","name","contact","source","status") else x[k]
+                    for k in ("id","name","contact","source","value","status","created")])
     return f.getvalue()
 
 def customer_search(c,uid,wid,query="",status="all",page=1):
