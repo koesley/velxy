@@ -17,12 +17,16 @@ def report_activation(conn, as_of=None):
     # One row per user, with the earliest ready report after account creation.
     # Filtering the report join avoids counting pre-signup or failed reports.
     rows = conn.execute(
-        "SELECT u.created, MIN(r.created) FROM users u "
+        "SELECT u.created, MIN(r.created), "
+        "CASE WHEN EXISTS (SELECT 1 FROM reports repeat_r WHERE repeat_r.user_id=u.id "
+        "AND repeat_r.status='ready' AND repeat_r.created>=u.created+? "
+        "AND repeat_r.created<u.created+? AND repeat_r.created<=?) THEN 1 ELSE 0 END "
+        "FROM users u "
         "LEFT JOIN reports r ON r.user_id=u.id AND r.status='ready' "
         "AND r.created>=u.created AND r.created<=? "
         "WHERE u.created<=? AND u.role='customer' "
         "GROUP BY u.id,u.created",
-        (cutoff, cutoff),
+        (7 * SECONDS_PER_DAY, 30 * SECONDS_PER_DAY, cutoff, cutoff, cutoff),
     ).fetchall()
     weekly = {}
     weekly_stages = {}
@@ -34,7 +38,9 @@ def report_activation(conn, as_of=None):
     never_saved = 0
     invalid_timestamps = 0
     middle_saved = 0
-    for created, first_report in rows:
+    thirty_day_eligible = 0
+    thirty_day_repeat = 0
+    for created, first_report, has_repeat in rows:
         try:
             created = int(created)
             first_report = None if first_report is None else int(first_report)
@@ -58,6 +64,9 @@ def report_activation(conn, as_of=None):
                 middle_saved += 1
             if first_report is not None and int(first_report) < created + 7 * SECONDS_PER_DAY:
                 converted += 1
+                if created + 30 * SECONDS_PER_DAY <= cutoff:
+                    thirty_day_eligible += 1
+                    thirty_day_repeat += int(has_repeat == 1)
             week = (created // (7 * SECONDS_PER_DAY)) * (7 * SECONDS_PER_DAY)
             bucket = weekly.setdefault(week, [0, 0])
             bucket[0] += 1
@@ -67,6 +76,9 @@ def report_activation(conn, as_of=None):
             stages[1] += int(first_report is not None and first_report < created + SECONDS_PER_DAY)
             stages[2] += int(first_report is not None and created + SECONDS_PER_DAY <= first_report < created + 7 * SECONDS_PER_DAY)
     return {
+        "first_week_activated_with_30_day_observation": thirty_day_eligible,
+        "first_week_activated_with_later_ready_report": thirty_day_repeat,
+        "later_report_usage_rate_pct": round(100 * thirty_day_repeat / thirty_day_eligible, 2) if thirty_day_eligible else None,
         "signup_accounts": len(rows) - invalid_timestamps,
         "excluded_invalid_timestamp_accounts": invalid_timestamps,
         "accounts_with_saved_report": all_saved,
@@ -88,6 +100,9 @@ def panel_html(metrics):
     rate = metrics["seven_day_rate_pct"]
     fields = (
         ("Customer accounts observed", metrics["signup_accounts"]),
+        ("First-week activated accounts with 30 days observed", metrics.get("first_week_activated_with_30_day_observation", 0)),
+        ("Those accounts with a further ready report on days 7–30", metrics.get("first_week_activated_with_later_ready_report", 0)),
+        ("Observed later-report usage among eligible activated accounts", "Not available (no eligible 30-day cohort)" if metrics.get("later_report_usage_rate_pct") is None else str(metrics["later_report_usage_rate_pct"]) + "%"),
         ("Accounts with at least one ready saved report", metrics["accounts_with_saved_report"]),
         ("Signups with seven full days of observation", metrics["mature_seven_day_cohort"]),
         ("Mature signups saving a ready report within seven days", metrics["saved_report_within_seven_days"]),
@@ -114,6 +129,7 @@ def panel_html(metrics):
             "denominator. This is an observed product milestone, not proof of "
             "customer business value, payment, or retention. Anonymous demo "
             "runs and unsaved results are excluded.</p>"
+            "<p>Repeat-usage diagnostic: among accounts that first saved within seven days and have at least 30 days of observation, count a further ready saved report from day 7 up to (but excluding) day 30. This is observed repeat product use, not proof of paid retention, recurring revenue, or customer outcomes. No eligible accounts means the rate is unavailable.</p>"
             "<p>Diagnostic: compare 24-hour activation with seven-day activation to identify early onboarding friction. The 24-hour-to-seven-day lift isolates customers who reached the milestone later in the first week. Late saves show delayed adoption, while no saved report is an observed missing milestone, not proof of churn. These are descriptive counts, not causal conclusions.</p>"
             "<table><tbody>" + rows + "</tbody></table>" + cohort_html
             + "<p>Older records, malformed timestamps, and late report imports may affect counts. Invalid signup timestamps are excluded rather than treated as customer activity. "

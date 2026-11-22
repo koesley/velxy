@@ -234,5 +234,50 @@ class FounderActivationTests(unittest.TestCase):
                          tuple(row[:2] for row in m["weekly_cohorts"]))
         self.assertTrue(all(len(row) == 3 for row in m["weekly_cohorts"]))
 
+
+    def test_repeat_usage_counts_only_further_ready_reports_in_days_seven_to_thirty(self):
+        self.user(1, 45)
+        self.user(2, 45)
+        self.user(3, 45)
+        self.report("first-a", 1, 44)
+        self.report("repeat-a", 1, 35)
+        self.report("duplicate-repeat-a", 1, 34)
+        self.report("first-b", 2, 44)
+        self.report("failed-repeat-b", 2, 35, "failed")
+        self.report("late-first-c", 3, 35)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["first_week_activated_with_30_day_observation"], 2)
+        self.assertEqual(m["first_week_activated_with_later_ready_report"], 1)
+        self.assertEqual(m["later_report_usage_rate_pct"], 50.0)
+        page = founder_activation.panel_html(m)
+        self.assertIn("Repeat-usage diagnostic", page)
+        self.assertNotIn("repeat-a", page)
+
+    def test_repeat_usage_excludes_immature_admin_and_out_of_window(self):
+        self.user(1, 29)
+        self.user(2, 40, "admin")
+        self.user(3, 40)
+        self.user(4, 40)
+        self.report("young-first", 1, 28)
+        self.report("young-repeat", 1, 20)
+        self.report("admin-first", 2, 39)
+        self.report("admin-repeat", 2, 30)
+        self.report("first-three", 3, 39)
+        self.report("day-thirty", 3, 10)
+        self.report("first-four", 4, 39)
+        self.report("day-seven-boundary", 4, 33)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["first_week_activated_with_30_day_observation"], 2)
+        self.assertEqual(m["first_week_activated_with_later_ready_report"], 1)
+        self.assertEqual(m["later_report_usage_rate_pct"], 50.0)
+
+    def test_repeat_usage_without_eligible_cohort_is_undefined(self):
+        self.user(1, 12)
+        self.report("first", 1, 11)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["first_week_activated_with_30_day_observation"], 0)
+        self.assertIsNone(m["later_report_usage_rate_pct"])
+        self.assertIn("no eligible 30-day cohort", founder_activation.panel_html(m))
+
 if __name__ == "__main__":
     unittest.main()
