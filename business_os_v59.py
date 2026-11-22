@@ -70,6 +70,16 @@ def init(c):
     c.execute("CREATE INDEX IF NOT EXISTS bos59_leads_scope ON bos59_leads(workspace_id,status)")
     c.execute("CREATE INDEX IF NOT EXISTS bos59_actions_scope ON bos59_actions(workspace_id,decision)")
 
+def task_due_utc_timestamp(due_date):
+    """Convert a task's ISO calendar date to a stable UTC timeline timestamp.
+
+    Task due dates are calendar dates, not local timestamps. Rendering must not
+    depend on the web server's timezone or daylight-saving settings.
+    """
+    day = datetime.date.fromisoformat(due_date)
+    return int(datetime.datetime.combine(day, datetime.time.min, tzinfo=datetime.timezone.utc).timestamp())
+
+
 def record_event(c,uid,wid,event_type,object_id):
     """Append an immutable workspace-scoped business event in the caller transaction."""
     if not event_type or not object_id:
@@ -813,7 +823,7 @@ def render(c,uid,wid,csrf,search="",status_filter="all",page=1):
         for body,created in notes_by_lead.get(lead["id"],[]):
             timeline.append((created,"Interaction",body))
         for tid,task_title,due,status in tasks_by_lead.get(lead["id"],[]):
-            timeline.append((int(time.mktime(datetime.date.fromisoformat(due).timetuple())),"Task "+status,task_title+" (due "+due+")"))
+            timeline.append((task_due_utc_timestamp(due),"Task "+status,task_title+" (due "+due+")"))
         for action in d["actions"]:
             if action["lead_id"]==lead["id"]:
                 timeline.append((action["created"],"Message draft "+action["decision"],action["message"]))
