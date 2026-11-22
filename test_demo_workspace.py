@@ -219,6 +219,31 @@ class DemoWorkspaceTests(unittest.TestCase):
             monthly, product, stats = ledger.summaries(c, uid)
         self.assertIn('Paid revenue: $350.00', stats)
 
+    def test_seed_orders_entries_most_recent_first(self):
+        import ledger
+        uid = self.register()
+        z = make_zip([good_row('W-001'), good_row('W-002'),
+                      good_row('W-003')])
+        with self.portal.db() as c:
+            seeded = ledger.seed_from_zip_bytes(c, uid, z)
+        self.assertEqual(seeded, 3)
+        with self.portal.db() as c:
+            rows = ledger.list_entries(c, uid, limit=10)
+        # Most recent first, in reverse CSV order: the last row seeded is
+        # the newest. (Seeding gives each row its own created timestamp.)
+        self.assertEqual([r[1] for r in rows], ['W-003', 'W-002', 'W-001'])
+
+    def test_ledger_sql_has_no_rowid(self):
+        # Regression guard: Postgres has no rowid column. The ledger read
+        # paths used ORDER BY ... rowid, which passed every sqlite test
+        # and then 502'd the dashboard and /ledger.csv on production
+        # Postgres the first time a real user had entries. Keep rowid out
+        # of ledger.py for good.
+        import ledger
+        import pathlib
+        src = pathlib.Path(ledger.__file__).read_text()
+        self.assertNotIn('rowid', src)
+
     def test_seed_skips_duplicates_and_bad_rows(self):
         import ledger
         uid = self.register()
