@@ -20,6 +20,7 @@ import csv
 import io
 import secrets
 import time
+import zipfile
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -114,6 +115,44 @@ def add_entry(conn, user_id, order_id, order_date, customer, product,
          entry['unit_price'], entry['status'], entry['region'],
          int(time.time()) if now is None else now))
     return ident
+
+
+SEED_LIMIT = 50
+
+
+def seed_from_zip_bytes(conn, user_id, zip_bytes, limit=SEED_LIMIT):
+    """Seed the ledger from a report ZIP's cleaned_sales.csv.
+
+    Demo-to-Workspace: when a visitor claims an own-CSV demo into their
+    account, the demo's accepted sales become the starting ledger, so the
+    dashboard opens on their real numbers instead of an empty workspace.
+    Returns how many entries were stored. A row that cannot be stored
+    (duplicate order ID, invalid data) is skipped, and a ZIP without a
+    readable cleaned_sales.csv seeds nothing — never raises.
+    """
+    if not zip_bytes:
+        return 0
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+            if 'cleaned_sales.csv' not in z.namelist():
+                return 0
+            text = z.read('cleaned_sales.csv').decode('utf-8-sig')
+    except Exception:
+        return 0
+    seeded = 0
+    for row in csv.DictReader(io.StringIO(text)):
+        if seeded >= limit:
+            break
+        try:
+            add_entry(conn, user_id,
+                      row.get('Order ID'), row.get('Order Date'),
+                      row.get('Customer'), row.get('Product'),
+                      row.get('Quantity'), row.get('Unit Price'),
+                      row.get('Status'), row.get('Region'))
+        except ValueError:
+            continue
+        seeded += 1
+    return seeded
 
 
 def list_entries(conn, user_id, limit=10):

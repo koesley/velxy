@@ -260,6 +260,11 @@ class ReportViewTests(unittest.TestCase):
             return [v for k, v in resp.getheaders()
                     if k.lower() == 'cache-control']
 
+        # Static assets are cacheable for an hour. The stylesheet is
+        # assembled from many modules at request time, so it additionally
+        # revalidates once stale; the script is a plain file.
+        expected = {'/style.css': 'public, max-age=3600, must-revalidate',
+                    '/checkout-feedback.js': 'public, max-age=3600'}
         for path in ('/style.css', '/checkout-feedback.js'):
             conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=30)
             try:
@@ -268,7 +273,7 @@ class ReportViewTests(unittest.TestCase):
                 resp.read()
                 cache = cache_headers(resp)
                 self.assertEqual(len(cache), 1, '%s sent %d Cache-Control headers' % (path, len(cache)))
-                self.assertEqual(cache[0], 'public, max-age=3600')
+                self.assertEqual(cache[0], expected[path])
             finally:
                 conn.close()
         _, cookie, _ = self.make_user_and_upload()
