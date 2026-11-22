@@ -60,7 +60,8 @@ def change(c,uid,wid,jid,operation):
   if int(time.time())>=expires:raise ValueError('Approval expired')
   if next((r for r in strategy.history(c,uid,wid) if r['id']==sid),{'stale':True})['stale']:raise ValueError('Strategy evidence is stale')
  with c:
-  c.execute('UPDATE sv56_exec_jobs SET status=?,approved_by=CASE WHEN ?="approve" THEN ? ELSE approved_by END,updated=? WHERE id=? AND workspace_id=? AND status=?',(target,operation,uid,int(time.time()),jid,wid,source))
+  changed=c.execute('UPDATE sv56_exec_jobs SET status=?,approved_by=CASE WHEN ?="approve" THEN ? ELSE approved_by END,updated=? WHERE id=? AND workspace_id=? AND status=?',(target,operation,uid,int(time.time()),jid,wid,source)).rowcount
+  if changed != 1:raise ValueError('Execution state changed concurrently')
   event(c,wid,jid,uid,operation)
 
 def dispatch_one(c,uid,wid):
