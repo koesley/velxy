@@ -332,5 +332,59 @@ class FounderActivationTests(unittest.TestCase):
         self.assertEqual(m["repeat_usage_by_first_save_speed"]["within_24h"]["repeat_users"], 0)
         self.assertEqual(m["first_week_activated_with_later_ready_report"], 0)
 
+
+    def test_weekly_repeat_usage_reconciles_and_excludes_immature(self):
+        self.user(1, 56)
+        self.user(2, 56)
+        self.user(3, 42)
+        self.user(4, 20)
+        self.report("one-first", 1, 55)
+        self.report("one-repeat", 1, 46)
+        self.report("two-first", 2, 55)
+        self.report("three-first", 3, 41)
+        self.report("three-repeat", 3, 33)
+        self.report("young-first", 4, 19)
+        self.report("young-repeat", 4, 12)
+        result = founder_activation.report_activation(self.db, NOW)
+        weeks = result["weekly_mature_repeat_usage"]
+        self.assertEqual(sum(row[1] for row in weeks), 3)
+        self.assertEqual(sum(row[2] for row in weeks), 2)
+        self.assertEqual(result["first_week_activated_with_30_day_observation"], 3)
+        self.assertEqual(result["first_week_activated_with_later_ready_report"], 2)
+        page = founder_activation.panel_html(result)
+        self.assertIn("Repeat usage by mature signup week", page)
+        self.assertNotIn("one-repeat", page)
+
+    def test_weekly_repeat_usage_excludes_admin_failed_and_late_first_saves(self):
+        self.user(1, 45)
+        self.user(2, 45, "admin")
+        self.user(3, 45)
+        self.user(4, 45)
+        self.report("valid-first", 1, 44)
+        self.report("failed-repeat", 1, 35, "failed")
+        self.report("admin-first", 2, 44)
+        self.report("admin-repeat", 2, 35)
+        self.report("late-first", 3, 35)
+        self.report("late-repeat", 3, 30)
+        self.report("first-four", 4, 44)
+        self.report("repeat-at-thirty", 4, 15)
+        result = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(sum(row[1] for row in result["weekly_mature_repeat_usage"]), 2)
+        self.assertEqual(sum(row[2] for row in result["weekly_mature_repeat_usage"]), 0)
+
+    def test_weekly_repeat_usage_caps_eight_weeks_and_handles_empty(self):
+        self.assertEqual(founder_activation.report_activation(self.db, NOW)["weekly_mature_repeat_usage"], ())
+        self.assertIn("No mature 30-day signup weeks",
+                      founder_activation.panel_html(founder_activation.report_activation(self.db, NOW)))
+        for uid in range(1, 13):
+            self.user(uid, 35 + uid * 7)
+            self.report("first-" + str(uid), uid, 34 + uid * 7)
+        result = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(len(result["weekly_mature_repeat_usage"]), 8)
+        self.assertEqual(list(result["weekly_mature_repeat_usage"]),
+                         sorted(result["weekly_mature_repeat_usage"], reverse=True))
+        self.assertTrue(all(eligible > 0 and repeated == 0
+                            for _, eligible, repeated in result["weekly_mature_repeat_usage"]))
+
 if __name__ == "__main__":
     unittest.main()
