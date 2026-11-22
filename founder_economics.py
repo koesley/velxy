@@ -95,7 +95,7 @@ def render(params):
                  '<h3>Assumptions and limitations</h3><ul>' +
                  "".join('<li>' + escape(note) + '</li>' for note in result["assumptions"]) +
                  '</ul>')
-    body += ('<p>V61 observed saved-report activation cohorts, early/late drop-off, and 30-day repeat-use by first-save timing '
+    body += ('<p>V61 observed saved-report activation cohorts, early/late drop-off, and 30-day repeat-use by first-save timing and mature signup-week trends '
              'are available on the founder stats page. These are product milestones, '
              'not verified payment, retention, or business value. Anonymous site events '
              'alone cannot establish individual customer journeys.</p>'
