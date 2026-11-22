@@ -33,7 +33,7 @@ def analyze_activation(events: Iterable[ProductEvent], workspace_id: str, as_of:
     recorded outcome, never inferred from logins or checklist completion.
     Retention requires a separate 'returned' event after signup, within
     the day-N window and on or after day N (not mere elapsed presence).
-    Cohorts without full observation time are excluded from each rate.
+    Cohorts without full observation time are excluded from each rate.\n    Day-N retention requires observing the entire day-N 24-hour window.
     """
     if not isinstance(workspace_id, str) or not workspace_id.strip():
         raise ValueError("workspace_id required")
@@ -81,7 +81,7 @@ def analyze_activation(events: Iterable[ProductEvent], workspace_id: str, as_of:
                                   for signup, activated in mature_activation)
     for days in WINDOW_DAYS:
         mature = [(signup, returns) for signup, _, _, returns in eligible
-                  if signup + timedelta(days=days) <= cutoff]
+                  if signup + timedelta(days=days + 1) <= cutoff]
         retained = sum(any(signup + timedelta(days=days) <= t <
                            signup + timedelta(days=days + 1) for t in returns)
                        for signup, returns in mature)
