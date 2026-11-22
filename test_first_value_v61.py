@@ -63,5 +63,23 @@ class FirstValueTests(unittest.TestCase):
         self.assertEqual(result["seven_day_activation"],
                          {"eligible": 0, "activated": 0, "rate_pct": None})
 
+    def test_retention_requires_full_day_n_window(self):
+        rows = [ev("a", "old", "signup"), ev("a", "old", "returned", days=7, hours=12),
+                ev("a", "recent", "signup", days=1),
+                ev("a", "recent", "returned", days=8, hours=12)]
+        partial = analyze_activation(rows, "a", T + timedelta(days=8, hours=1))
+        self.assertEqual(partial["day_n_retention"]["7"],
+                         {"eligible": 1, "retained": 1, "rate_pct": 100.0})
+        complete = analyze_activation(rows, "a", T + timedelta(days=9))
+        self.assertEqual(complete["day_n_retention"]["7"],
+                         {"eligible": 2, "retained": 2, "rate_pct": 100.0})
+
+    def test_retention_exact_boundary_maturity(self):
+        rows = [ev("a", "one", "signup"), ev("a", "one", "returned", days=7)]
+        before = analyze_activation(rows, "a", T + timedelta(days=7, hours=23))
+        self.assertEqual(before["day_n_retention"]["7"]["eligible"], 0)
+        at_boundary = analyze_activation(rows, "a", T + timedelta(days=8))
+        self.assertEqual(at_boundary["day_n_retention"]["7"]["eligible"], 1)
+
 if __name__ == "__main__":
     unittest.main()
