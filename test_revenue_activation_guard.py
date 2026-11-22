@@ -8,7 +8,8 @@ MODULES = (
     "test_revenue_dominion_v60", "test_first_value_v61",
     "test_founder_economics", "test_founder_activation",
     "test_site_stats", "test_signup_path", "test_instant_demo",
-    "test_demo_claim", "test_ledger", "test_revenue_engine",
+    "test_demo_claim", "test_demo_workspace", "test_welcome_sequence",
+    "test_ledger", "test_revenue_engine",
     "test_revenue_activation_guard",
 )
 SOURCES = (
