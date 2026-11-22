@@ -224,12 +224,20 @@ class RevenueEngineTests(unittest.TestCase):
     def test_followup_events_recorded(self):
         before = self.db(
             "SELECT COUNT(*) FROM site_events WHERE event='followup_queued'")[0][0]
+        # Scope the detail check to this test's events: the DB is shared
+        # across modules, so the newest rows overall may belong to
+        # another module's flow.
+        max_rowid = self.db("SELECT MAX(rowid) FROM site_events")[0][0] or 0
         headers, csrf, email = self.signed_in()
         self.burn_free_reports(headers, csrf)
         after = self.db(
             "SELECT COUNT(*) FROM site_events WHERE event='followup_queued'")[0][0]
-        self.assertEqual(after - before, 1)
-        detail = self.db(
+        # Two sequences fire in this flow: the welcome at signup and the
+        # PRO upsell at the paywall.
+        self.assertEqual(after - before, 2)
+        details = [r[0] for r in self.db(
             "SELECT detail FROM site_events WHERE event='followup_queued'"
-            " ORDER BY rowid DESC LIMIT 1")[0][0]
-        self.assertTrue(detail.startswith('pro:'))
+            " AND rowid > ?", (max_rowid,))]
+        self.assertEqual(len(details), 2)
+        self.assertTrue(any(d.startswith('welcome:') for d in details))
+        self.assertTrue(any(d.startswith('pro:') for d in details))

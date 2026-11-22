@@ -3353,6 +3353,10 @@ class Handler(BaseHTTPRequestHandler):
       ref=morsel.value if morsel else ''
      if referrals.record_signup(c,uid,ref) is not None:
       site_stats.record(c,'referral_signup')
+     try:
+      followups.queue_welcome(c, uid, email, btcpay_mainnet.site_url(), seeded=False)
+     except Exception:
+      pass
    except (sqlite3.IntegrityError, persistent_integrity_error()):return self.fail(409,'Account already exists.')
    nxt=safe_next(fields.get('next',''))
    dest='/login?registered=1'
@@ -3452,9 +3456,25 @@ class Handler(BaseHTTPRequestHandler):
    except (sqlite3.IntegrityError, persistent_integrity_error()):return self.fail(409,'Account already exists. Sign in, then claim this report from your dashboard.')
    try:
     ident=self._save_demo_report(uid,demo_token)
+    # Welcome sequence: a new signup heard nothing after the account
+    # was created, so the seeded ledger sat unused. The day-0 copy
+    # names the seeded ledger when this brand-new user has ledger
+    # rows (they can only have come from the seed). Best-effort —
+    # it can never break the signup.
+    try:
+     with db() as c:
+      seeded = ledger.count_entries(c, uid) > 0
+      followups.queue_welcome(c, uid, email, btcpay_mainnet.site_url(), seeded=seeded)
+    except Exception:
+     pass
    except ValueError as exc:
     # The account exists now, so sign the visitor in and send them to
     # the dashboard instead of leaving them stranded on an error page.
+    try:
+     with db() as c:
+      followups.queue_welcome(c, uid, email, btcpay_mainnet.site_url(), seeded=False)
+    except Exception:
+     pass
     token=secrets.token_hex(32);csrf=secrets.token_hex(16)
     with db() as c:c.execute('INSERT INTO sessions VALUES (?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),uid,now()+86400,csrf))
     secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
