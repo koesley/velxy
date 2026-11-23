@@ -739,10 +739,10 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
  else:
   if is_sample:
    keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Save this report — create your free account<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Save this report to my free account</button></form>'
-         '<p class="v8-demo-note">One step: creates your free account and saves this report to it — the full list of what\'s wrong with your data, kept forever. Your download expires in 10 minutes, but a free account keeps it.</p>')
+         '<p class="v8-demo-note">One step: creates your free account and saves this report to it — the full list of what\'s wrong with your data, kept forever. This preview is temporary — a free account keeps the full report.</p>')
   else:
    keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Save your report — create your free account<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Save your report to my free account</button></form>'
-         '<p class="v8-demo-note">One step: creates your free account and saves YOUR report to it — the full list of what\'s wrong with YOUR data, kept forever. Your sales land in your Sales Ledger too, so your dashboard opens on your real numbers. Your download expires in 10 minutes, but a free account keeps it.</p>')
+         '<p class="v8-demo-note">One step: creates your free account and saves YOUR report to it — the full list of what\'s wrong with YOUR data, kept forever. Your sales land in your Sales Ledger too, so your dashboard opens on your real numbers. This preview is temporary — a free account keeps the full report.</p>')
   email_form=''
   if share_token:
    # Anonymous runners vanish after the demo — this is the only chance
@@ -752,6 +752,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
                '<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>')
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
+  +keep
   +report_diagnosis_html(result.get('rejected_rows') or [],result.get('cleaned_rows') or [],result['rejected'],result['accepted'],preview=user is None)
   +('<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows.</p>'
    +'<p class="v8-demo-note">This is a preview — the full list of what is wrong, the full cleaned file and the ZIP download unlock with a free account. No card, no purchase.</p>' if user is None else
@@ -759,7 +760,6 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
    +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
    +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>')
   +share
-  +keep
   +email_form
   +'<p class="v8-demo-note">Ready for more? <a href="/login?next='+nxt+'">Sign in to open PRO billing and checkout</a>. Payment is optional and verified before activation.</p></section></div>')
 

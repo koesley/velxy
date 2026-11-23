@@ -185,7 +185,7 @@ class RevenueEngineTests(unittest.TestCase):
             content_type='application/x-www-form-urlencoded')
         self.assertEqual(status, 200)
         text = body.decode('utf-8', 'replace')
-        token = re.search(r'/demo/([A-Za-z0-9_-]+)', text).group(1)
+        token = re.search(r'/demo/(?!signup|email)([A-Za-z0-9_-]+)', text).group(1)
         email = fresh_email()
         status, _, _ = self.post_form(
             '/demo/email', {'email': email, 'share_token': token})
@@ -213,7 +213,7 @@ class RevenueEngineTests(unittest.TestCase):
             content_type='application/x-www-form-urlencoded')
         self.assertEqual(status, 200)
         text = body.decode('utf-8', 'replace')
-        token = re.search(r'/demo/([A-Za-z0-9_-]+)', text).group(1)
+        token = re.search(r'/demo/(?!signup|email)([A-Za-z0-9_-]+)', text).group(1)
         email = fresh_email()
         for _ in range(2):
             status, _, _ = self.post_form(

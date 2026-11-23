@@ -308,7 +308,7 @@ class DiagnosisFlowTests(unittest.TestCase):
         status, _, body = self.post_multipart('/try', 'sales.csv', TEST_CSV)
         self.assertEqual(status, 200)
         text = body.decode('utf-8')
-        match = re.search(r'/demo/([A-Za-z0-9_-]+)', text)
+        match = re.search(r'/demo/(?!signup|email)([A-Za-z0-9_-]+)', text)
         self.assertIsNotNone(match, 'result page has no share link')
         status, _, shared = self.get('/demo/' + match.group(1))
         self.assertEqual(status, 200)

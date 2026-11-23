@@ -171,7 +171,7 @@ class SampleDemoTests(unittest.TestCase):
         self.assertNotIn('Download report ZIP', text)
         # The one-step signup is the unlock.
         self.assertIn('Save this report to my free account', text)
-        match = re.search(r'/demo/([A-Za-z0-9_-]+)', text)
+        match = re.search(r'/demo/(?!signup|email)([A-Za-z0-9_-]+)', text)
         self.assertIsNotNone(match, 'result page has no share link')
 
     def test_sample_demo_zip_downloads_signed_in(self):
@@ -205,7 +205,7 @@ class SampleDemoTests(unittest.TestCase):
 
     def test_sample_demo_share_page_has_no_raw_rows(self):
         text = self.run_sample_demo()
-        match = re.search(r'/demo/([A-Za-z0-9_-]+)', text)
+        match = re.search(r'/demo/(?!signup|email)([A-Za-z0-9_-]+)', text)
         self.assertIsNotNone(match, 'result page has no share link')
         status, _, shared = self.get('/demo/' + match.group(1))
         self.assertEqual(status, 200)
