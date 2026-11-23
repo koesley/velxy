@@ -85,11 +85,17 @@ class LandingPageTests(unittest.TestCase):
         html = self.portal.demo_result_html(result, 'sample-token')
         self.assertIn('/register?next=%2Faccount%23billing', html)
         self.assertIn('See PRO checkout', html)
+        self.assertIn('See PRO checkout — $49', html)
+        self.assertIn('Bitcoin or card.', html)
+        self.assertNotIn('Bitcoin only', html)
         self.assertIn('Payment is optional', html)
         # Signed-in runners go directly to billing.
         html = self.portal.demo_result_html(result, 'sample-token', user={'id': 1})
         self.assertIn('href="/account#billing"', html)
         self.assertIn('See PRO checkout', html)
+        self.assertIn('See PRO checkout — $49', html)
+        self.assertIn('Bitcoin or card.', html)
+        self.assertNotIn('Bitcoin only', html)
 
     def test_account_billing_is_checkout_destination(self):
         import inspect
