@@ -156,7 +156,7 @@ class DemoEmailFlowTests(unittest.TestCase):
     def run_demo(self):
         status, _, body = self.post_multipart('/try', 'sales.csv', TEST_CSV)
         self.assertEqual(status, 200)
-        match = re.search(r'/demo/([A-Za-z0-9_-]+)', body.decode('utf-8', 'replace'))
+        match = re.search(r'/demo/(?!signup|email)([A-Za-z0-9_-]+)', body.decode('utf-8', 'replace'))
         self.assertTrue(match, 'demo result page has no share link')
         return body.decode('utf-8', 'replace'), match.group(1)
 

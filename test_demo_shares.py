@@ -127,7 +127,7 @@ class DemoShareFlowTests(unittest.TestCase):
 
     def test_demo_result_links_to_share_page(self):
         body = self.run_demo()
-        match = re.search(r'/demo/([A-Za-z0-9_-]+)', body)
+        match = re.search(r'/demo/(?!signup|email)([A-Za-z0-9_-]+)', body)
         self.assertTrue(match, 'demo result page has no share link')
         return match.group(1)
 

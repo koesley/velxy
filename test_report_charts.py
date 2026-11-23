@@ -160,7 +160,7 @@ class ChartFlowTests(unittest.TestCase):
         status, _, body = self.post_multipart('/try', 'sales.csv', TEST_CSV)
         self.assertEqual(status, 200)
         text = body.decode('utf-8', 'replace')
-        match = re.search(r'/demo/([A-Za-z0-9_-]+)', text)
+        match = re.search(r'/demo/(?!signup|email)([A-Za-z0-9_-]+)', text)
         self.assertTrue(match, 'demo result page has no share link')
         return text, match.group(1)
 

@@ -203,7 +203,7 @@ class FreemiumDemoTests(unittest.TestCase):
         text = self.run_sample_demo()
         self.assert_preview(text, 'S-1001', 'S-1007', 'S-1008')
         self.assertIn('Save this report to my free account', text)
-        match = re.search(r'/demo/([A-Za-z0-9_-]+)', text)
+        match = re.search(r'/demo/(?!signup|email)([A-Za-z0-9_-]+)', text)
         self.assertIsNotNone(match, 'result page has no share link')
 
     def test_anonymous_own_demo_is_preview(self):
@@ -211,6 +211,26 @@ class FreemiumDemoTests(unittest.TestCase):
         self.assert_preview(text, 'T-001', 'T-007', 'T-008')
         self.assertIn('Save your report to my free account', text)
         self.assertNotIn('Save this report to my free account', text)
+
+    def test_anonymous_signup_form_comes_before_diagnosis(self):
+        # The funnel leaks at demo -> signup (290 demo runs, 6 signups):
+        # the signup form sat at the very bottom of the result, below the
+        # summaries, the diagnosis preview and the share link, so a runner
+        # who saw their numbers never had to scroll to it. The form now
+        # sits right after the summaries, before the diagnosis preview,
+        # so the "keep this report" offer is visible as soon as the
+        # result lands. Both the sample and the own-file demo.
+        for text in (self.run_sample_demo(), self.run_own_demo()):
+            form = text.find('action="/demo/signup"')
+            self.assertNotEqual(form, -1, 'anonymous result has no signup form')
+            preview = text.find('Showing 2 of')
+            self.assertNotEqual(preview, -1, 'anonymous result has no preview marker')
+            self.assertLess(form, preview, 'signup form must come before the diagnosis preview')
+            # The old note promised a download the anonymous page never
+            # linked ("Your download expires in 10 minutes"); the note
+            # now says plainly that the preview is temporary.
+            self.assertNotIn('Your download expires in 10 minutes', text)
+            self.assertIn('This preview is temporary', text)
 
     def test_signed_in_sample_demo_is_full(self):
         headers = self.signed_in_headers()
