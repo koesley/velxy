@@ -1,7 +1,8 @@
 """Founder-only read-only V60/V61 observed paid-conversion cohorts.
 
-Only BTCPay mainnet orders marked settled by the invoice-verification path
-count. These are recorded settlements, not refund-adjusted revenue or profit.
+Historical conversion cohorts count only BTCPay mainnet settlements; the current
+PRO entitlement snapshot also includes independently verified Stripe card access.
+Neither measure is refund-adjusted revenue or profit.
 """
 import html
 import time
@@ -101,14 +102,14 @@ def paid_cohorts(conn, as_of=None):
 
 
 def verified_mainnet_pro_snapshot(conn, as_of):
-    """Read-only active/expired verified mainnet PRO periods, not net revenue.
+    """Read-only active/expired verified payment-backed PRO periods, not net revenue.
 
     A historical settled invoice is not proof that PRO is currently active.
     Missing subscription schema must not silently turn into zero customers.
     """
     try:
         rows = conn.execute(
-            "SELECT s.status,s.period_start,s.period_end,s.verified_at,"
+            "SELECT s.user_id,s.status,s.period_start,s.period_end,s.verified_at,"
             "s.verification_source,s.product_key,s.pricing_plan "
             "FROM subscriptions s JOIN users u ON u.id=s.user_id "
             "WHERE u.role='customer' AND u.created>=0 AND u.created<=?",
@@ -120,23 +121,30 @@ def verified_mainnet_pro_snapshot(conn, as_of):
             return {"available": False}
         raise
     import subscriptions
-    active = expired = 0
-    for status, start, end, verified, source, product, plan in rows:
+    # A customer may have multiple historical periods. Count people, not rows;
+    # an active verified period takes precedence over any expired period.
+    active_users = set()
+    latest_active_end = {}
+    expired_users = set()
+    for user_id, status, start, end, verified, source, product, plan in rows:
         try:
             start, end, verified = int(start), int(end), int(verified)
         except (TypeError, ValueError, OverflowError):
             continue
-        if (source != 'btcpay_mainnet_verified' or
+        if (source not in ('btcpay_mainnet_verified', 'stripe_verified') or
                 product != subscriptions.PRODUCT_KEY or
                 plan != subscriptions.PRICING_PLAN or
                 verified <= 0 or start < 0 or end <= start or
                 start > as_of or verified > as_of):
             continue
         if status in ('active', 'cancel_at_period_end') and as_of < end:
-            active += 1
+            active_users.add(user_id)
+            latest_active_end[user_id] = max(end, latest_active_end.get(user_id, 0))
         elif end <= as_of and status in ('active', 'cancel_at_period_end'):
-            expired += 1
-    return {"available": True, "active": active, "expired": expired}
+            expired_users.add(user_id)
+    return {"available": True, "active": len(active_users),
+            "expired": len(expired_users - active_users),
+            "expiring_7d": sum(end <= as_of + 7 * DAY for end in latest_active_end.values())}
 
 
 def panel_html(metrics):
@@ -158,12 +166,13 @@ def panel_html(metrics):
              (trend_rows or "<tr><td colspan='5'>No mature signup weeks</td></tr>") +
              "</tbody></table>")
     pro = metrics.get("verified_pro_snapshot", {"available": False})
-    pro_note = ("<p>Current verified BTCPay mainnet PRO entitlement snapshot: "
-                + ("active " + str(pro["active"]) + "; expired " + str(pro["expired"])
+    pro_note = ("<p>Current verified Bitcoin/card PRO entitlement snapshot: "
+                + ("active customers " + str(pro["active"]) + "; expired-only customers " + str(pro["expired"]) +
+                   "; expiring within 7 days " + str(pro["expiring_7d"])
                    if pro["available"] else "unavailable (subscription records not initialized)")
-                + ". Only eligible customer subscription periods with matching product, plan, "
-                "verification source and dates count. Expired periods are not proof of churn; "
-                "referrals and manually verified Stripe access are excluded. This is not "
+                + ". Counts are distinct customers, with active access taking precedence over older expired periods. Only eligible subscription periods with matching product, plan, "
+                "verification source and dates count. Expiring access is a retention follow-up opportunity, not an automatic renewal. Expired periods are not proof of churn; "
+                "referrals and manually verified Stripe access are excluded. Stripe payments are included only when the existing entitlement record is independently verified; historical conversion cohorts above remain Bitcoin-only. This is not "
                 "refund-adjusted revenue, recurring revenue, or a retention rate.</p>")
     fields = (
         ("Signups with 30 full days observed", metrics["mature_30d_signups"]),
