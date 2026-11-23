@@ -60,7 +60,7 @@ class TrustPagesTests(unittest.TestCase):
         status, _, body = self.get('/terms')
         self.assertEqual(status, 200)
         self.assertIn('Terms of Service', body)
-        self.assertIn('Bitcoin only', body)
+        self.assertIn('card through Stripe', body)
         self.assertIn('$49', body)
 
     def test_privacy(self):

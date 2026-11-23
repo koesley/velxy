@@ -260,17 +260,17 @@ def reclaim_stale(conn, stale_after=STALE_SENDING_SECONDS, now=None):
     return claimed
 
 
-def queue_pro_confirmation(conn, user_id, email, period_end, order_id):
+def queue_pro_confirmation(conn, user_id, email, period_end, order_id, method='Bitcoin'):
     """Confirm a settled PRO payment by email. One per order, ever."""
     from datetime import datetime, timezone
     end = datetime.fromtimestamp(period_end, timezone.utc).strftime('%Y-%m-%d')
     return queue(
         conn, email, 'Your VELXTRIA PRO is active',
         'Your $49 PRO payment settled. PRO is active through %s — 50 reports '
-        'per billing cycle, paid with Bitcoin.\n\n'
+        'per billing cycle, paid with %s.\n\n'
         'Sign in at your dashboard to generate reports. If PRO ever lapses, '
         'renewing from the dashboard extends your current period.\n\n'
-        '— VELXTRIA' % end,
+        '— VELXTRIA' % (end, method),
         'pro_activated', dedupe_key='pro-activated:' + order_id,
         user_id=user_id)
 

@@ -14,6 +14,7 @@ DEMO_LIMIT = 1
 # ever added, it belongs in this list first.
 VERIFICATION_SOURCES = frozenset((
     'btcpay_mainnet_verified',
+    'stripe_verified',
     'referral',
     'manual_stripe_dashboard',
 ))

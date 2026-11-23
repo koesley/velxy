@@ -191,7 +191,7 @@ class PaymentConfirmationTests(unittest.TestCase):
                               side_effect=RuntimeError('BTCPay unreachable')):
                 status, _, body = self.get('/account?paid=1', cookie)
         self.assertEqual(status, 200)
-        self.assertIn('could not reach BTCPay', body)
+        self.assertIn('could not reach the payment provider', body)
         self.assertNotIn('PRO is active', body)
 
     def test_paid_requires_login(self):

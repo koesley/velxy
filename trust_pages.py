@@ -1,7 +1,7 @@
 """Trust pages: terms, privacy, contact, and the favicon.
 
 Plain, factual pages — no policy is invented here that the operator has
-not set. Payments are Bitcoin only via BTCPay; the site collects an email
+not set. Payments are Bitcoin via BTCPay or card via Stripe; the site collects an email
 address, uploaded CSVs, and generated reports, and nothing else; there
 are no third-party trackers or ads.
 """
@@ -13,7 +13,7 @@ TERMS_HTML = '''<section class="panel narrow"><h1>Terms of Service</h1>
 <h2>Accounts</h2>
 <p>Creating an account is free. A free account gets 1 free report. PRO is $49 for 30 days with 50 reports per billing cycle.</p>
 <h2>Payments</h2>
-<p>Payments are Bitcoin only, through BTCPay. PRO activates automatically once the payment settles on the network — a redirect back to the site alone never activates PRO. A payment that never settles grants nothing.</p>
+<p>Payments are Bitcoin through BTCPay or card through Stripe. PRO activates automatically once the payment settles — a redirect back to the site alone never activates PRO. A payment that never settles grants nothing.</p>
 <h2>Your data</h2>
 <p>You are responsible for the files you upload: only upload data you have the right to process. The instant demo processes your file once and never stores it; reports you generate from an account are stored on that account so you can view and download them.</p>
 <h2>Acceptable use</h2>
@@ -32,20 +32,20 @@ PRIVACY_HTML = '''<section class="panel narrow"><h1>Privacy Policy</h1>
 <ul>
 <li><b>Account:</b> your email address and password (stored hashed).</li>
 <li><b>Your files:</b> the sales CSVs you upload, and the reports generated from them. The instant demo is the exception: your file is processed once and never stored.</li>
-<li><b>Payments:</b> BTCPay verifies your Bitcoin payment and tells us whether it settled. We never see your card details or your wallet.</li>
+<li><b>Payments:</b> BTCPay verifies a Bitcoin payment and Stripe verifies a card payment; each tells us whether it settled. We never see your card details or your wallet.</li>
 <li><b>Usage counts:</b> how many reports you have generated, so the free and PRO limits can be enforced, and anonymous funnel counts (page views, demo runs, sign-ups) with no personal data attached.</li>
 </ul>
 <h2>Cookies</h2>
 <p>First-party cookies only: a session cookie while you are signed in, a referral cookie (30 days) when you arrive through someone's referral link, and a demo cookie (10 minutes) so a demo report can be claimed after you sign up. No third-party trackers, no ads.</p>
 <h2>Sharing</h2>
-<p>Your data is not sold or shared, except with BTCPay to verify a payment, and as required by law.</p>
+<p>Your data is not sold or shared, except with BTCPay or Stripe to verify a payment, and as required by law.</p>
 <h2>Your data</h2>
 <p>Reports you generate stay on your account so you can view and download them. To ask about your data, email <a href="mailto:''' + CONTACT_EMAIL + '''">''' + CONTACT_EMAIL + '''</a>.</p></section>'''
 
 CONTACT_HTML = '''<section class="panel narrow"><h1>Contact</h1>
 <p>Questions about VELXTRIA, a report, or a payment? Email us:</p>
 <p><a href="mailto:''' + CONTACT_EMAIL + '''">''' + CONTACT_EMAIL + '''</a></p>
-<p>Include the email address on your account and, for a payment question, the BTCPay invoice ID if you have it. We answer as fast as we can — this is a small operation.</p></section>'''
+<p>Include the email address on your account and, for a payment question, the BTCPay invoice ID or Stripe session ID if you have it. We answer as fast as we can — this is a small operation.</p></section>'''
 
 FAVICON_SVG = (b'<?xml version="1.0" encoding="UTF-8"?>\n'
                b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'

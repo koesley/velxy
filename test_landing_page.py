@@ -21,6 +21,12 @@ MAINNET_ENV = {
     'VELXTRIA_BTCPAY_MAINNET_API_KEY': 'api-key-123',
 }
 
+STRIPE_ENV = {
+    'VELXTRIA_ENABLE_STRIPE_CHECKOUT': '1',
+    'VELXTRIA_STRIPE_SECRET_KEY': 'sk_test_123',
+    'VELXTRIA_STRIPE_WEBHOOK_SECRET': 'whsec_test_123',
+}
+
 
 class LandingPageTests(unittest.TestCase):
     def setUp(self):
@@ -60,7 +66,7 @@ class LandingPageTests(unittest.TestCase):
 
     def test_logged_out_buy_goes_to_login_with_next(self):
         html = self.portal.landing_page()
-        self.assertIn('Get PRO — $49 with Bitcoin', html)
+        self.assertIn('Get PRO — $49', html)
         self.assertIn('/login?next=', html)
         self.assertNotIn('/btcpay/mainnet/checkout', html)
 
@@ -97,6 +103,23 @@ class LandingPageTests(unittest.TestCase):
         self.assertIn('action="/btcpay/mainnet/checkout"', html)
         self.assertIn('csrf-token', html)
         self.assertIn('Get PRO — $49 with Bitcoin', html)
+
+    def test_logged_in_buy_shows_card_form_when_stripe_enabled(self):
+        with patch.dict(os.environ, STRIPE_ENV):
+            html = self.portal.landing_page({'id': 1, 'email': 'a@example.test'}, 'csrf-token')
+        self.assertIn('action="/stripe/checkout"', html)
+        self.assertIn('csrf-token', html)
+        self.assertIn('Get PRO — $49 with card', html)
+
+    def test_logged_in_buy_shows_both_forms_when_both_enabled(self):
+        env = dict(MAINNET_ENV)
+        env.update(STRIPE_ENV)
+        with patch.dict(os.environ, env):
+            html = self.portal.landing_page({'id': 1, 'email': 'a@example.test'}, 'csrf-token')
+        self.assertIn('action="/btcpay/mainnet/checkout"', html)
+        self.assertIn('action="/stripe/checkout"', html)
+        self.assertIn('Get PRO — $49 with Bitcoin', html)
+        self.assertIn('Get PRO — $49 with card', html)
 
     def test_logged_in_buy_disabled_when_checkout_off(self):
         html = self.portal.landing_page({'id': 1, 'email': 'a@example.test'}, 'csrf-token')
@@ -149,7 +172,7 @@ class LandingPageTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
         self.assertIn('$49', body)
-        self.assertIn('Get PRO — $49 with Bitcoin', body)
+        self.assertIn('Get PRO — $49', body)
         self.assertIn('SAMPLE REPORT', body)
         self.assertIn('470.00', body)
 
