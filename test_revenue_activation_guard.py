@@ -6,7 +6,7 @@ import unittest
 WORKFLOW = Path(__file__).resolve().parent / ".github/workflows/revenue-activation-guard.yml"
 MODULES = (
     "test_revenue_dominion_v60", "test_first_value_v61",
-    "test_founder_economics", "test_founder_activation",
+    "test_founder_economics", "test_founder_activation", "test_founder_paid_conversion",
     "test_site_stats", "test_signup_path", "test_instant_demo",
     "test_demo_claim", "test_demo_workspace", "test_welcome_sequence",
     "test_ledger", "test_revenue_engine", "test_btcpay_mainnet",
@@ -15,7 +15,7 @@ MODULES = (
 )
 SOURCES = (
     "revenue_dominion_v60.py", "first_value_v61.py",
-    "founder_economics.py", "founder_activation.py",
+    "founder_economics.py", "founder_activation.py", "founder_paid_conversion.py",
     "portal.py", "ledger.py", "site_stats.py",
     "btcpay_mainnet.py", "subscriptions.py",
 )
