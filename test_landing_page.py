@@ -73,9 +73,17 @@ class LandingPageTests(unittest.TestCase):
 
     def test_demo_upsell_returns_to_pricing(self):
         result = {'monthly_rows': [['Month', 'Revenue']], 'product_rows': [['Product', 'Revenue']], 'stats': [], 'accepted': 0, 'rejected': 0}
+        # Guests go straight to register — which signs them in at once
+        # and sends them on to billing — instead of the sign-in page,
+        # so the demo result now has a direct PRO checkout route.
         html = self.portal.demo_result_html(result, 'sample-token')
-        self.assertIn('/login?next=%2Faccount%23billing', html)
+        self.assertIn('/register?next=%2Faccount%23billing', html)
+        self.assertIn('See PRO checkout', html)
         self.assertIn('Payment is optional', html)
+        # Signed-in runners go directly to billing.
+        html = self.portal.demo_result_html(result, 'sample-token', user={'id': 1})
+        self.assertIn('href="/account#billing"', html)
+        self.assertIn('See PRO checkout', html)
 
     def test_account_billing_is_checkout_destination(self):
         import inspect
