@@ -167,6 +167,10 @@ class RevenueEngineTests(unittest.TestCase):
         body = rows[0][2]
         self.assertIn('/account', body)
         self.assertIn('$49', body)
+        # PRO takes card now too: both upsell steps say so.
+        for row in rows:
+            self.assertIn('Bitcoin or card', row[2])
+            self.assertNotIn('Bitcoin only', row[2])
 
     def test_pro_upsell_queued_once_ever(self):
         headers, csrf, email = self.signed_in()

@@ -64,11 +64,11 @@ DEMO_STEPS = (
 PRO_STEPS = (
     (0, 'You have used your free report — go PRO',
      'You have used your free report. PRO is $49 for 30 days, 50 '
-     'reports, Bitcoin only, and it unlocks the moment payment settles.\n\n'
+     'reports, Bitcoin or card, and it unlocks the moment payment settles.\n\n'
      'Upgrade here: {site_url}/account\n\n— VELXTRIA'),
     (3, 'Still thinking about PRO?',
      'You hit your free-report limit a few days ago. PRO is $49 for 30 '
-     'days, 50 reports, Bitcoin only — and your reports are waiting.\n\n'
+     'days, 50 reports, Bitcoin or card — and your reports are waiting.\n\n'
      'Upgrade here: {site_url}/account\n\n— VELXTRIA'),
 )
 
@@ -99,7 +99,7 @@ WELCOME_STEPS = (
      'Open your dashboard: {site_url}/\n\n— VELXTRIA'),
     (3, 'You have free reports waiting',
      'You have 1 free report. When you need more, PRO is $49 '
-     'for 30 days, 50 reports, Bitcoin only — and it unlocks the moment '
+     'for 30 days, 50 reports, Bitcoin or card — and it unlocks the moment '
      'payment settles.\n\n'
      'See PRO on your account page: {site_url}/account\n\n— VELXTRIA'),
 )

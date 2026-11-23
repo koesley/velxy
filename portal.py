@@ -1548,7 +1548,7 @@ class Handler(BaseHTTPRequestHandler):
     +'<a class="v8-primary" href="/#try">Try it with your own CSV — no account</a>'
     +'<form method="post" action="/demo/email"><input type="hidden" name="share_token" value="'+escape(share_token)+'"><label>Email me this report<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><button class="v8-primary" type="submit">Email me this report</button></form>'
     +'<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>'
-    +'<p class="v8-demo-note">VELXTRIA turns messy sales CSVs into clean monthly and product reports. Free demo, no signup. PRO $49/30 days, Bitcoin only.</p></section></div>')
+    +'<p class="v8-demo-note">VELXTRIA turns messy sales CSVs into clean monthly and product reports. Free demo, no signup. PRO $49/30 days, Bitcoin or card.</p></section></div>')
    return self.respond(200,shell('Shared demo report',body))
   if p=='/' and not user:
    with db() as c:site_stats.record(c,'landing_view')

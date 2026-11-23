@@ -139,6 +139,9 @@ class DemoShareFlowTests(unittest.TestCase):
         self.assertIn('Window Cleaning', body)
         self.assertIn('Try it with your own CSV', body)
         self.assertIn('/#try', body)
+        # PRO takes card now too: no stale 'Bitcoin only' copy.
+        self.assertIn('Bitcoin or card', body)
+        self.assertNotIn('Bitcoin only', body)
         # Raw row values never appear: no order ids, no customer names.
         self.assertNotIn('X-001', body)
         self.assertNotIn('Secret Customer', body)

@@ -198,6 +198,9 @@ class WelcomeSequenceTests(unittest.TestCase):
         day3 = [r for r in rows if 'free reports waiting' in r[0]][0]
         self.assertIn('$49', day3[2])
         self.assertIn('/account', day3[2])
+        # PRO takes card now too: the day-3 welcome says so.
+        self.assertIn('Bitcoin or card', day3[2])
+        self.assertNotIn('Bitcoin only', day3[2])
 
     def test_register_queues_welcome(self):
         email = fresh_email()
