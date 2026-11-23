@@ -181,14 +181,14 @@ class YourDataFirstTests(unittest.TestCase):
 
     def test_sample_demo_result_uses_sample_signup_copy(self):
         text = self.run_sample_demo()
-        self.assertIn('Save this report to my free account', text)
-        self.assertNotIn('Save your report to my free account', text)
+        self.assertIn('Get the cleaned file', text)
+        self.assertNotIn('Get YOUR cleaned file', text)
         self.assertIn('sample=1', self.latest_demo_run_detail())
 
     def test_own_csv_demo_result_uses_own_signup_copy(self):
         text = self.run_own_demo()
-        self.assertIn('Save your report to my free account', text)
-        self.assertNotIn('Save this report to my free account', text)
+        self.assertIn('Get YOUR cleaned file', text)
+        self.assertNotIn('Get the cleaned file', text)
         self.assertIn('own=1', self.latest_demo_run_detail())
         self.assertNotIn('sample=1', self.latest_demo_run_detail())
 

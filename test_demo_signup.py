@@ -119,7 +119,8 @@ class DemoSignupTests(unittest.TestCase):
     def test_demo_result_has_inline_signup_form(self):
         text = self.run_sample_demo()
         self.assertIn('action="/demo/signup"', text)
-        self.assertIn('Save this report to my free account', text)
+        self.assertIn('Get my cleaned file', text)
+        self.assertIn('Get the cleaned file', text)
         self.assertIn('name="email"', text)
         self.assertIn('name="password"', text)
         self.assertIn('name="token"', text)

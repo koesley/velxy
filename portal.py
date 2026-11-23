@@ -720,8 +720,13 @@ def landing_demo_html():
  return '''<section id="try" class="v8-demo"><div class="v8-sectiontop"><span>TRY IT NOW</span><span>NO ACCOUNT. NO WAITING.</span></div><h2>YOUR FILE.<br><em>YOUR NUMBERS. RIGHT NOW.</em></h2><p>Upload your sales CSV and see what's wrong with YOUR data — cleaned, flagged, and summarized in minutes. No account, no waiting. Use only sample or non-sensitive data in this preview.</p><form method="post" action="/try" enctype="multipart/form-data"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><button class="v8-primary" type="submit">Generate my report</button></form><p class="v8-demo-note">5 MB maximum · 20,000 rows · Your download link works for 10 minutes — create a free account to keep your reports.</p><p>No file handy? Run the sample instead — one click, no file needed. Or <a href="/sample-sales.csv" download="VELXTRIA_Sample_Sales.csv">Download the sample sales CSV</a> to inspect it first.</p><form class="v8-sample-run" method="post" action="/try-sample"><input type="hidden" name="sample" value="1"><button class="v8-primary" type="submit">Run the sample — one click</button></form><p class="v8-demo-note">Runs the real engine on the built-in sample data and shows the full report — charts, flagged rows, and all. The sample is fictional and contains intentionally invalid rows to demonstrate data cleaning.</p><details><summary>Required column headers</summary><code>'''+escape(', '.join(REQUIRED))+'''</code></details></section>'''
 
 def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=False):
- """The instant demo result: the report summaries on screen, a ZIP download,
- and the next step (free account to keep reports, PRO for more)."""
+ """The instant demo result: the problems first, then the fix offer, then
+ the summaries — and a ZIP download for signed-in runners. The old order
+ put the full summaries and charts first and the signup form a screen
+ down, so a visitor got their answer before ever meeting the offer (297
+ of 308 demo runners never signed up). Now the diagnosis leads, the form
+ offers the cleaned file right after it, and the summaries — still free
+ and complete — come after."""
  nxt=urllib.parse.quote('/account#billing',safe='')
  share=''
  if share_token:
@@ -738,11 +743,11 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
   email_form=''
  else:
   if is_sample:
-   keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Save this report — create your free account<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Save this report to my free account</button></form>'
-         '<p class="v8-demo-note">One step: creates your free account and saves this report to it — the full list of what\'s wrong with your data, kept forever. This preview is temporary — a free account keeps the full report.</p>')
+   keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Get the cleaned file — create your free account<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Get my cleaned file</button></form>'
+         '<p class="v8-demo-note">One step: creates your free account and unlocks the full list of what\'s wrong, your cleaned CSV, and the ZIP. No card, no purchase. This preview is temporary — a free account keeps the full report.</p>')
   else:
-   keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Save your report — create your free account<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Save your report to my free account</button></form>'
-         '<p class="v8-demo-note">One step: creates your free account and saves YOUR report to it — the full list of what\'s wrong with YOUR data, kept forever. Your sales land in your Sales Ledger too, so your dashboard opens on your real numbers. This preview is temporary — a free account keeps the full report.</p>')
+   keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Get YOUR cleaned file — create your free account<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Get my cleaned file</button></form>'
+         '<p class="v8-demo-note">One step: creates your free account and unlocks the full list of what\'s wrong with YOUR data, your cleaned CSV, and the ZIP. Your sales land in your Sales Ledger too, so your dashboard opens on your real numbers. No card, no purchase. This preview is temporary — a free account keeps the full report.</p>')
   email_form=''
   if share_token:
    # Anonymous runners vanish after the demo — this is the only chance
@@ -751,9 +756,9 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
    email_form=('<form method="post" action="/demo/email"><input type="hidden" name="share_token" value="'+escape(share_token)+'"><label>Email me this report<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><button class="v8-primary" type="submit">Email me this report</button></form>'
                '<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>')
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
-  +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
-  +keep
   +report_diagnosis_html(result.get('rejected_rows') or [],result.get('cleaned_rows') or [],result['rejected'],result['accepted'],preview=user is None)
+  +keep
+  +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
   +('<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows.</p>'
    +'<p class="v8-demo-note">This is a preview — the full list of what is wrong, the full cleaned file and the ZIP download unlock with a free account. No card, no purchase.</p>' if user is None else
    '<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
