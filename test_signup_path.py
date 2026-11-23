@@ -51,8 +51,20 @@ def tearDownModule():
     import portal
     emails = "('new@example.test','next@example.test','signin@example.test')"
     with portal.db() as c:
+        # Register now signs the user in, so a session row exists for each
+        # test user; delete every user-owned row before the user itself,
+        # or the users DELETE trips the foreign-key constraint. The
+        # dashboard fetch in the sign-in test also creates the user's
+        # referral code row, so referrals goes here too.
+        for table in ('sessions', 'reports', 'report_write_journal',
+                      'paid_licenses', 'ledger_entries', 'email_outbox',
+                      'referrals', 'referral_signups'):
+            c.execute(
+                'DELETE FROM %s WHERE user_id IN '
+                '(SELECT id FROM users WHERE email IN %s)' % (table, emails))
+        # referral_rewards keys the referred user as referred_user_id.
         c.execute(
-            'DELETE FROM sessions WHERE user_id IN '
+            'DELETE FROM referral_rewards WHERE referred_user_id IN '
             '(SELECT id FROM users WHERE email IN %s)' % emails)
         c.execute('DELETE FROM users WHERE email IN %s' % emails)
     _ENV.stop()
@@ -75,8 +87,8 @@ class SignupPathTests(unittest.TestCase):
         self.base = 'http://127.0.0.1:%d' % self.server.server_address[1]
         self.opener = urllib.request.build_opener(NoRedirect)
 
-    def fetch(self, path, data=None):
-        req = urllib.request.Request(self.base + path, data=data)
+    def fetch(self, path, data=None, headers=None):
+        req = urllib.request.Request(self.base + path, data=data, headers=headers or {})
         try:
             with self.opener.open(req, timeout=30) as resp:
                 return resp.status, dict(resp.headers), resp.read().decode('utf-8')
@@ -123,19 +135,27 @@ class SignupPathTests(unittest.TestCase):
         self.assertIn('href="/login"', body)
         self.assertIn('Already have an account?', body)
 
-    def test_register_post_redirects_to_login_with_registered_flag(self):
+    def test_register_post_signs_in_immediately(self):
+        # Registering signs the new account in at once, like /demo/signup:
+        # the old flow sent the user to /login?registered=1 and made them
+        # sign in a second time, an extra step right at the moment they
+        # decided to join. The response now sets the session cookie and
+        # lands on the dashboard.
         data = urllib.parse.urlencode({
             'email': 'new@example.test',
             'password': 'TestPass123456!',
         }).encode()
         status, headers, _ = self.fetch('/register', data=data)
         self.assertEqual(status, 303)
-        self.assertEqual(headers.get('Location'), '/login?registered=1')
-        status, _, body = self.fetch('/login?registered=1')
+        self.assertEqual(headers.get('Location'), '/')
+        self.assertIn('velxtria_session=', headers.get('Set-Cookie', ''))
+        # And the session works: the dashboard loads signed in.
+        cookie = headers.get('Set-Cookie', '').split(';')[0]
+        status, _, body = self.fetch('/', headers={'Cookie': cookie})
         self.assertEqual(status, 200)
-        self.assertIn('Account created', body)
+        self.assertIn('Sign out', body)
 
-    def test_register_post_preserves_next_after_flag(self):
+    def test_register_post_preserves_next_and_signs_in(self):
         data = urllib.parse.urlencode({
             'email': 'next@example.test',
             'password': 'TestPass123456!',
@@ -143,7 +163,8 @@ class SignupPathTests(unittest.TestCase):
         }).encode()
         status, headers, _ = self.fetch('/register', data=data)
         self.assertEqual(status, 303)
-        self.assertEqual(headers.get('Location'), '/login?registered=1&next=%2Fabout')
+        self.assertEqual(headers.get('Location'), '/about')
+        self.assertIn('velxtria_session=', headers.get('Set-Cookie', ''))
 
     def test_registered_account_can_sign_in(self):
         data = urllib.parse.urlencode({

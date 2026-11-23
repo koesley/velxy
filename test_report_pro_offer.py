@@ -143,14 +143,16 @@ class ReportProOfferTests(unittest.TestCase):
             return row[0]
 
     def sign_in(self, email):
+        # /register signs the new account in at once, so the register
+        # response already carries the session cookie; a second /login
+        # would create a second session and the CSRF lookup by email
+        # could return the wrong one.
         data = {'email': email, 'password': 'TestPass123456!'}
         status, headers, _ = self.post_form('/register', data)
         self.assertEqual(status, 303)
-        status, headers, _ = self.post_form('/login', data)
-        self.assertEqual(status, 303)
         self.assertEqual(headers.get('Location'), '/')
         match = re.search(r'velxtria_session=([^;]+)', headers.get('Set-Cookie', ''))
-        self.assertTrue(match, 'login did not set a session cookie')
+        self.assertTrue(match, 'register did not set a session cookie')
         return match.group(1)
 
     def upload(self, cookie, csrf, filename='test-messy-sales.csv'):
