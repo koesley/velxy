@@ -77,9 +77,11 @@ def paid_cohorts(conn, as_of=None):
             seconds = (ordered[n // 2 - 1] + ordered[n // 2]) / 2
         return round(seconds / DAY, 2)
 
+    pro_snapshot = verified_mainnet_pro_snapshot(conn, now)
     nonactivated = mature - activated
     nonactivated_paid = paid - activated_paid
     return {
+        "verified_pro_snapshot": pro_snapshot,
         "first_day_activated": first_day_activated,
         "first_week_settled": first_week_settled,
         "median_days_to_first_value": median_days(activation_delays),
@@ -95,6 +97,46 @@ def paid_cohorts(conn, as_of=None):
         "activated_paid_conversion_pct": round(100 * activated_paid / activated, 2) if activated else None,
         "weekly": tuple((w, *counts) for w, counts in sorted(weekly.items(), reverse=True)[:8]),
     }
+
+
+
+def verified_mainnet_pro_snapshot(conn, as_of):
+    """Read-only active/expired verified mainnet PRO periods, not net revenue.
+
+    A historical settled invoice is not proof that PRO is currently active.
+    Missing subscription schema must not silently turn into zero customers.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT s.status,s.period_start,s.period_end,s.verified_at,"
+            "s.verification_source,s.product_key,s.pricing_plan "
+            "FROM subscriptions s JOIN users u ON u.id=s.user_id "
+            "WHERE u.role='customer' AND u.created>=0 AND u.created<=?",
+            (as_of,)).fetchall()
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "no such table: subscriptions" in msg or (
+                "relation" in msg and "subscriptions" in msg and "does not exist" in msg):
+            return {"available": False}
+        raise
+    import subscriptions
+    active = expired = 0
+    for status, start, end, verified, source, product, plan in rows:
+        try:
+            start, end, verified = int(start), int(end), int(verified)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if (source != 'btcpay_mainnet_verified' or
+                product != subscriptions.PRODUCT_KEY or
+                plan != subscriptions.PRICING_PLAN or
+                verified <= 0 or start < 0 or end <= start or
+                start > as_of or verified > as_of):
+            continue
+        if status in ('active', 'cancel_at_period_end') and as_of < end:
+            active += 1
+        elif end <= as_of and status in ('active', 'cancel_at_period_end'):
+            expired += 1
+    return {"available": True, "active": active, "expired": expired}
 
 
 def panel_html(metrics):
@@ -115,6 +157,14 @@ def panel_html(metrics):
              "<th>Activated</th><th>Settled</th><th>Both</th></tr></thead><tbody>" +
              (trend_rows or "<tr><td colspan='5'>No mature signup weeks</td></tr>") +
              "</tbody></table>")
+    pro = metrics.get("verified_pro_snapshot", {"available": False})
+    pro_note = ("<p>Current verified BTCPay mainnet PRO entitlement snapshot: "
+                + ("active " + str(pro["active"]) + "; expired " + str(pro["expired"])
+                   if pro["available"] else "unavailable (subscription records not initialized)")
+                + ". Only eligible customer subscription periods with matching product, plan, "
+                "verification source and dates count. Expired periods are not proof of churn; "
+                "referrals and manually verified Stripe access are excluded. This is not "
+                "refund-adjusted revenue, recurring revenue, or a retention rate.</p>")
     fields = (
         ("Signups with 30 full days observed", metrics["mature_30d_signups"]),
         ("Saved a ready report within seven days", metrics["first_week_activated"]),
@@ -143,4 +193,4 @@ def panel_html(metrics):
             "Time-to-value and time-to-settlement medians use only observed qualifying events; "
             "missing events do not become zero-day conversions. "
             "No individual customer identifiers are displayed.</p>"
-            "<table><tbody>" + rows + "</tbody></table>" + trend + "</section>")
+            "<table><tbody>" + rows + "</tbody></table>" + pro_note + trend + "</section>")
