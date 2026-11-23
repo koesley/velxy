@@ -29,6 +29,9 @@ def report_activation(conn, as_of=None):
         (7 * SECONDS_PER_DAY, 30 * SECONDS_PER_DAY, cutoff, cutoff, cutoff),
     ).fetchall()
     weekly = {}
+    weekly_day_one = {}
+    mature_day_one = 0
+    day_one_saved = 0
     weekly_stages = {}
     mature = 0
     converted = 0
@@ -56,6 +59,16 @@ def report_activation(conn, as_of=None):
             continue
         if first_report is not None:
             all_saved += 1
+        # A 24-hour conversion denominator should not wait for seven days.
+        # Keep the legacy seven-day-mature diagnostic intact for compatibility.
+        if created + SECONDS_PER_DAY <= cutoff:
+            mature_day_one += 1
+            activated_day_one = int(first_report is not None and first_report < created + SECONDS_PER_DAY)
+            day_one_saved += activated_day_one
+            day_one_week = (created // (7 * SECONDS_PER_DAY)) * (7 * SECONDS_PER_DAY)
+            day_one_bucket = weekly_day_one.setdefault(day_one_week, [0, 0])
+            day_one_bucket[0] += 1
+            day_one_bucket[1] += activated_day_one
         if created + 7 * SECONDS_PER_DAY <= cutoff:
             mature += 1
             if first_report is None:
@@ -92,6 +105,10 @@ def report_activation(conn, as_of=None):
         for key, counts in repeat_by_activation_speed.items()
     }
     return {
+        "mature_24_hour_cohort": mature_day_one,
+        "saved_report_within_24h_observed": day_one_saved,
+        "observed_24h_activation_rate_pct": round(100 * day_one_saved / mature_day_one, 2) if mature_day_one else None,
+        "weekly_24h_activation": tuple((week, counts[0], counts[1]) for week, counts in sorted(weekly_day_one.items(), reverse=True)[:8]),
         "repeat_usage_by_first_save_speed": speed_metrics,
         "weekly_mature_repeat_usage": tuple(
             (week, counts[0], counts[1])
@@ -120,6 +137,9 @@ def panel_html(metrics):
     rate = metrics["seven_day_rate_pct"]
     fields = (
         ("Customer accounts observed", metrics["signup_accounts"]),
+        ("Signups with 24 full hours of observation", metrics.get("mature_24_hour_cohort", 0)),
+        ("Those signups saving a ready report within 24 hours", metrics.get("saved_report_within_24h_observed", 0)),
+        ("24-hour activation among 24-hour-mature signups", "Not available (no 24-hour-mature signups)" if metrics.get("observed_24h_activation_rate_pct") is None else str(metrics["observed_24h_activation_rate_pct"]) + "%"),
         ("First-week activated accounts with 30 days observed", metrics.get("first_week_activated_with_30_day_observation", 0)),
         ("Those accounts with a further ready report on days 7–30", metrics.get("first_week_activated_with_later_ready_report", 0)),
         ("Observed later-report usage among eligible activated accounts", "Not available (no eligible 30-day cohort)" if metrics.get("later_report_usage_rate_pct") is None else str(metrics["later_report_usage_rate_pct"]) + "%"),
@@ -169,18 +189,32 @@ def panel_html(metrics):
         "<th>Used again on days 7–30</th><th>Observed rate</th></tr></thead><tbody>" +
         repeat_week_rows + "</tbody></table>"
     ) if repeat_week_rows else "<p>No mature 30-day signup weeks available.</p>"
+    day_one_weeks = metrics.get("weekly_24h_activation", ())
+    day_one_rows = "".join(
+        "<tr><th scope='row'>" + datetime.fromtimestamp(week, timezone.utc).strftime("%Y-%m-%d") +
+        "</th><td>" + str(total) + "</td><td>" + str(saved) + "</td><td>" +
+        str(round(100 * saved / total, 2)) + "%</td></tr>"
+        for week, total, saved in day_one_weeks if total > 0)
+    day_one_html = (
+        "<h3>24-hour activation by signup week (UTC)</h3>"
+        "<p>Includes customers with a complete first 24 hours, even if they have not reached day seven. "
+        "This is saved-report usage, not a payment or proof of customer value.</p>"
+        "<table><thead><tr><th>Week starting</th><th>Mature signups</th>"
+        "<th>Saved within 24h</th><th>Observed rate</th></tr></thead><tbody>" +
+        day_one_rows + "</tbody></table>"
+    ) if day_one_rows else "<p>No signups with a complete 24-hour observation window.</p>"
     cohorts = metrics.get("weekly_cohorts", ())
     stages = {week: (total, day_one, delayed) for week, total, day_one, delayed in metrics.get("weekly_activation_stages", ())}
     cohort_rows = "".join("<tr><th scope='row'>" + datetime.fromtimestamp(week, timezone.utc).strftime("%Y-%m-%d") + "</th><td>" + str(total) + "</td><td>" + str(stages.get(week, (total, 0, activated))[1]) + "</td><td>" + str(stages.get(week, (total, 0, activated))[2]) + "</td><td>" + str(activated) + "</td><td>" + str(total - activated) + "</td><td>" + str(round(100 * activated / total, 2)) + "%</td></tr>" for week, total, activated in cohorts)
     cohort_html = ("<h3>Recent mature signup weeks (UTC)</h3><p>Only accounts with seven full days of observation are included. 24-hour and later first-week saves are mutually exclusive; the seven-day total is their sum. Not activated does not mean churned or lost.</p><table><thead><tr><th>Week starting</th><th>Mature signups</th><th>Saved within 24h</th><th>First saved 24h–7d</th><th>Activated within 7d</th><th>Not activated within 7d</th><th>7d rate</th></tr></thead><tbody>" + cohort_rows + "</tbody></table>") if cohorts else "<p>No mature signup weeks available.</p>"
     return ("<section class='panel'><h2>V61 — Verified saved-report activation</h2>"
             "<p>Based on existing customer account creation and ready saved-report "
-            "timestamps. Only signups at least seven days old enter the seven-day "
+            "timestamps. The 24-hour metric uses signups at least 24 hours old; only signups at least seven days old enter the seven-day "
             "denominator. This is an observed product milestone, not proof of "
             "customer business value, payment, or retention. Anonymous demo "
             "runs and unsaved results are excluded.</p>"
             "<p>Repeat-usage diagnostic: among accounts that first saved within seven days and have at least 30 days of observation, count a further ready saved report from day 7 up to (but excluding) day 30. This is observed repeat product use, not proof of paid retention, recurring revenue, or customer outcomes. No eligible accounts means the rate is unavailable.</p>"
             "<p>Diagnostic: compare 24-hour activation with seven-day activation to identify early onboarding friction. The 24-hour-to-seven-day lift isolates customers who reached the milestone later in the first week. Late saves show delayed adoption, while no saved report is an observed missing milestone, not proof of churn. These are descriptive counts, not causal conclusions.</p>"
-            "<table><tbody>" + rows + "</tbody></table>" + speed_html + repeat_week_html + cohort_html
+            "<table><tbody>" + rows + "</tbody></table>" + day_one_html + speed_html + repeat_week_html + cohort_html
             + "<p>Older records, malformed timestamps, and late report imports may affect counts. Invalid signup timestamps are excluded rather than treated as customer activity. "
             "No individual customer information is shown.</p></section>")
