@@ -10,6 +10,7 @@ MODULES = (
     "test_site_stats", "test_signup_path", "test_instant_demo",
     "test_demo_claim", "test_demo_workspace", "test_welcome_sequence",
     "test_ledger", "test_revenue_engine", "test_btcpay_mainnet",
+    "test_report_pro_offer", "test_paywall_analytics",
     "test_revenue_activation_guard",
 )
 SOURCES = (
@@ -56,6 +57,24 @@ class RevenueActivationGuardTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn("'" + path + "'", self.push)
                 self.assertIn("'" + path + "'", self.pr)
+
+    def test_paid_conversion_customer_paths_are_guarded(self):
+        # Exercise first-report upgrade, exhausted-quota paywall and billing
+        # in the same job; changes to each test must trigger both events.
+        command = self.workflow.split("python -m unittest -v", 1)[1]
+        for module in ("test_report_pro_offer", "test_paywall_analytics", "test_btcpay_mainnet"):
+            with self.subTest(module=module):
+                self.assertRegex(command, r"(?<![\\w])" + re.escape(module) + r"(?![\\w])")
+                path = "'" + module + ".py'"
+                self.assertIn(path, self.push)
+                self.assertIn(path, self.pr)
+
+    def test_guard_cannot_silently_enable_real_checkout(self):
+        command = self.workflow.split("Run V60/V61 analytics and real customer-path regressions", 1)[1]
+        self.assertIn("VELXTRIA_DEPLOYMENT_MODE: local", command)
+        self.assertIn("VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT: '0'", command)
+        self.assertIn("PYTHONDONTWRITEBYTECODE: '1'", command)
+        self.assertIn("timeout-minutes: 8", self.workflow)
 
     def test_read_only_offline_guard_and_hourly_schedule(self):
         self.assertIn("contents: read", self.workflow)
