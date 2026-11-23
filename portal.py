@@ -334,6 +334,23 @@ S-1008,2026-11-15,Sample Customer G,Gutter Cleaning,0,120.00,Paid,Louisville
 """
 
 _SAMPLE_REPORT_HTML=None
+_SAMPLE_ENGINE=None
+
+def _sample_engine():
+ """The real report engine run on the built-in sample, once per process.
+
+ Returns the report dict (accepted, rejected, stats, rejected_rows,
+ cleaned_rows) or None when the engine fails. Cached so the landing page
+ never runs the engine twice — the hero stage and the sample report both
+ read from this one result, so their numbers always match.
+ """
+ global _SAMPLE_ENGINE
+ if _SAMPLE_ENGINE is None:
+  try:
+   _SAMPLE_ENGINE=run_report_engine(SAMPLE_SALES_CSV.encode('utf-8'))
+  except Exception:
+   _SAMPLE_ENGINE=False
+ return _SAMPLE_ENGINE or None
 
 def _csv_rows_html(rows):
  if not rows:return ''
@@ -453,12 +470,11 @@ def sample_report_html():
  """
  global _SAMPLE_REPORT_HTML
  if _SAMPLE_REPORT_HTML is not None:return _SAMPLE_REPORT_HTML
- _SAMPLE_REPORT_HTML=''
- try:
-  report=run_report_engine(SAMPLE_SALES_CSV.encode('utf-8'))
-  _SAMPLE_REPORT_HTML=report_summaries_html(report['monthly_rows'],report['product_rows'],report['stats'])+report_diagnosis_html(report.get('rejected_rows') or [],report.get('cleaned_rows') or [],report['rejected'],report['accepted'])
- except Exception:
+ report=_sample_engine()
+ if report is None:
   _SAMPLE_REPORT_HTML=''
+  return ''
+ _SAMPLE_REPORT_HTML=report_summaries_html(report['monthly_rows'],report['product_rows'],report['stats'])+report_diagnosis_html(report.get('rejected_rows') or [],report.get('cleaned_rows') or [],report['rejected'],report['accepted'])
  return _SAMPLE_REPORT_HTML
 
 # The five files the report engine produces for every report.
@@ -833,6 +849,55 @@ def landing_sample_html():
  body=sample if sample else '<p>Sample report is being prepared — please try again shortly.</p>'
  return '''<section id="v8-sample" class="v8-sample"><div class="v8-sectiontop"><span>03 / SAMPLE REPORT</span><span>SEE WHAT YOU GET.</span></div><h2>A REAL REPORT.<br><em>FROM SAMPLE DATA.</em></h2><p>This sample was built by the same report engine that processes your uploads, from a small sample sales file — not a real business. It accepted the clean rows, flagged the messy ones, and summarized the rest.</p>'''+body+'''</section>'''
 
+_HERO_STAGE_STATIC = """<div class="v8-stage" aria-label="Illustrative reporting command center">
+   <div class="v8-ring ring-1"></div><div class="v8-ring ring-2"></div><div class="v8-ring ring-3"></div>
+   <div class="v8-core"><span>✦</span><strong>VX</strong><small>DATA ENGINE</small></div>
+   <div class="v8-float v8-float-a"><span>01 / INPUT</span><b>SALES.CSV</b><small>SCHEMA CHECK</small><div class="v8-mini-lines"><i></i><i></i><i></i></div></div>
+   <div class="v8-float v8-float-b"><span>02 / PROCESS</span><b>ROW VALIDATION</b><div class="v8-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><small>ILLUSTRATIVE VISUAL</small></div>
+   <div class="v8-float v8-float-c"><span>03 / OUTPUT</span><b>REPORT PACKAGE</b><small>CSV + SUMMARIES + ZIP</small><div class="v8-check">✓ READY TO DOWNLOAD</div></div>
+   <div class="v8-coordinate">VX / SYSTEM 08<br>VISUAL DEMONSTRATION</div>
+  </div>"""
+
+def landing_hero_stage_html():
+ """The hero's right-hand stage: a real before/after from the sample run.
+
+ The stage used to be a decorative diagram — the process card literally
+ said "ILLUSTRATIVE VISUAL." Now it shows the real sample: the messy input
+ (source rows, how many have problems), the exact flagged rows and their
+ issues, and the clean output (accepted, flagged, paid revenue). The
+ numbers come from the same cached engine result as the sample report, so
+ the hero and the report below it can never disagree. Falls back to the
+ static stage when the engine result is unavailable, so the landing page
+ never breaks.
+ """
+ report=_sample_engine()
+ if report is None:return _HERO_STAGE_STATIC
+ rejected_rows=(report.get('rejected_rows') or [])[1:]
+ flagged=[]
+ for r in rejected_rows[:3]:
+  if len(r)>9 and r[1] and r[9]:
+   flagged.append((r[1],r[9].split(';')[0].strip()))
+ if not flagged:return _HERO_STAGE_STATIC
+ accepted=report['accepted'];rejected=report['rejected'];source=accepted+rejected
+ paid=''
+ for line in report['stats']:
+  if line.startswith('Paid revenue'):
+   paid=line.split(':',1)[-1].strip()
+   break
+ flags=''.join('<div><b>'+escape(oid)+'</b><span>'+escape(issue)+'</span></div>' for oid,issue in flagged)
+ out='<div class="v8-stage" aria-label="Live sample: messy sales data cleaned by the engine">'
+ out+='<div class="v8-ring ring-1"></div><div class="v8-ring ring-2"></div><div class="v8-ring ring-3"></div>'
+ out+='<div class="v8-core"><span>✦</span><strong>VX</strong><small>DATA ENGINE</small></div>'
+ out+='<div class="v8-float v8-float-a"><span>01 / INPUT</span><b>SALES.CSV</b><small>'+str(source)+' ROWS · SAMPLE EXPORT</small><div class="v8-hero-fact"><b>'+str(rejected)+' rows</b> have problems</div></div>'
+ out+='<div class="v8-float v8-float-b"><span>02 / PROCESS</span><b>ROW VALIDATION</b><div class="v8-hero-flags">'+flags+'</div><small>REAL SAMPLE DATA</small></div>'
+ out+='<div class="v8-float v8-float-c"><span>03 / OUTPUT</span><b>REPORT PACKAGE</b><small>'+str(accepted)+' ACCEPTED · '+str(rejected)+' FLAGGED</small>'
+ if paid:
+  out+='<div class="v8-hero-result">'+escape(paid)+' paid revenue</div>'
+ out+='<div class="v8-check">✓ READY TO DOWNLOAD</div></div>'
+ out+='<div class="v8-coordinate">VX / SYSTEM 08<br>REAL SAMPLE DATA</div>'
+ out+='</div>'
+ return out
+
 def landing_page(user=None,csrf=''):
  return """<div class="v8">
  <div class="v8-orbit v8-orbit-a"></div><div class="v8-orbit v8-orbit-b"></div>
@@ -844,14 +909,7 @@ def landing_page(user=None,csrf=''):
    <div class="v8-actions"><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a><form class="v8-sample-run" method="post" action="/try-sample"><input type="hidden" name="sample" value="1"><button class="v8-primary" type="submit">RUN THE SAMPLE — ONE CLICK <span>↗</span></button></form><a class="v8-ghost" href="/register">CREATE FREE ACCOUNT <span>↗</span></a><a class="v8-ghost" href="/login">SIGN IN <span>↗</span></a><a class="v8-ghost" href="#v8-process">EXPLORE THE SYSTEM <span>↓</span></a></div>
    <div class="v8-disclaimer">PRIVATE PREVIEW <span>•</span> SAMPLE OR NON-SENSITIVE DATA ONLY <span>•</span> PAID ACCESS REQUIRES VERIFIED PAYMENT; DO NOT SEND FUNDS WITHOUT CONFIRMING THE CURRENT CHECKOUT PROCESS</div>
   </div>
-  <div class="v8-stage" aria-label="Illustrative reporting command center">
-   <div class="v8-ring ring-1"></div><div class="v8-ring ring-2"></div><div class="v8-ring ring-3"></div>
-   <div class="v8-core"><span>✦</span><strong>VX</strong><small>DATA ENGINE</small></div>
-   <div class="v8-float v8-float-a"><span>01 / INPUT</span><b>SALES.CSV</b><small>SCHEMA CHECK</small><div class="v8-mini-lines"><i></i><i></i><i></i></div></div>
-   <div class="v8-float v8-float-b"><span>02 / PROCESS</span><b>ROW VALIDATION</b><div class="v8-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><small>ILLUSTRATIVE VISUAL</small></div>
-   <div class="v8-float v8-float-c"><span>03 / OUTPUT</span><b>REPORT PACKAGE</b><small>CSV + SUMMARIES + ZIP</small><div class="v8-check">✓ READY TO DOWNLOAD</div></div>
-   <div class="v8-coordinate">VX / SYSTEM 08<br>VISUAL DEMONSTRATION</div>
-  </div>
+  """+landing_hero_stage_html()+"""
  </section>
  <section class="v8-ticker" aria-label="Product capabilities"><div>DATA CLEANING <span>✦</span> ROW VALIDATION <span>✦</span> MONTHLY SUMMARIES <span>✦</span> PRODUCT REPORTS <span>✦</span> ZIP EXPORT <span>✦</span> DATA CLEANING <span>✦</span> ROW VALIDATION <span>✦</span></div></section>
  <section id="v8-process" class="v8-process"><div class="v8-sectiontop"><span>01 / THE PIPELINE</span><span>SIMPLICITY, ENGINEERED.</span></div><h2>THREE MOVES.<br><em>ONE CLEARER PICTURE.</em></h2><div class="v8-steps">
@@ -911,6 +969,14 @@ body:has(.v8) header{position:relative;z-index:10;background:#0a0a15;border-bott
 .v8-mini-lines{display:grid;gap:6px;margin-top:1rem}.v8-mini-lines i{display:block;background:#755ba5;height:6px;border-radius:2px}.v8-mini-lines i:nth-child(2){width:65%}.v8-mini-lines i:nth-child(3){width:85%}
 .v8-bars{display:flex;align-items:end;height:50px;gap:5px;margin:1rem 0}.v8-bars i{flex:1;background:linear-gradient(#d3a7ff,#6035b4);height:45%;border-radius:2px}.v8-bars i:nth-child(2){height:70%}.v8-bars i:nth-child(3){height:52%}.v8-bars i:nth-child(4){height:95%}.v8-bars i:nth-child(5){height:62%}.v8-bars i:nth-child(6){height:83%}.v8-bars i:nth-child(7){height:57%}
 .v8-check{margin-top:1rem;border-top:1px solid #584771;padding-top:.7rem;color:#c7b4ff;font-size:.62rem;letter-spacing:.07em}
+.v8-hero-fact{margin-top:1rem;color:#e8ddff;font-size:.68rem;letter-spacing:.05em}
+.v8-hero-fact b{color:#ffd9a8}
+.v8-hero-flags{display:grid;gap:.5rem;margin:1rem 0}
+.v8-hero-flags>div{display:grid;gap:.12rem}
+.v8-hero-flags b{color:#f1eaff;font-size:.68rem;letter-spacing:.04em}
+.v8-hero-flags span{color:#f0b4b4;font-size:.62rem;line-height:1.45}
+.v8-hero-result{margin-top:1rem;color:#e8ddff;font-size:.72rem;font-weight:800;letter-spacing:.04em}
+@media(max-width:700px){.v8-hero-flags{gap:.35rem}.v8-hero-flags b{font-size:.62rem}.v8-hero-flags span{font-size:.58rem}}
 .v8-coordinate{position:absolute;bottom:0;right:0;font-size:.59rem;color:#746d90;letter-spacing:.14em;text-align:right;line-height:1.8}
 .v8-ticker{border-top:1px solid #37304c;border-bottom:1px solid #37304c;background:#151121;overflow:hidden;white-space:nowrap;padding:1.1rem 0}
 .v8-ticker div{display:inline-block;min-width:100%;font-size:.73rem;letter-spacing:.23em;font-weight:800;color:#c2b1dd;animation:v8-marquee 28s linear infinite}
