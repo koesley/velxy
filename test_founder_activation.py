@@ -386,5 +386,48 @@ class FounderActivationTests(unittest.TestCase):
         self.assertTrue(all(eligible > 0 and repeated == 0
                             for _, eligible, repeated in result["weekly_mature_repeat_usage"]))
 
+    def test_24_hour_cohort_includes_recent_mature_signups_without_polluting_seven_day(self):
+        self.user(1, 2)
+        self.user(2, 2)
+        self.user(3, 0)
+        self.user(4, 10)
+        self.report("recent-fast", 1, 2)
+        self.report("recent-late", 2, 1)
+        self.report("young-fast", 3, 0)
+        self.report("older-fast", 4, 10)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["mature_24_hour_cohort"], 3)
+        self.assertEqual(m["saved_report_within_24h_observed"], 2)
+        self.assertEqual(m["observed_24h_activation_rate_pct"], 66.67)
+        self.assertEqual(m["mature_seven_day_cohort"], 1)
+        self.assertEqual(sum(r[1] for r in m["weekly_24h_activation"]), 3)
+        self.assertEqual(sum(r[2] for r in m["weekly_24h_activation"]), 2)
+        markup = founder_activation.panel_html(m)
+        self.assertIn("24-hour activation by signup week", markup)
+        self.assertNotIn("recent-fast", markup)
+
+    def test_24_hour_cohort_excludes_admin_failed_and_future_reports(self):
+        self.user(1, 2)
+        self.user(2, 2, "admin")
+        self.user(3, 1)
+        self.report("failed", 1, 2, "failed")
+        self.report("admin", 2, 2)
+        self.report("future", 3, -1)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(m["mature_24_hour_cohort"], 2)
+        self.assertEqual(m["saved_report_within_24h_observed"], 0)
+        self.assertEqual(m["observed_24h_activation_rate_pct"], 0.0)
+
+    def test_24_hour_empty_and_weekly_cap(self):
+        self.user(1, 0)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertIsNone(m["observed_24h_activation_rate_pct"])
+        self.assertIn("No signups with a complete 24-hour observation window", founder_activation.panel_html(m))
+        for uid in range(2, 17):
+            self.user(uid, uid * 7 + 2)
+        m = founder_activation.report_activation(self.db, NOW)
+        self.assertEqual(len(m["weekly_24h_activation"]), 8)
+        self.assertEqual(m["mature_24_hour_cohort"], 15)
+
 if __name__ == "__main__":
     unittest.main()
