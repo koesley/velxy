@@ -170,7 +170,7 @@ class SampleDemoTests(unittest.TestCase):
         # No ZIP download for an anonymous runner.
         self.assertNotIn('Download report ZIP', text)
         # The one-step signup is the unlock.
-        self.assertIn('Save this report to my free account', text)
+        self.assertIn('Get my cleaned file', text)
         match = re.search(r'/demo/(?!signup|email)([A-Za-z0-9_-]+)', text)
         self.assertIsNotNone(match, 'result page has no share link')
 

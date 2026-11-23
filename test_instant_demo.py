@@ -181,7 +181,7 @@ class InstantDemoTests(unittest.TestCase):
         self.assertIn('unlock with a free account', text)
         self.assertNotIn('Download report ZIP', text)
         # The one-step signup is the unlock, with the YOUR-report copy.
-        self.assertIn('Save your report to my free account', text)
+        self.assertIn('Get my cleaned file', text)
 
     def test_failed_claim_can_restore_demo_until_original_expiry(self):
         import portal
