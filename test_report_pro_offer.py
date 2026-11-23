@@ -201,7 +201,7 @@ class ReportProOfferTests(unittest.TestCase):
                 ' VALUES (?,?,?,?,?,?,?,?,?,?)',
                 (uid, subscriptions.PRODUCT_KEY, subscriptions.PRICING_PLAN,
                  'active', 'inv1', now - 100, now + days_left * 86400,
-                 now, 'test', now))
+                 now, 'btcpay_mainnet_verified', now))
 
     def test_free_report_page_offers_pro_checkout(self):
         email, cookie, report_id = self.make_user_and_upload()
