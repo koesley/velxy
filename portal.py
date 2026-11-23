@@ -751,6 +751,30 @@ def landing_demo_html():
  """
  return '''<section id="try" class="v8-demo"><div class="v8-sectiontop"><span>TRY IT NOW</span><span>NO ACCOUNT. NO WAITING.</span></div><h2>YOUR FILE.<br><em>YOUR NUMBERS. RIGHT NOW.</em></h2><p>Upload your sales CSV and see what's wrong with YOUR data — cleaned, flagged, and summarized in minutes. No account, no waiting. Use only sample or non-sensitive data in this preview.</p><form method="post" action="/try" enctype="multipart/form-data"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><button class="v8-primary" type="submit">Generate my report</button></form><p class="v8-demo-note">5 MB maximum · 20,000 rows · Your download link works for 10 minutes — create a free account to keep your reports.</p><p>No file handy? Run the sample instead — one click, no file needed. Or <a href="/sample-sales.csv" download="VELXTRIA_Sample_Sales.csv">Download the sample sales CSV</a> to inspect it first.</p><form class="v8-sample-run" method="post" action="/try-sample"><input type="hidden" name="sample" value="1"><button class="v8-primary" type="submit">Run the sample — one click</button></form><p class="v8-demo-note">Runs the real engine on the built-in sample data and shows the full report — charts, flagged rows, and all. The sample is fictional and contains intentionally invalid rows to demonstrate data cleaning.</p><details><summary>Required column headers</summary><code>'''+escape(', '.join(REQUIRED))+'''</code></details></section>'''
 
+def scorecard_html(card, share_link=None, show_issues=True):
+ """Compact visual scorecard: % clean, problems found, top issue types,
+ paid revenue. Counts and generic issue labels only — no raw rows, so
+ it is safe to share. With a share link, a read-only input lets the
+ visitor copy the link to post it elsewhere. The public share page
+ hides the issue list (show_issues=False): issue text is diagnostic
+ detail that stays with the owner, like the flagged rows themselves."""
+ top = ''
+ if show_issues and card['top_issues']:
+  top = '<p>Top issues: ' + ', '.join(
+   escape(issue) + ' (' + str(n) + ')' for issue, n in card['top_issues']) + '</p>'
+ paid = ''
+ if card['paid']:
+  paid = '<p>' + escape(card['paid']) + ' paid revenue</p>'
+ share = ''
+ if share_link:
+  share = ('<p class="v8-demo-note">Share your scorecard — copy this link: '
+           '<input readonly value="' + escape(share_link) + '"></p>')
+ return ('<div class="v8-scorecard"><h3>Your data scorecard</h3>'
+         '<p class="v8-score">Your data is <strong>' + str(card['clean_pct']) + '% clean</strong></p>'
+         '<p>' + str(card['problems']) + ' problem' + ('s' if card['problems'] != 1 else '') + ' found</p>'
+         + top + paid + share + '</div>')
+
+
 def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=False):
  """The instant demo result: the problems first, then the fix offer, then
  the summaries — and a ZIP download for signed-in runners. The old order
@@ -762,6 +786,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
  nxt=urllib.parse.quote('/account#billing',safe='')
  upgrade_href='/account#billing' if user else '/register?next='+nxt
  share=''
+ link=''
  if share_token:
   link=btcpay_mainnet.site_url()+'/demo/'+share_token
   share=('<p class="v8-demo-note">Share this result: <a href="'+escape(link)+'">'+escape(link)+'</a></p>'
@@ -788,6 +813,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
    # record the lead; no account needed.
    email_form=('<form method="post" action="/demo/email"><input type="hidden" name="share_token" value="'+escape(share_token)+'"><label>Email me this report<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><button class="v8-primary" type="submit">Email me this report</button></form>'
                '<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>')
+ card_html=scorecard_html(demo_shares.scorecard(result),link or None)
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_diagnosis_html(result.get('rejected_rows') or [],result.get('cleaned_rows') or [],result['rejected'],result['accepted'],preview=user is None)
   +keep
@@ -797,6 +823,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
    '<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
    +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
    +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>')
+  +card_html
   +share
   +email_form
   +'<div class="v8-demo-upgrade"><h3>Keep checking your business data</h3><p>Use VELXTRIA to spot inconsistent dates, duplicate order IDs, and mismatched quantities in future uploads. Results depend on your file; sample findings are not guaranteed savings.</p><p><strong>PRO: $49 for 30 days · 50 reports · Bitcoin or card.</strong> Payment is optional. Access activates only after verified settlement.</p><p><a class="v8-primary" href="'+escape(upgrade_href)+'">See PRO checkout — $49</a></p></div></section></div>')
@@ -1080,6 +1107,11 @@ body:has(.v8) header{position:relative;z-index:10;background:#0a0a15;border-bott
 .v8-demo input[type=file]::file-selector-button{padding:.9rem 1.2rem;background:linear-gradient(145deg,#201b32,#10121d);border:1px solid #423553;color:#e6e0f5;font:inherit;font-weight:700;cursor:pointer;margin-right:1rem}
 .v8-demo form .v8-primary{border:none;cursor:pointer;font:inherit;font-size:.75rem;letter-spacing:.1em;font-weight:900}
 .v8-demo-note{color:#806eaa;font-size:.85rem;line-height:1.7;margin-top:1.5rem;max-width:720px}
+.v8-scorecard{margin:2.5rem 0;padding:1.8rem 2rem;border:1px solid #564479;border-radius:8px;background:#1c1731b0;max-width:720px}
+.v8-scorecard h3{margin:0 0 .8rem;font-size:.75rem;letter-spacing:.18em;color:#c6b7ff}
+.v8-scorecard .v8-score{font-size:1.6rem;color:#f5f1ff}
+.v8-scorecard p{margin:.4rem 0}
+.v8-scorecard input{width:100%;margin-top:.4rem;padding:.7rem .9rem;background:#0a0a15;border:1px solid #564479;border-radius:5px;color:#c4a2ff;font:inherit;font-size:.85rem}
 .v8-demo-note a{color:#c4a2ff;text-decoration:underline}
 .v8-demo details{margin-top:1.5rem;color:#b1acc3}
 .v8-demo details summary{cursor:pointer;color:#c4a2ff;font-size:.8rem;letter-spacing:.1em}
@@ -1543,6 +1575,7 @@ class Handler(BaseHTTPRequestHandler):
     if shared:site_stats.record(c,'demo_share_view',share_token)
    if not shared:return self.respond(404,'This shared demo has expired or does not exist.','text/plain')
    body=('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>SHARED DEMO REPORT</span><span>BUILT BY VELXTRIA.</span></div><h2>SOMEONE CLEANED UP<br><em>THEIR SALES DATA.</em></h2>'
+    +scorecard_html(shared['scorecard'], show_issues=False)
     +report_summaries_html(shared['monthly_rows'],shared['product_rows'],shared['stats'])
     +'<p>Accepted '+str(shared['accepted'])+' rows · flagged '+str(shared['rejected'])+' rows. Only the summaries are shared — the original file and raw rows were never stored.</p>'
     +'<a class="v8-primary" href="/#try">Try it with your own CSV — no account</a>'
