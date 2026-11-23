@@ -52,7 +52,7 @@ class LandingPageTests(unittest.TestCase):
     def test_pricing_free_and_pro(self):
         html = self.portal.landing_page()
         self.assertIn('FREE', html)
-        self.assertIn('3 reports', html)
+        self.assertIn('1 free report', html)
         self.assertIn('PRO', html)
         self.assertIn('$49', html)
         self.assertIn('50 reports', html)

@@ -159,7 +159,7 @@ class DemoClaimTests(unittest.TestCase):
         self.assertTrue(match, 'demo result set no velxtria_demo cookie')
         return match.group(1), headers.get('Set-Cookie', '')
 
-    def use_free_reports(self, email, count=3):
+    def use_free_reports(self, email, count=1):
         uid = self.user_id(email)
         with self.portal.db() as c:
             for i in range(count):
@@ -210,12 +210,12 @@ class DemoClaimTests(unittest.TestCase):
 
     def test_claim_at_free_limit_shows_paywall_and_keeps_demo(self):
         email, cookie = self.new_user()
-        self.use_free_reports(email, 3)
+        self.use_free_reports(email, 1)
         token, _ = self.run_demo(cookie)
         status, _, body = self.post_form(
             '/claim-demo', {'csrf': self.csrf_for(email), 'token': token}, cookie)
         self.assertEqual(status, 429)
-        self.assertIn('You have used your 3 free reports', body)
+        self.assertIn('You have used your free report', body)
         status, _, _ = self.get('/try-download?token=' + token)
         self.assertEqual(status, 200)
 

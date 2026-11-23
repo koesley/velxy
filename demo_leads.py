@@ -72,7 +72,7 @@ def format_email_body(shared, share_link, site_url):
     lines.append('The link shows only these summaries — never your file or '
                  'a raw row — and works for 30 days.')
     lines.append('')
-    lines.append('Keep your reports: create a free account (3 free reports) '
+    lines.append('Keep your reports: create a free account (1 free report) '
                  'at ' + site_url.rstrip('/') + '/register — then claim this '
                  'demo from your dashboard.')
     lines.append('')

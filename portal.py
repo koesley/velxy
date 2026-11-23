@@ -702,15 +702,15 @@ def paywall_html(user,csrf,used,pending_mainnet=None):
  """Free-limit page: the moment a user is most likely to pay, show them
  how instead of a bare error. `used` is their lifetime free-report count.
  """
- return ('<section class="panel"><h2>You have used your 3 free reports</h2>'
-  '<p>You have generated '+str(used)+' free reports — the lifetime free allowance. '
+ return ('<section class="panel"><h2>You have used your free report</h2>'
+  '<p>You have generated '+str(used)+' free report'+('' if used==1 else 's')+' \u2014 the lifetime free allowance. '
   'Go PRO to keep going: 50 reports per billing cycle for $49 / 30 days, paid with Bitcoin. '
   'PRO activates automatically once the payment settles.</p></section>'
   +pro_upgrade_html(user,csrf,pending_mainnet)
   +'<p><a href="/">Back to dashboard</a></p>')
 
 def landing_pricing_html(user,csrf):
- return '''<section id="v8-pricing" class="v8-pricing"><div class="v8-sectiontop"><span>02 / PRICING</span><span>SIMPLE, NO SURPRISES.</span></div><h2>START FREE.<br><em>GO PRO WHEN IT PAYS.</em></h2><div class="v8-plans"><article class="v8-plan"><h3>FREE</h3><p class="v8-price">$0</p><ul><li>3 reports, lifetime</li><li>Upload a sales CSV, get cleaned data and summaries</li><li>No card, no purchase required</li></ul><a class="v8-ghost" href="/register">Create demo account ↗</a></article><article class="v8-plan v8-plan-pro"><h3>PRO</h3><p class="v8-price">$49 <span>/ 30 days</span></p><ul><li>50 reports per billing cycle</li><li>Pay with Bitcoin — verified automatically via BTCPay</li><li>PRO activates once the payment settles</li></ul>'''+landing_buy_html(user,csrf)+'''</article></div><p class="v8-pricing-note">Prices in USD. Bitcoin payment only — no card, no Stripe.</p></section>'''
+ return '''<section id="v8-pricing" class="v8-pricing"><div class="v8-sectiontop"><span>02 / PRICING</span><span>SIMPLE, NO SURPRISES.</span></div><h2>START FREE.<br><em>GO PRO WHEN IT PAYS.</em></h2><div class="v8-plans"><article class="v8-plan"><h3>FREE</h3><p class="v8-price">$0</p><ul><li>1 free report</li><li>Upload a sales CSV, get cleaned data and summaries</li><li>No card, no purchase required</li></ul><a class="v8-ghost" href="/register">Create demo account ↗</a></article><article class="v8-plan v8-plan-pro"><h3>PRO</h3><p class="v8-price">$49 <span>/ 30 days</span></p><ul><li>50 reports per billing cycle</li><li>Pay with Bitcoin — verified automatically via BTCPay</li><li>PRO activates once the payment settles</li></ul>'''+landing_buy_html(user,csrf)+'''</article></div><p class="v8-pricing-note">Prices in USD. Bitcoin payment only — no card, no Stripe.</p></section>'''
 
 def landing_demo_html():
  """No-signup instant demo: upload a CSV on the landing page and see the
@@ -731,10 +731,10 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
  if user:
   if is_sample:
    keep=('<form method="post" action="/claim-demo"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><input type="hidden" name="token" value="'+escape(token)+'"><button>Save this report to my account</button></form>'
-         '<p class="v8-demo-note">Saves as one of your free reports — no re-upload.</p>')
+         '<p class="v8-demo-note">Saves as your free report — no re-upload.</p>')
   else:
    keep=('<form method="post" action="/claim-demo"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><input type="hidden" name="token" value="'+escape(token)+'"><button>Save your report to my account</button></form>'
-         '<p class="v8-demo-note">Saves YOUR report as one of your free reports — no re-upload.</p>')
+         '<p class="v8-demo-note">Saves YOUR report as your free report — no re-upload.</p>')
   email_form=''
  else:
   if is_sample:
@@ -809,7 +809,7 @@ def ledger_panel_html(user, csrf):
   '<input type="hidden" name="csrf" value="' + escape(csrf) + '">'
   '<button>Generate a report from my ledger</button></form> '
   '<a href="/ledger.csv">Download my sales as CSV</a></p>'
-  '<p class="v8-demo-note">A ledger report counts as one of your free reports, the same as uploading a CSV.</p></section>')
+  '<p class="v8-demo-note">A ledger report counts as your free report, the same as uploading a CSV.</p></section>')
 
 
 def report_view_html(row,monthly_rows,product_rows,stats,rejected_rows=None,cleaned_rows=None,upgrade_html=''):
@@ -1811,9 +1811,9 @@ class Handler(BaseHTTPRequestHandler):
     ref_code=referrals.code_for(c,user['id'])
     ref_stats=referrals.stats(c,user['id'])
    rows=''.join('<tr><td>'+escape(r[1])+'</td><td>'+escape(datetime.fromtimestamp(r[2],timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))+'</td><td>'+escape(r[3])+'</td><td>'+str(r[4])+' / '+str(r[5])+'</td><td><a href="/report?id='+escape(r[0])+'">View</a> · <a href="/download?id='+escape(r[0])+'">Download ZIP</a></td><td>'+escape(r[6])+'</td></tr>' for r in reports)
-   access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 3 reports total · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
+   access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 1 free report · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
-   limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '3 free reports total'
+   limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '1 free report'
    upgrade_html=pro_upgrade_html(user,csrf,pending_mainnet) if ent['plan']!='pro' else ''
    ledger_html=ledger_panel_html(user,csrf)
    body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section>{ledger_html}<section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
@@ -1827,7 +1827,7 @@ class Handler(BaseHTTPRequestHandler):
    demo_morsel=demo_cookie.get(DEMO_COOKIE)
    demo_entry=peek_demo_zip(demo_morsel.value) if demo_morsel else None
    if demo_entry:
-    body+='<section class="panel"><h2>Your demo report is waiting</h2><p>You ran the instant demo — save it to your account instead of uploading the file again. It counts as one of your free reports.</p><form method="post" action="/claim-demo"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><input type="hidden" name="token" value="'+escape(demo_morsel.value)+'"><button>Save demo report to my account</button></form></section>'
+    body+='<section class="panel"><h2>Your demo report is waiting</h2><p>You ran the instant demo — save it to your account instead of uploading the file again. It counts as your free report.</p><form method="post" action="/claim-demo"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><input type="hidden" name="token" value="'+escape(demo_morsel.value)+'"><button>Save demo report to my account</button></form></section>'
    ref_link=btcpay_mainnet.site_url()+'/?ref='+ref_code
    body+='<section class="panel"><h2>Refer friends — earn free PRO</h2><p>Share your link: <a href="'+escape(ref_link)+'">'+escape(ref_link)+'</a></p><p>When someone signs up with your link and pays $49 for PRO, you get a free month of PRO. Referred signups: '+str(ref_stats['signups'])+' · Paid referrals: '+str(ref_stats['paid'])+' · Free months earned: '+str(ref_stats['months_earned'])+'</p></section>'
    if user['role']=='admin':
@@ -3316,7 +3316,7 @@ class Handler(BaseHTTPRequestHandler):
     if pending_mainnet:
      upgrade_html=pro_upgrade_html(user,csrf,pending_mainnet)
     else:
-     upgrade_html=('<section class="panel"><h2>Free report %d of 3 used</h2><p>You have %d free report%s left. PRO gives you 50 reports per billing cycle for $49, paid with Bitcoin — and it activates the moment the payment settles.</p></section>'%(count,remaining,'' if remaining==1 else 's'))+pro_upgrade_html(user,csrf)
+     upgrade_html=('<section class="panel"><h2>Free report %d of 1 used</h2><p>You have %d free report%s left. PRO gives you 50 reports per billing cycle for $49, paid with Bitcoin — and it activates the moment the payment settles.</p></section>'%(count,remaining,'' if remaining==1 else 's'))+pro_upgrade_html(user,csrf)
    return self.respond(200,shell('Report',report_view_html(row[:6],monthly_rows,product_rows,stats,rejected_rows,cleaned_rows,upgrade_html=upgrade_html),user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]

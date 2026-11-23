@@ -11,7 +11,7 @@ CONTACT_EMAIL = 'vincenthalay2005@gmail.com'
 TERMS_HTML = '''<section class="panel narrow"><h1>Terms of Service</h1>
 <p>VELXTRIA turns a small business's sales CSV into clean monthly and product reports.</p>
 <h2>Accounts</h2>
-<p>Creating an account is free. A free account gets 3 reports, lifetime. PRO is $49 for 30 days with 50 reports per billing cycle.</p>
+<p>Creating an account is free. A free account gets 1 free report. PRO is $49 for 30 days with 50 reports per billing cycle.</p>
 <h2>Payments</h2>
 <p>Payments are Bitcoin only, through BTCPay. PRO activates automatically once the payment settles on the network — a redirect back to the site alone never activates PRO. A payment that never settles grants nothing.</p>
 <h2>Your data</h2>

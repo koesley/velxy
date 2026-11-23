@@ -1,6 +1,6 @@
 """Tests for the paywall upsell and the built-in analytics.
 
-Paywall: a user who has used all 3 free reports and uploads again sees
+Paywall: a user who has used their free report and uploads again sees
 a PRO checkout page instead of a bare error — the real BTCPay form when
 checkout is on, the manual-arrangement text when it is off.
 Analytics: landing/demo/signup/report/checkout events land in the
@@ -177,18 +177,36 @@ class PaywallAnalyticsTests(unittest.TestCase):
             content_type='multipart/form-data; boundary=' + boundary)
         return status, body.decode('utf-8', 'replace')
 
-    def test_paywall_shows_checkout_after_3_free_reports(self):
+    def test_free_tier_is_one_report(self):
+        # The free tier is deliberately 1 report, not 3: the paywall is
+        # the point where a user who found value comes back, so every
+        # active free user reaches it after a single report instead of
+        # sitting on unused allowance.
+        import subscriptions
+        self.assertEqual(subscriptions.DEMO_LIMIT, 1)
+        _USER_N[0] += 1
+        email = 'pa%d@example.test' % _USER_N[0]
+        cookie = self.sign_in(email)
+        with self.portal.db() as c:
+            uid = c.execute(
+                'SELECT id FROM users WHERE email=?', (email,)).fetchone()[0]
+            ent, used, remaining = subscriptions.usage(c, uid)
+        self.assertEqual(ent['plan'], 'demo')
+        self.assertEqual(used, 0)
+        self.assertEqual(remaining, 1)
+
+    def test_paywall_shows_checkout_after_free_report(self):
         _USER_N[0] += 1
         email = 'pa%d@example.test' % _USER_N[0]
         cookie = self.sign_in(email)
         csrf = self.csrf_for(email)
-        for _ in range(3):
+        for _ in range(1):
             status, _, _ = self.upload(cookie, csrf)
             self.assertEqual(status, 303)
         status, _, body = self.upload(cookie, csrf)
         body = body.decode('utf-8', 'replace')
         self.assertEqual(status, 429)
-        self.assertIn('You have used your 3 free reports', body)
+        self.assertIn('You have used your free report', body)
         self.assertIn('Pay $49 with Bitcoin', body)
         self.assertIn('action="/btcpay/mainnet/checkout"', body)
         self.assertIn('Back to dashboard', body)
@@ -197,21 +215,21 @@ class PaywallAnalyticsTests(unittest.TestCase):
             used = c.execute(
                 'SELECT count(*) FROM reports WHERE user_id='
                 '(SELECT id FROM users WHERE email=?)', (email,)).fetchone()[0]
-        self.assertEqual(used, 3, 'paywalled upload must not create a report')
+        self.assertEqual(used, 1, 'paywalled upload must not create a report')
 
     def test_paywall_manual_text_when_checkout_disabled(self):
         _USER_N[0] += 1
         email = 'pa%d@example.test' % _USER_N[0]
         cookie = self.sign_in(email)
         csrf = self.csrf_for(email)
-        for _ in range(3):
+        for _ in range(1):
             status, _, _ = self.upload(cookie, csrf)
             self.assertEqual(status, 303)
         with patch.dict(os.environ, {'VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT': '0'}):
             status, _, body = self.upload(cookie, csrf)
         body = body.decode('utf-8', 'replace')
         self.assertEqual(status, 429)
-        self.assertIn('You have used your 3 free reports', body)
+        self.assertIn('You have used your free report', body)
         self.assertIn('manual arrangement only', body)
         self.assertNotIn('action="/btcpay/mainnet/checkout"', body)
 
