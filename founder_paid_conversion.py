@@ -123,7 +123,7 @@ def verified_mainnet_pro_snapshot(conn, as_of):
     # A customer may have multiple historical periods. Count people, not rows;
     # an active verified period takes precedence over any expired period.
     active_users = set()
-    expiring_users = set()
+    latest_active_end = {}
     expired_users = set()
     for user_id, status, start, end, verified, source, product, plan in rows:
         try:
@@ -138,13 +138,12 @@ def verified_mainnet_pro_snapshot(conn, as_of):
             continue
         if status in ('active', 'cancel_at_period_end') and as_of < end:
             active_users.add(user_id)
-            if end <= as_of + 7 * DAY:
-                expiring_users.add(user_id)
+            latest_active_end[user_id] = max(end, latest_active_end.get(user_id, 0))
         elif end <= as_of and status in ('active', 'cancel_at_period_end'):
             expired_users.add(user_id)
     return {"available": True, "active": len(active_users),
             "expired": len(expired_users - active_users),
-            "expiring_7d": len(expiring_users)}
+            "expiring_7d": sum(end <= as_of + 7 * DAY for end in latest_active_end.values())}
 
 
 def panel_html(metrics):
