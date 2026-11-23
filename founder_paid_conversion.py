@@ -123,6 +123,7 @@ def verified_mainnet_pro_snapshot(conn, as_of):
     # A customer may have multiple historical periods. Count people, not rows;
     # an active verified period takes precedence over any expired period.
     active_users = set()
+    expiring_users = set()
     expired_users = set()
     for user_id, status, start, end, verified, source, product, plan in rows:
         try:
@@ -137,10 +138,13 @@ def verified_mainnet_pro_snapshot(conn, as_of):
             continue
         if status in ('active', 'cancel_at_period_end') and as_of < end:
             active_users.add(user_id)
+            if end <= as_of + 7 * DAY:
+                expiring_users.add(user_id)
         elif end <= as_of and status in ('active', 'cancel_at_period_end'):
             expired_users.add(user_id)
     return {"available": True, "active": len(active_users),
-            "expired": len(expired_users - active_users)}
+            "expired": len(expired_users - active_users),
+            "expiring_7d": len(expiring_users)}
 
 
 def panel_html(metrics):
@@ -163,10 +167,11 @@ def panel_html(metrics):
              "</tbody></table>")
     pro = metrics.get("verified_pro_snapshot", {"available": False})
     pro_note = ("<p>Current verified BTCPay mainnet PRO entitlement snapshot: "
-                + ("active customers " + str(pro["active"]) + "; expired-only customers " + str(pro["expired"])
+                + ("active customers " + str(pro["active"]) + "; expired-only customers " + str(pro["expired"]) +
+                   "; expiring within 7 days " + str(pro["expiring_7d"])
                    if pro["available"] else "unavailable (subscription records not initialized)")
                 + ". Counts are distinct customers, with active access taking precedence over older expired periods. Only eligible subscription periods with matching product, plan, "
-                "verification source and dates count. Expired periods are not proof of churn; "
+                "verification source and dates count. Expiring access is a retention follow-up opportunity, not an automatic renewal. Expired periods are not proof of churn; "
                 "referrals and manually verified Stripe access are excluded. This is not "
                 "refund-adjusted revenue, recurring revenue, or a retention rate.</p>")
     fields = (
