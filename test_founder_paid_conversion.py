@@ -195,15 +195,21 @@ class PaidConversionTests(unittest.TestCase):
         sub(7, good, NOW-10, NOW+10)
         metrics = pc.paid_cohorts(self.db, NOW)
         self.assertEqual(metrics["verified_pro_snapshot"],
-                         {"available": True, "active": 1, "expired": 1})
+                         {"available": True, "active": 1, "expired": 1, "expiring_7d": 1})
         rendered = pc.panel_html(metrics)
-        self.assertIn("active customers 1; expired-only customers 1", rendered)
+        self.assertIn("active customers 1; expired-only customers 1; expiring within 7 days 1", rendered)
         self.assertIn("not proof of churn", rendered)
         self.assertNotIn("private-", rendered)
 
     def test_verified_pro_snapshot_deduplicates_periods_and_active_precedes_expired(self):
         import subscriptions
-        subscriptions.setup(self.db)
+        # Legacy/imported schemas may contain historical periods per user.
+        # Current production schema has one row per user; this fixture tests
+        # the aggregation safely if historical rows are ever introduced.
+        self.db.execute("""CREATE TABLE subscriptions (
+            user_id INTEGER, product_key TEXT, pricing_plan TEXT,
+            status TEXT, period_start INTEGER, period_end INTEGER,
+            verified_at INTEGER, verification_source TEXT, updated_at INTEGER)""")
         self.user(1, 40)
         self.user(2, 40)
         good = "btcpay_mainnet_verified"
@@ -242,6 +248,7 @@ class PaidConversionTests(unittest.TestCase):
         metrics = pc.paid_cohorts(self.db, NOW)
         self.assertEqual(metrics["verified_pro_snapshot"]["active"], 0)
         self.assertEqual(metrics["verified_pro_snapshot"]["expired"], 1)
+        self.assertEqual(metrics["verified_pro_snapshot"]["expiring_7d"], 0)
 
 
 if __name__ == "__main__":
