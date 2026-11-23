@@ -97,6 +97,42 @@ class PaidConversionTests(unittest.TestCase):
         m = pc.paid_cohorts(self.db, NOW)
         self.assertEqual(m["mature_30d_signups"], 1)
 
+    def test_nonactivated_paid_segment_and_rates_reconcile(self):
+        for uid in range(1, 5):
+            self.user(uid, 45)
+        self.report(1, 44)
+        self.report(2, 44)
+        self.order(1, 35)
+        self.order(3, 35)
+        m = pc.paid_cohorts(self.db, NOW)
+        self.assertEqual(m["nonactivated_signups"], 2)
+        self.assertEqual(m["nonactivated_settled"], 1)
+        self.assertEqual(m["nonactivated_paid_conversion_pct"], 50.0)
+        self.assertEqual(m["settled_within_30d"],
+                         m["activated_and_settled"] + m["nonactivated_settled"])
+        self.assertEqual(m["mature_30d_signups"],
+                         m["first_week_activated"] + m["nonactivated_signups"])
+
+    def test_no_nonactivated_denominator_does_not_invent_rate(self):
+        self.user(1, 45)
+        self.report(1, 44)
+        m = pc.paid_cohorts(self.db, NOW)
+        self.assertIsNone(m["nonactivated_paid_conversion_pct"])
+        self.assertIn("Not available", pc.panel_html(m))
+
+    def test_weekly_funnel_rendered_aggregate_only(self):
+        self.user(1, 45)
+        self.report(1, 44)
+        self.order(1, 35)
+        m = pc.paid_cohorts(self.db, NOW)
+        panel = pc.panel_html(m)
+        self.assertIn("Recent mature signup weeks", panel)
+        self.assertIn("Signup week (UTC)", panel)
+        self.assertIn("does not establish causation", panel)
+        self.assertNotIn("private-order", panel)
+        self.assertNotIn("private-report", panel)
+        self.assertIn("<td>1</td><td>1</td><td>1</td><td>1</td>", panel)
+
     def test_empty_cohort_has_no_fabricated_rate(self):
         self.user(1,1)
         m=pc.paid_cohorts(self.db,NOW)
