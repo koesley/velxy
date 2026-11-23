@@ -18,7 +18,7 @@ _ENV = None
 
 DESCRIPTION = ('VELXTRIA turns messy sales CSVs into clean monthly and '
                'product reports for small service businesses. Free demo, '
-               'no signup. PRO $49/30 days, Bitcoin only.')
+               'no signup. PRO $49/30 days, Bitcoin or card.')
 
 
 def setUpModule():
@@ -64,7 +64,7 @@ class SeoTests(unittest.TestCase):
             conn.close()
 
     def test_landing_has_meta_description_and_og_tags(self):
-        self.assertEqual(len(DESCRIPTION), 153)
+        self.assertEqual(len(DESCRIPTION), 156)
         status, _, body = self.get('/')
         self.assertEqual(status, 200)
         self.assertIn('<meta name="description" content="' + DESCRIPTION + '">', body)

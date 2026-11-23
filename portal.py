@@ -17,6 +17,7 @@ import founder_activation
 import founder_paid_conversion
 import btcpay_integration
 import btcpay_mainnet
+import stripe_checkout
 import referrals
 import demo_shares
 import demo_leads
@@ -162,7 +163,7 @@ DATA_ROOT.mkdir(parents=True,exist_ok=True)
 DB=DATA_ROOT/'portal.sqlite3'; REPORTS=DATA_ROOT/'customer_reports'; REPORTS.mkdir(exist_ok=True)
 MAX_BYTES=5*1024*1024; MAX_MONTHLY=50; LOCK=Lock()
 REQUIRED=['Order ID','Order Date','Customer','Product','Quantity','Unit Price','Status','Region']
-SITE_DESCRIPTION='VELXTRIA turns messy sales CSVs into clean monthly and product reports for small service businesses. Free demo, no signup. PRO $49/30 days, Bitcoin only.'
+SITE_DESCRIPTION='VELXTRIA turns messy sales CSVs into clean monthly and product reports for small service businesses. Free demo, no signup. PRO $49/30 days, Bitcoin or card.'
 
 def now(): return int(time.time())
 _SCHEMA_READY=False
@@ -258,6 +259,7 @@ def _initialize_schema(c):
  if not persistent.REMOTE: evolution_engine_v46.setup(c)
  btcpay_integration.setup(c)
  btcpay_mainnet.setup(c)
+ stripe_checkout.setup(c)
  agent_core.setup(c)
  if os.getenv("VELXTRIA_LOCAL_STUDIO","0")=="1" and not persistent.REMOTE: site_studio.setup(c)
  sovereign_v56.setup(c)
@@ -624,31 +626,47 @@ def sitemap_xml(base):
 def landing_buy_html(user,csrf):
  """Buy block for the landing page.
 
- Logged-in users get the real BTCPay checkout form (same route and CSRF as
- the dashboard; checkout-feedback.js already guards that form against
+ Logged-in users get the real checkout form(s) (same routes and CSRF as
+ the dashboard; checkout-feedback.js already guards those forms against
  double submits). Logged-out visitors are sent to sign in and then back to
  the landing page. When checkout is disabled the button is shown as coming
  soon, never posted to a dead route.
  """
  if user:
+  forms=''
   if btcpay_mainnet.checkout_enabled():
-   return '<form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="v8-primary" type="submit">Get PRO — $49 with Bitcoin</button></form><p class="v8-buy-note">BTCPay creates a secure invoice and PRO activates automatically once the payment settles. Nothing is charged until you pay.</p>'
-  return '<button class="v8-primary" type="button" disabled>Get PRO — $49 with Bitcoin</button><p class="v8-buy-note">Bitcoin checkout is coming soon. Create a demo account to try the free reports meanwhile.</p>'
+   forms+='<form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="v8-primary" type="submit">Get PRO — $49 with Bitcoin</button></form>'
+  if stripe_checkout.checkout_enabled():
+   forms+='<form method="post" action="/stripe/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button class="v8-primary" type="submit">Get PRO — $49 with card</button></form>'
+  if forms:
+   return forms+'<p class="v8-buy-note">Secure checkout — card or Bitcoin — and PRO activates automatically once the payment settles. Nothing is charged until you pay.</p>'
+  return '<button class="v8-primary" type="button" disabled>Get PRO — $49</button><p class="v8-buy-note">Checkout is coming soon. Create a demo account to try the free reports meanwhile.</p>'
  nxt=urllib.parse.quote('/account#billing',safe='')
- return '<a class="v8-primary" href="/login?next='+nxt+'">Get PRO — $49 with Bitcoin</a><p class="v8-buy-note">Sign in, then open your account billing section to start secure Bitcoin checkout. New here? <a href="/register?next='+nxt+'">Create a free account</a> first. PRO activates only after verified payment.</p>'
+ return '<a class="v8-primary" href="/login?next='+nxt+'">Get PRO — $49</a><p class="v8-buy-note">Sign in, then open your account billing section to start secure checkout — card or Bitcoin. New here? <a href="/register?next='+nxt+'">Create a free account</a> first. PRO activates only after verified payment.</p>'
 
-def pro_upgrade_html(user,csrf,pending_mainnet=None):
+def pro_upgrade_html(user,csrf,pending_mainnet=None,pending_stripe=None):
  """PRO upsell block, shared by the dashboard and the paywall page.
 
- Same three states the dashboard shows: a pending payment gets a
- continue-to-checkout panel, an enabled checkout gets the real BTCPay
- form, and a disabled checkout gets the manual-arrangement text. One
- helper so the paywall can never drift from what a paying customer sees.
+ Same states the dashboard shows: a pending payment gets a
+ continue-to-checkout panel, an enabled checkout gets the real payment
+ form(s) — Bitcoin, card, or both — and a disabled checkout gets the
+ manual-arrangement text. One helper so the paywall can never drift
+ from what a paying customer sees.
  """
- if btcpay_mainnet.checkout_enabled():
-  if pending_mainnet:
-   return '<section class="panel"><h2>Bitcoin payment pending</h2><p>Your $49 PRO payment is waiting for Bitcoin payment. Complete it at the BTCPay checkout, then use Check payment status — PRO activates automatically once the payment settles.</p><p><a href="'+escape(pending_mainnet['checkout_url'])+'">Continue to BTCPay checkout</a></p><form method="post" action="/btcpay/mainnet/check-status"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Check payment status</button></form></section>'
-  return '<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>50 reports per billing cycle. Pay with Bitcoin: BTCPay creates a secure invoice and PRO activates automatically once the payment settles. Nothing is charged until you pay.</p><form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Pay $49 with Bitcoin</button></form></section>'
+ panels=''
+ if pending_mainnet:
+  panels+='<section class="panel"><h2>Bitcoin payment pending</h2><p>Your $49 PRO payment is waiting for Bitcoin payment. Complete it at the BTCPay checkout, then use Check payment status — PRO activates automatically once the payment settles.</p><p><a href="'+escape(pending_mainnet['checkout_url'])+'">Continue to BTCPay checkout</a></p><form method="post" action="/btcpay/mainnet/check-status"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Check payment status</button></form></section>'
+ if pending_stripe:
+  panels+='<section class="panel"><h2>Card payment pending</h2><p>Your $49 PRO payment is waiting for card payment. Complete it at the Stripe checkout, then use Check payment status — PRO activates automatically once the payment settles.</p><p><a href="'+escape(pending_stripe['checkout_url'])+'">Continue to Stripe checkout</a></p><form method="post" action="/stripe/check-status"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Check payment status</button></form></section>'
+ if panels:
+  return panels
+ if btcpay_mainnet.checkout_enabled() or stripe_checkout.checkout_enabled():
+  forms=''
+  if btcpay_mainnet.checkout_enabled():
+   forms+='<form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Pay $49 with Bitcoin</button></form>'
+  if stripe_checkout.checkout_enabled():
+   forms+='<form method="post" action="/stripe/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Pay $49 with card</button></form>'
+  return '<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>50 reports per billing cycle. Pay with Bitcoin or card — PRO activates automatically once the payment settles. Nothing is charged until you pay.</p>'+forms+'</section>'
  btc_address=os.getenv('VELXTRIA_BITCOIN_ADDRESS','bc1qxdjxk3kzke0shnlqupkndyel7mf9v6fahfkgx4').strip()
  return '<section class="panel"><h2>VELXTRIA PRO · $49 / 30 days</h2><p>Direct Bitcoin payment is available by manual arrangement only. Contact the VELXTRIA operator to confirm the exact BTC amount and payment reference <strong>before sending</strong>. No automatic invoice, exchange-rate quote, payment verification, or access activation is enabled.</p><p>Bitcoin network (BTC) receiving address:</p><p><code style="overflow-wrap:anywhere;word-break:break-all">'+escape(btc_address)+'</code></p><p><strong>Do not send BTC until you receive a confirmed amount and instructions.</strong> Payments to the wrong network or address may be irreversible.</p></section>'
 
@@ -664,11 +682,11 @@ def renewal_days_left(ent,now=None):
   return 0
  return (seconds+86399)//86400
 
-def renewal_html(user,csrf,ent,pending_mainnet=None):
+def renewal_html(user,csrf,ent,pending_mainnet=None,pending_stripe=None):
  """Renewal block for a PRO user whose period ends soon.
 
  Shown only inside the renewal window (14 days): the countdown plus the
- same BTCPay checkout form new customers get, so renewing is one click.
+ same checkout form(s) new customers get, so renewing is one click.
  A renewal payment settles into a period that starts when the current one
  ends — renewing early never loses days (see
  btcpay_mainnet._claim_and_activate). Outside the window, or without an
@@ -687,30 +705,42 @@ def renewal_html(user,csrf,ent,pending_mainnet=None):
  head=('<section class="panel"><h2>Renew PRO</h2><p>Your PRO ends '+when+' ('+end
        +'). Renew now for another 30 days — the new period starts when the '
        'current one ends, so you lose no days.</p>')
- if not btcpay_mainnet.checkout_enabled():
-  return head+'<p>Bitcoin checkout is coming soon.</p></section>'
+ if not btcpay_mainnet.checkout_enabled() and not stripe_checkout.checkout_enabled():
+  return head+'<p>Checkout is coming soon.</p></section>'
  if pending_mainnet:
   link=pending_mainnet.get('checkout_url','')
   return (head+'<p>Your renewal payment is waiting — '
           +('<a href="'+escape(link)+'">complete it at BTCPay</a>' if link else 'complete it at BTCPay')
           +'. PRO extends automatically once it settles.</p></section>')
- return (head+'<form method="post" action="/btcpay/mainnet/checkout">'
-         '<input type="hidden" name="csrf" value="'+escape(csrf)+'">'
-         '<button>Renew PRO — $49 with Bitcoin</button></form></section>')
+ if pending_stripe:
+  link=pending_stripe.get('checkout_url','')
+  return (head+'<p>Your renewal payment is waiting — '
+          +('<a href="'+escape(link)+'">complete it at Stripe</a>' if link else 'complete it at Stripe')
+          +'. PRO extends automatically once it settles.</p></section>')
+ forms=''
+ if btcpay_mainnet.checkout_enabled():
+  forms+=('<form method="post" action="/btcpay/mainnet/checkout">'
+          '<input type="hidden" name="csrf" value="'+escape(csrf)+'">'
+          '<button>Renew PRO — $49 with Bitcoin</button></form>')
+ if stripe_checkout.checkout_enabled():
+  forms+=('<form method="post" action="/stripe/checkout">'
+          '<input type="hidden" name="csrf" value="'+escape(csrf)+'">'
+          '<button>Renew PRO — $49 with card</button></form>')
+ return head+forms+'</section>'
 
-def paywall_html(user,csrf,used,pending_mainnet=None):
+def paywall_html(user,csrf,used,pending_mainnet=None,pending_stripe=None):
  """Free-limit page: the moment a user is most likely to pay, show them
  how instead of a bare error. `used` is their lifetime free-report count.
  """
  return ('<section class="panel"><h2>You have used your free report</h2>'
   '<p>You have generated '+str(used)+' free report'+('' if used==1 else 's')+' \u2014 the lifetime free allowance. '
-  'Go PRO to keep going: 50 reports per billing cycle for $49 / 30 days, paid with Bitcoin. '
+  'Go PRO to keep going: 50 reports per billing cycle for $49 / 30 days, paid with Bitcoin or card. '
   'PRO activates automatically once the payment settles.</p></section>'
-  +pro_upgrade_html(user,csrf,pending_mainnet)
+  +pro_upgrade_html(user,csrf,pending_mainnet,pending_stripe)
   +'<p><a href="/">Back to dashboard</a></p>')
 
 def landing_pricing_html(user,csrf):
- return '''<section id="v8-pricing" class="v8-pricing"><div class="v8-sectiontop"><span>02 / PRICING</span><span>SIMPLE, NO SURPRISES.</span></div><h2>START FREE.<br><em>GO PRO WHEN IT PAYS.</em></h2><div class="v8-plans"><article class="v8-plan"><h3>FREE</h3><p class="v8-price">$0</p><ul><li>1 free report</li><li>Upload a sales CSV, get cleaned data and summaries</li><li>No card, no purchase required</li></ul><a class="v8-ghost" href="/register">Create demo account ↗</a></article><article class="v8-plan v8-plan-pro"><h3>PRO</h3><p class="v8-price">$49 <span>/ 30 days</span></p><ul><li>50 reports per billing cycle</li><li>Pay with Bitcoin — verified automatically via BTCPay</li><li>PRO activates once the payment settles</li></ul>'''+landing_buy_html(user,csrf)+'''</article></div><p class="v8-pricing-note">Prices in USD. Bitcoin payment only — no card, no Stripe.</p></section>'''
+ return '''<section id="v8-pricing" class="v8-pricing"><div class="v8-sectiontop"><span>02 / PRICING</span><span>SIMPLE, NO SURPRISES.</span></div><h2>START FREE.<br><em>GO PRO WHEN IT PAYS.</em></h2><div class="v8-plans"><article class="v8-plan"><h3>FREE</h3><p class="v8-price">$0</p><ul><li>1 free report</li><li>Upload a sales CSV, get cleaned data and summaries</li><li>No card, no purchase required</li></ul><a class="v8-ghost" href="/register">Create demo account ↗</a></article><article class="v8-plan v8-plan-pro"><h3>PRO</h3><p class="v8-price">$49 <span>/ 30 days</span></p><ul><li>50 reports per billing cycle</li><li>Pay with Bitcoin or card — verified automatically</li><li>PRO activates once the payment settles</li></ul>'''+landing_buy_html(user,csrf)+'''</article></div><p class="v8-pricing-note">Prices in USD. Pay with Bitcoin or card.</p></section>'''
 
 def landing_demo_html():
  """No-signup instant demo: upload a CSV on the landing page and see the
@@ -1432,7 +1462,7 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/command-palette.js':
    return self.respond(200,(ROOT/'command-palette.js').read_bytes(),'application/javascript; charset=utf-8',headers=[('Cache-Control','public, max-age=300, must-revalidate'),('X-Content-Type-Options','nosniff')])
   if p=='/checkout-feedback.js':
-   js="""document.addEventListener('submit',function(e){var f=e.target;if(!f || !f.action || !f.action.includes('/btcpay/mainnet/checkout'))return;var b=f.querySelector('button[type="submit"],button:not([type])');if(!b)return;if(b.disabled){e.preventDefault();return;}b.disabled=true;b.textContent='Preparing secure Bitcoin checkout…';b.setAttribute('aria-busy','true');var note=document.createElement('span');note.setAttribute('role','status');note.textContent=' Creating your invoice; please wait.';f.appendChild(note);setTimeout(function(){note.textContent=' Still creating your invoice — this is taking longer than usual. Please keep waiting, or reload this page in a moment and look for the "Bitcoin payment pending" link to continue to checkout.';},20000);});"""
+   js="""document.addEventListener('submit',function(e){var f=e.target;if(!f || !f.action)return;var isBtc=f.action.includes('/btcpay/mainnet/checkout');var isCard=f.action.includes('/stripe/checkout');if(!isBtc && !isCard)return;var b=f.querySelector('button[type="submit"],button:not([type])');if(!b)return;if(b.disabled){e.preventDefault();return;}b.disabled=true;b.textContent=isCard?'Preparing secure card checkout…':'Preparing secure Bitcoin checkout…';b.setAttribute('aria-busy','true');var note=document.createElement('span');note.setAttribute('role','status');note.textContent=' Creating your checkout; please wait.';f.appendChild(note);setTimeout(function(){note.textContent=isCard?' Still creating your checkout — this is taking longer than usual. Please keep waiting, or reload this page in a moment and look for the "Card payment pending" link to continue to checkout.':' Still creating your invoice — this is taking longer than usual. Please keep waiting, or reload this page in a moment and look for the "Bitcoin payment pending" link to continue to checkout.';},20000);});"""
    return self.respond(200,js,'application/javascript',headers=[('Cache-Control','public, max-age=3600')])
   if p=='/style.css':return self.respond(200,(LANDING_CSS+WORKSPACE_CSS+V51_CSS+sovereign_v56.CSS+omega_intelligence_v55.CSS+aegis_v54.CSS+sentinel_v53.CSS+titan_intelligence_v52.CSS+ascendancy_v51.CSS+singularity_v6.CSS+omni_v7.CSS+sovereign_v8.CSS+constellation_v9.CSS+trinity_v10.CSS+omnipotence_v12.CSS+singularity_x_v13.CSS+prometheus_v14.CSS+omega_v15.CSS+evolution_v16.CSS+phoenix_v17.CSS+infinity_v18.CSS+ascension_v28.CSS+integration_v29.CSS+atlas_v38.CSS+nexus_reforged_v41.CSS).encode('utf-8')+b'\n'+(ROOT/'site-studio.css').read_bytes()+b'\n'+(ROOT/'style.css').read_bytes(),'text/css; charset=utf-8',headers=[('Cache-Control','public, max-age=3600, must-revalidate')])
   if p in ('/site-studio.css','/site-preview.css') and os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE:
@@ -1810,23 +1840,28 @@ class Handler(BaseHTTPRequestHandler):
     try:
      with db() as c:btcpay_mainnet.reconcile(c,user['id'])
     except RuntimeError:pass
+   if stripe_checkout.configured():
+    try:
+     with db() as c:stripe_checkout.reconcile(c,user['id'])
+    except RuntimeError:pass
    with db() as c:
     reports=c.execute('SELECT id,filename,created,status,accepted,rejected,email_status FROM reports WHERE user_id=? ORDER BY created DESC LIMIT 30',(user['id'],)).fetchall()
     ent,count,remaining=subscriptions.usage(c,user['id'])
     pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
+    pending_stripe=stripe_checkout.pending_order(c,user['id'])
     ref_code=referrals.code_for(c,user['id'])
     ref_stats=referrals.stats(c,user['id'])
    rows=''.join('<tr><td>'+escape(r[1])+'</td><td>'+escape(datetime.fromtimestamp(r[2],timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))+'</td><td>'+escape(r[3])+'</td><td>'+str(r[4])+' / '+str(r[5])+'</td><td><a href="/report?id='+escape(r[0])+'">View</a> · <a href="/download?id='+escape(r[0])+'">Download ZIP</a></td><td>'+escape(r[6])+'</td></tr>' for r in reports)
    access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 1 free report · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
    limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '1 free report'
-   upgrade_html=pro_upgrade_html(user,csrf,pending_mainnet) if ent['plan']!='pro' else ''
+   upgrade_html=pro_upgrade_html(user,csrf,pending_mainnet,pending_stripe) if ent['plan']!='pro' else ''
    ledger_html=ledger_panel_html(user,csrf)
    body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section>{ledger_html}<section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
    if os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE: body+='<section class="panel"><h2>Site Studio</h2><a href="/site-studio">Create a company website draft</a></section>'
    body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
    body+=upgrade_html
-   body+=renewal_html(user,csrf,ent,pending_mainnet)
+   body+=renewal_html(user,csrf,ent,pending_mainnet,pending_stripe)
    demo_cookie=SimpleCookie()
    try:demo_cookie.load(self.headers.get('Cookie',''))
    except Exception:pass
@@ -3250,7 +3285,7 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c: body=operator_v5.render(c,user['id'],csrf)
    return self.respond(200,shell('Business Operator',body,user,csrf))
   if p=='/account':
-   # ?paid=1 is the return from BTCPay after a payment: a hint to look,
+   # ?paid=1 is the return from BTCPay or Stripe after a payment: a hint to look,
    # never proof. Re-verify against BTCPay first; the confirmation panel
    # below only ever shows the verified state (or that verification
    # failed). With no mainnet order at all the parameter is ignored.
@@ -3259,6 +3294,11 @@ class Handler(BaseHTTPRequestHandler):
    if paid and btcpay_mainnet.configured():
     try:
      with db() as c:btcpay_mainnet.reconcile(c,user['id'])
+    except RuntimeError:
+     verify_failed=True
+   if paid and stripe_checkout.configured():
+    try:
+     with db() as c:stripe_checkout.reconcile(c,user['id'])
     except RuntimeError:
      verify_failed=True
    with db() as c: licensed=c.execute('SELECT license_key FROM paid_licenses WHERE user_id=?',(user['id'],)).fetchone()
@@ -3273,25 +3313,36 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c:
     ent=subscriptions.entitlement(c,user['id'])
     mainnet_orders=c.execute("SELECT order_id,status,checkout_url,created_at,settled_at FROM btcpay_orders WHERE user_id=? AND network='mainnet' ORDER BY created_at DESC LIMIT 30",(user['id'],)).fetchall()
+    stripe_orders=c.execute("SELECT order_id,status,checkout_url,created_at,settled_at FROM stripe_orders WHERE user_id=? ORDER BY created_at DESC LIMIT 30",(user['id'],)).fetchall()
     orders=c.execute("SELECT order_id,status,created_at,settled_at FROM btcpay_orders WHERE user_id=? AND network='testnet' ORDER BY created_at DESC LIMIT 30",(user['id'],)).fetchall()
    datefmt=lambda ts: datetime.fromtimestamp(ts,timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if ts else '—'
    confirm=''
    if paid and mainnet_orders:
     if verify_failed:
-     confirm='<section class="panel"><h2>Checking your payment</h2><p>We could not reach BTCPay to verify your payment just now. Nothing has been confirmed on your VELXTRIA account yet — use Check payment status below to try again.</p></section>'
+     confirm='<section class="panel"><h2>Checking your payment</h2><p>We could not reach the payment provider to verify your payment just now. Nothing has been confirmed on your VELXTRIA account yet — use Check payment status below to try again.</p></section>'
     elif ent['plan']=='pro':
-     confirm='<section class="panel"><h2>Payment received — PRO is active</h2><p>Your $49 Bitcoin payment settled and PRO is active through '+escape(datefmt(ent['end']))+'. You have 50 reports per billing cycle.</p></section>'
+     confirm='<section class="panel"><h2>Payment received — PRO is active</h2><p>Your $49 payment settled and PRO is active through '+escape(datefmt(ent['end']))+'. You have 50 reports per billing cycle.</p></section>'
     else:
-     confirm='<section class="panel"><h2>Thanks — your payment is being confirmed</h2><p>BTCPay has your payment and the Bitcoin network is confirming it. PRO activates automatically once it settles — usually within a few minutes. Use Check payment status below to refresh.</p></section>'
-   billing='<section class="panel" id="billing"><h2>Bitcoin billing</h2><p>PRO: '+('Active through '+escape(datefmt(ent['end'])) if ent['plan']=='pro' else 'Not currently active')+'. Payments are Bitcoin only and verified automatically against BTCPay; a browser redirect alone never activates PRO.</p>'
+     confirm='<section class="panel"><h2>Thanks — your payment is being confirmed</h2><p>Your payment is being confirmed. PRO activates automatically once it settles — usually within a few minutes. Use Check payment status below to refresh.</p></section>'
+   billing='<section class="panel" id="billing"><h2>Billing</h2><p>PRO: '+('Active through '+escape(datefmt(ent['end'])) if ent['plan']=='pro' else 'Not currently active')+'. Payments are Bitcoin or card, verified automatically; a browser redirect alone never activates PRO.</p>'
    pending_acct=next(({'order_id':o[0],'checkout_url':o[2]} for o in mainnet_orders if o[1]=='pending'),None)
-   billing+=renewal_html(user,csrf,ent,pending_acct)
+   pending_stripe_acct=next(({'order_id':o[0],'checkout_url':o[2]} for o in stripe_orders if o[1]=='pending'),None)
+   billing+=renewal_html(user,csrf,ent,pending_acct,pending_stripe_acct)
    if btcpay_mainnet.checkout_enabled() and ent['plan']!='pro':
     billing+='<form method="post" action="/btcpay/mainnet/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Pay $49 with Bitcoin — PRO · 30 days · 50 reports</button></form>'
+   if stripe_checkout.checkout_enabled() and ent['plan']!='pro':
+    billing+='<form method="post" action="/stripe/checkout"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Pay $49 with card — PRO · 30 days · 50 reports</button></form>'
    if any(o[1]=='pending' for o in mainnet_orders):
     billing+='<form method="post" action="/btcpay/mainnet/check-status"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Check payment status</button></form>'
+   if any(o[1]=='pending' for o in stripe_orders):
+    billing+='<form method="post" action="/stripe/check-status"><input type="hidden" name="csrf" value="'+escape(csrf)+'"><button>Check card payment status</button></form>'
    billing+='<div class="scroll"><table><thead><tr><th>Order</th><th>Created (UTC)</th><th>Status</th><th>Settled (UTC)</th><th>Checkout</th></tr></thead><tbody>'
    for oid,status,checkout_url,created,settled in mainnet_orders:
+    link='<a href="'+escape(checkout_url)+'">Pay</a>' if status=='pending' and checkout_url else '—'
+    billing+='<tr><td>'+escape(oid)+'</td><td>'+escape(datefmt(created))+'</td><td>'+escape(status)+'</td><td>'+escape(datefmt(settled))+'</td><td>'+link+'</td></tr>'
+   billing+='</tbody></table></div></section>'
+   billing+='<section class="panel"><h2>Card billing</h2><p>Card payments through Stripe; PRO activates automatically once the payment settles.</p><div class="scroll"><table><thead><tr><th>Order</th><th>Created (UTC)</th><th>Status</th><th>Settled (UTC)</th><th>Checkout</th></tr></thead><tbody>'
+   for oid,status,checkout_url,created,settled in stripe_orders:
     link='<a href="'+escape(checkout_url)+'">Pay</a>' if status=='pending' and checkout_url else '—'
     billing+='<tr><td>'+escape(oid)+'</td><td>'+escape(datefmt(created))+'</td><td>'+escape(status)+'</td><td>'+escape(datefmt(settled))+'</td><td>'+link+'</td></tr>'
    billing+='</tbody></table></div></section>'
@@ -3318,11 +3369,12 @@ class Handler(BaseHTTPRequestHandler):
    with db() as c:
     ent,count,remaining=subscriptions.usage(c,user['id'])
     pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
+    pending_stripe=stripe_checkout.pending_order(c,user['id'])
    if ent['plan']!='pro':
-    if pending_mainnet:
-     upgrade_html=pro_upgrade_html(user,csrf,pending_mainnet)
+    if pending_mainnet or pending_stripe:
+     upgrade_html=pro_upgrade_html(user,csrf,pending_mainnet,pending_stripe)
     else:
-     upgrade_html=('<section class="panel"><h2>Free report %d of 1 used</h2><p>You have %d free report%s left. PRO gives you 50 reports per billing cycle for $49, paid with Bitcoin — and it activates the moment the payment settles.</p></section>'%(count,remaining,'' if remaining==1 else 's'))+pro_upgrade_html(user,csrf)
+     upgrade_html=('<section class="panel"><h2>Free report %d of 1 used</h2><p>You have %d free report%s left. PRO gives you 50 reports per billing cycle for $49, paid with Bitcoin or card — and it activates the moment the payment settles.</p></section>'%(count,remaining,'' if remaining==1 else 's'))+pro_upgrade_html(user,csrf,pending_mainnet,pending_stripe)
    return self.respond(200,shell('Report',report_view_html(row[:6],monthly_rows,product_rows,stats,rejected_rows,cleaned_rows,upgrade_html=upgrade_html),user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
@@ -3400,6 +3452,20 @@ class Handler(BaseHTTPRequestHandler):
     return self.respond(status,message,'text/plain')
    except Exception as exc:
     print('BTCPay webhook error:',type(exc).__name__)
+    return self.respond(503,'Webhook temporarily unavailable','text/plain')
+  if p=='/webhooks/stripe':
+   # Stripe webhook: the signature is verified first, and the delivery is
+   # only a trigger to re-verify the session against Stripe. A webhook
+   # payload alone never grants access.
+   try:
+    n=int(self.headers.get('Content-Length','0'))
+    if n<=0 or n>65536:return self.respond(413,'Invalid webhook size','text/plain')
+    raw=self.rfile.read(n)
+    with db() as c:
+     status,message=stripe_checkout.handle_webhook(c,raw,self.headers.get('Stripe-Signature',''))
+    return self.respond(status,message,'text/plain')
+   except Exception as exc:
+    print('Stripe webhook error:',type(exc).__name__)
     return self.respond(503,'Webhook temporarily unavailable','text/plain')
   try:fields,uploaded=self.post_data()
   except Exception as e:return self.fail(400,str(e))
@@ -3989,12 +4055,13 @@ class Handler(BaseHTTPRequestHandler):
     ent,count,remaining=subscriptions.usage(c,user['id'])
     if remaining<=0:
      pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
+     pending_stripe=stripe_checkout.pending_order(c,user['id'])
      site_stats.record(c,'paywall_shown','used='+str(count))
      # Automatic revenue engine: schedule the PRO upsell sequence for
      # this free-limit user. Queued once ever per user; the delivery
      # worker sends each step when it comes due.
      followups.queue_pro_upsell(c,user['id'],user['email'],btcpay_mainnet.site_url())
-     return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
+     return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet,pending_stripe),user,csrf))
    try:
     ident=self._save_demo_report(user['id'],demo_token)
    except ValueError as exc:
@@ -4021,6 +4088,30 @@ class Handler(BaseHTTPRequestHandler):
     return self.fail(503,'Bitcoin checkout is not available.',user,csrf)
    try:
     with db() as c:btcpay_mainnet.reconcile(c,user['id'])
+   except RuntimeError:
+    return self.fail(503,'Payment verification is temporarily unavailable. Try again shortly.',user,csrf)
+   return self.redirect('/account')
+  if p=='/stripe/checkout':
+   if not stripe_checkout.checkout_enabled():
+    return self.fail(503,'Card checkout is not available.',user,csrf)
+   with db() as c:
+    recent=stripe_checkout.pending_order(c,user['id'])
+    if recent:return self.redirect('/account')
+    order_id=stripe_checkout.create_order(c,user['id'])
+   try:
+    session_id,checkout_url=stripe_checkout.create_checkout_session(order_id)
+   except RuntimeError:
+    with db() as c:c.execute("UPDATE stripe_orders SET status='failed' WHERE order_id=?",(order_id,))
+    return self.fail(503,'Unable to create card checkout. Try again later.',user,csrf)
+   with db() as c:
+    c.execute("UPDATE stripe_orders SET session_id=?,checkout_url=?,status='pending' WHERE order_id=? AND status='creating'",(session_id,checkout_url,order_id))
+    site_stats.record(c,'checkout_started',order_id)
+   return self.redirect(checkout_url)
+  if p=='/stripe/check-status':
+   if not stripe_checkout.configured():
+    return self.fail(503,'Card checkout is not available.',user,csrf)
+   try:
+    with db() as c:stripe_checkout.reconcile(c,user['id'])
    except RuntimeError:
     return self.fail(503,'Payment verification is temporarily unavailable. Try again shortly.',user,csrf)
    return self.redirect('/account')
@@ -4072,12 +4163,13 @@ class Handler(BaseHTTPRequestHandler):
     ent,count,remaining=subscriptions.usage(c,user['id'])
     if remaining<=0:
      pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
+     pending_stripe=stripe_checkout.pending_order(c,user['id'])
      site_stats.record(c,'paywall_shown','used='+str(count))
      # Automatic revenue engine: schedule the PRO upsell sequence for
      # this free-limit user. Queued once ever per user; the delivery
      # worker sends each step when it comes due.
      followups.queue_pro_upsell(c,user['id'],user['email'],btcpay_mainnet.site_url())
-     return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
+     return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet,pending_stripe),user,csrf))
     data=ledger.to_csv_bytes(c,user['id'])
    ident=secrets.token_hex(16)
    try:
@@ -4106,12 +4198,13 @@ class Handler(BaseHTTPRequestHandler):
     ent,count,remaining=subscriptions.usage(c,user['id'])
     if remaining<=0:
      pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
+     pending_stripe=stripe_checkout.pending_order(c,user['id'])
      site_stats.record(c,'paywall_shown','used='+str(count))
      # Automatic revenue engine: schedule the PRO upsell sequence for
      # this free-limit user. Queued once ever per user; the delivery
      # worker sends each step when it comes due.
      followups.queue_pro_upsell(c,user['id'],user['email'],btcpay_mainnet.site_url())
-     return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet),user,csrf))
+     return self.respond(429,shell('Go PRO — VELXTRIA',paywall_html(user,csrf,count,pending_mainnet,pending_stripe),user,csrf))
    ident=secrets.token_hex(16)
    try:
     report=run_report_engine(data)

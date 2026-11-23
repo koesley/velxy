@@ -46,6 +46,16 @@ services:
         sync: false
       - key: VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT
         sync: false
+      # Card payments via Stripe Checkout — values are entered in the
+      # Render dashboard and never committed. The secret key is the LIVE
+      # key (sk_live_...) for real payments; the webhook secret comes
+      # from the Stripe webhook endpoint for /webhooks/stripe.
+      - key: VELXTRIA_STRIPE_SECRET_KEY
+        sync: false
+      - key: VELXTRIA_STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: VELXTRIA_ENABLE_STRIPE_CHECKOUT
+        sync: false
       # Email delivery on Render Free: outbound SMTP ports 25/465/587 are
       # blocked on this tier, so Gmail SMTP can never send from the service
       # (every attempt fails with OSError: [Errno 101] Network is
