@@ -1,5 +1,5 @@
 """Tests for the PRO offer on the saved-report page: a free user viewing a
-report sees the offer at the moment of value — how many of the 3 free
+report sees the offer at the moment of value — how many of the 1 free
 reports they have used, how many are left, and the real BTCPay checkout
 (or the manual-arrangement text when checkout is off). A PRO user sees
 no upsell on their report page.
@@ -209,8 +209,8 @@ class ReportProOfferTests(unittest.TestCase):
         self.assertEqual(status, 200)
         # The moment-of-value line: which free report this was, and how
         # many are left.
-        self.assertIn('Free report 1 of 3 used', body)
-        self.assertIn('You have 2 free reports left', body)
+        self.assertIn('Free report 1 of 1 used', body)
+        self.assertIn('You have 0 free reports left', body)
         # The real BTCPay checkout form, not a dead link.
         self.assertIn('VELXTRIA PRO', body)
         self.assertIn('action="/btcpay/mainnet/checkout"', body)
@@ -220,21 +220,21 @@ class ReportProOfferTests(unittest.TestCase):
         with patch.dict(os.environ, {'VELXTRIA_ENABLE_BTCPAY_MAINNET_CHECKOUT': '0'}):
             status, _, body = self.get('/report?id=' + report_id, cookie)
         self.assertEqual(status, 200)
-        self.assertIn('Free report 1 of 3 used', body)
+        self.assertIn('Free report 1 of 1 used', body)
         self.assertNotIn('action="/btcpay/mainnet/checkout"', body)
         self.assertIn('manual arrangement', body)
 
-    def test_second_report_counts_down(self):
+    def test_second_upload_hits_paywall(self):
+        # With a 1-report free tier there is no second free report: the
+        # next upload after the first one shows the paywall, not a
+        # second report page.
         email, cookie, report_id = self.make_user_and_upload()
         csrf = self.csrf_for(email)
-        status, headers, _ = self.upload(cookie, csrf, filename='second.csv')
-        self.assertEqual(status, 303)
-        second_id = urllib.parse.parse_qs(
-            urllib.parse.urlsplit(headers.get('Location', '')).query)['id'][0]
-        status, _, body = self.get('/report?id=' + second_id, cookie)
-        self.assertEqual(status, 200)
-        self.assertIn('Free report 2 of 3 used', body)
-        self.assertIn('You have 1 free report left', body)
+        status, _, body = self.upload(cookie, csrf, filename='second.csv')
+        self.assertEqual(status, 429)
+        body = body.decode('utf-8', 'replace')
+        self.assertIn('You have used your free report', body)
+        self.assertIn('Pay $49 with Bitcoin', body)
 
     def test_pro_user_report_page_has_no_upsell(self):
         email, cookie, report_id = self.make_user_and_upload()

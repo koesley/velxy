@@ -8,7 +8,7 @@ signups, 1 checkout, 0 paid — and the 2 newest signups are test
 accounts, so zero real signups have ever been activated. Demo-to-
 Workspace made signup valuable (the demo's sales pre-seed the Sales
 Ledger), but nothing told the new user about it or showed them the
-next step, so the seeded ledger sat unused and the 3 free reports
+next step, so the seeded ledger sat unused and the free report
 never got touched.
 
 Now every new signup gets a welcome sequence, queued once ever:
@@ -182,7 +182,7 @@ class WelcomeSequenceTests(unittest.TestCase):
         self.assertAlmostEqual(dues[1] - now, 86400, delta=120)
         self.assertAlmostEqual(dues[2] - now, 3 * 86400, delta=120)
         day0 = [r for r in rows if r[1] <= now + 60][0]
-        self.assertIn('3 free reports', day0[2])
+        self.assertIn('1 free report', day0[2])
         if seeded:
             self.assertIn('Welcome to VELXTRIA — your workspace is ready',
                           [r[0] for r in rows])

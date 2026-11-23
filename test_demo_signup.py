@@ -170,7 +170,7 @@ class DemoSignupTests(unittest.TestCase):
             import subscriptions
             _, count, remaining = subscriptions.usage(c, uid)
         self.assertEqual(count, 1)
-        self.assertEqual(remaining, 2)
+        self.assertEqual(remaining, 0)
 
     def test_demo_signup_rejects_duplicate_email(self):
         email = fresh_email()

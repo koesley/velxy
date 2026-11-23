@@ -6,7 +6,7 @@ the demo, a few sign up, nobody pays. Two groups show real interest and
 then hear nothing:
 - Demo leads: a visitor runs a demo and leaves an email. They get ONE
   report email, then silence. They never come back.
-- Free-limit users: a user burns all 3 free reports, hits the paywall,
+- Free-limit users: a user burns their free report, hits the paywall,
   and gets NO follow-up email. They never upgrade.
 
 This module queues scheduled follow-up sequences for both groups. Each
@@ -26,7 +26,7 @@ Sequences:
 - Welcome (per user, once ever, at signup): day 0, day 1, day 3. The
   third leg the engine was missing: a new signup heard nothing after
   the account was created, so the seeded ledger Demo-to-Workspace
-  leaves behind sat unused and the 3 free reports never got touched.
+  leaves behind sat unused and the free report never got touched.
   Day 0 welcomes them (naming the seeded ledger when the signup came
   from an own-CSV demo), day 1 nudges the ledger, day 3 points at PRO.
 
@@ -62,8 +62,8 @@ DEMO_STEPS = (
 )
 
 PRO_STEPS = (
-    (0, 'You have used your 3 free reports — go PRO',
-     'You have used all 3 free reports. PRO is $49 for 30 days, 50 '
+    (0, 'You have used your free report — go PRO',
+     'You have used your free report. PRO is $49 for 30 days, 50 '
      'reports, Bitcoin only, and it unlocks the moment payment settles.\n\n'
      'Upgrade here: {site_url}/account\n\n— VELXTRIA'),
     (3, 'Still thinking about PRO?',
@@ -82,23 +82,23 @@ WELCOME_SEEDED_DAY0 = (
     'already in your Sales Ledger — your dashboard opens on your real '
     'numbers. Log a sale as it happens, or turn your ledger into a full '
     'cleaned report.\n\n'
-    'You have 3 free reports, lifetime.\n\n'
+    'You have 1 free report.\n\n'
     'Open your dashboard: {site_url}/\n\n— VELXTRIA')
 WELCOME_PLAIN_DAY0 = (
     0, 'Welcome to VELXTRIA — your free account is ready',
     'Your free account is ready. Upload a sales CSV to get a cleaned '
     'report with the problems flagged, or log sales as they happen in '
     'your Sales Ledger.\n\n'
-    'You have 3 free reports, lifetime.\n\n'
+    'You have 1 free report.\n\n'
     'Open your dashboard: {site_url}/\n\n— VELXTRIA')
 WELCOME_STEPS = (
     (1, 'Your Sales Ledger is waiting',
      'Your Sales Ledger keeps your sales in one place. Log a sale as it '
      'happens and watch your monthly totals grow — or turn your ledger '
-     'into a full cleaned report (uses 1 of your 3 free reports).\n\n'
+     'into a full cleaned report (uses your free report).\n\n'
      'Open your dashboard: {site_url}/\n\n— VELXTRIA'),
     (3, 'You have free reports waiting',
-     'You have 3 free reports, lifetime. When you need more, PRO is $49 '
+     'You have 1 free report. When you need more, PRO is $49 '
      'for 30 days, 50 reports, Bitcoin only — and it unlocks the moment '
      'payment settles.\n\n'
      'See PRO on your account page: {site_url}/account\n\n— VELXTRIA'),

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 PRODUCT_KEY = 'iFbye'
 PRICING_PLAN = 'MrW6D9VRBN'
 PRO_LIMIT = 50
-DEMO_LIMIT = 3
+DEMO_LIMIT = 1
 
 # Only these verification sources can grant PRO. A settled testnet
 # invoice writes verification_source='btcpay_testnet_verified' (worthless

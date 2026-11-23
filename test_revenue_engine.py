@@ -135,8 +135,8 @@ class RevenueEngineTests(unittest.TestCase):
         return headers, csrf, email
 
     def burn_free_reports(self, headers, csrf):
-        """Use all 3 free reports via the ledger, then hit the paywall."""
-        for i in (1, 2, 3):
+        """Use the free report via the ledger, then hit the paywall."""
+        for i in (1,):
             status, _, _ = self.post_form('/ledger/add', {
                 'order_id': 'R-%d' % i, 'order_date': '2026-11-20',
                 'customer': 'Ann', 'product': 'Window Cleaning',
@@ -156,7 +156,7 @@ class RevenueEngineTests(unittest.TestCase):
         rows = self.outbox('pro_upsell', email)
         self.assertEqual(len(rows), 2)
         subjects = [r[0] for r in rows]
-        self.assertIn('You have used your 3 free reports — go PRO', subjects)
+        self.assertIn('You have used your free report — go PRO', subjects)
         self.assertIn('Still thinking about PRO?', subjects)
         # Day 0 is due now; day 3 is due ~72 hours out.
         now = int(time.time())
