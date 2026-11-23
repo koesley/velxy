@@ -195,9 +195,9 @@ class PaidConversionTests(unittest.TestCase):
         sub(7, good, NOW-10, NOW+10)
         metrics = pc.paid_cohorts(self.db, NOW)
         self.assertEqual(metrics["verified_pro_snapshot"],
-                         {"available": True, "active": 1, "expired": 1, "expiring_7d": 0})
+                         {"available": True, "active": 1, "expired": 1, "expiring_7d": 1})
         rendered = pc.panel_html(metrics)
-        self.assertIn("active customers 1; expired-only customers 1; expiring within 7 days 0", rendered)
+        self.assertIn("active customers 1; expired-only customers 1; expiring within 7 days 1", rendered)
         self.assertIn("not proof of churn", rendered)
         self.assertNotIn("private-", rendered)
 
@@ -222,7 +222,7 @@ class PaidConversionTests(unittest.TestCase):
                 (uid, subscriptions.PRODUCT_KEY, subscriptions.PRICING_PLAN,
                  "active", start, end, start, good, NOW))
         snapshot = pc.verified_mainnet_pro_snapshot(self.db, NOW)
-        self.assertEqual(snapshot, {"available": True, "active": 1, "expired": 1, "expiring_7d": 0})
+        self.assertEqual(snapshot, {"available": True, "active": 1, "expired": 1, "expiring_7d": 1})
         panel = pc.panel_html(pc.paid_cohorts(self.db, NOW))
         self.assertIn("active customers 1; expired-only customers 1", panel)
         self.assertNotIn("private-", panel)
@@ -245,6 +245,25 @@ class PaidConversionTests(unittest.TestCase):
         snapshot = pc.verified_mainnet_pro_snapshot(self.db, NOW)
         self.assertEqual(snapshot, {"available": True, "active": 2,
                                     "expired": 1, "expiring_7d": 1})
+
+    def test_later_active_period_prevents_false_expiring_alert(self):
+        import subscriptions
+        self.db.execute("""CREATE TABLE subscriptions (
+            user_id INTEGER, product_key TEXT, pricing_plan TEXT,
+            status TEXT, period_start INTEGER, period_end INTEGER,
+            verified_at INTEGER, verification_source TEXT, updated_at INTEGER)""")
+        self.user(1, 40)
+        self.user(2, 40)
+        for uid, end in ((1, NOW+DAY), (1, NOW+9*DAY),
+                         (2, NOW+7*DAY)):
+            self.db.execute(
+                "INSERT INTO subscriptions VALUES(?,?,?,?,?,?,?,?,?)",
+                (uid, subscriptions.PRODUCT_KEY, subscriptions.PRICING_PLAN,
+                 "active", NOW-10*DAY, end, NOW-9*DAY,
+                 "btcpay_mainnet_verified", NOW))
+        self.assertEqual(pc.verified_mainnet_pro_snapshot(self.db, NOW),
+                         {"available": True, "active": 2,
+                          "expired": 0, "expiring_7d": 1})
 
     def test_missing_subscription_schema_is_not_zero_active(self):
         self.user(1, 40)
