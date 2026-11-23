@@ -9,13 +9,14 @@ MODULES = (
     "test_founder_economics", "test_founder_activation",
     "test_site_stats", "test_signup_path", "test_instant_demo",
     "test_demo_claim", "test_demo_workspace", "test_welcome_sequence",
-    "test_ledger", "test_revenue_engine",
+    "test_ledger", "test_revenue_engine", "test_btcpay_mainnet",
     "test_revenue_activation_guard",
 )
 SOURCES = (
     "revenue_dominion_v60.py", "first_value_v61.py",
     "founder_economics.py", "founder_activation.py",
     "portal.py", "ledger.py", "site_stats.py",
+    "btcpay_mainnet.py", "subscriptions.py",
 )
 
 
@@ -46,6 +47,15 @@ class RevenueActivationGuardTests(unittest.TestCase):
             with self.subTest(module=module):
                 self.assertRegex(command, r"(?<![\w])" + re.escape(module) + r"(?![\w])")
         self.assertIn("python-version: ['3.11', '3.12', '3.13']", self.workflow)
+
+    def test_billing_verification_is_guarded_as_part_of_activation(self):
+        # Billing evidence must be exercised with activation in every scheduled run.
+        command = self.workflow.split("python -m unittest -v", 1)[1]
+        self.assertIn("test_btcpay_mainnet", command)
+        for path in ("btcpay_mainnet.py", "subscriptions.py", "test_btcpay_mainnet.py"):
+            with self.subTest(path=path):
+                self.assertIn("'" + path + "'", self.push)
+                self.assertIn("'" + path + "'", self.pr)
 
     def test_read_only_offline_guard_and_hourly_schedule(self):
         self.assertIn("contents: read", self.workflow)
