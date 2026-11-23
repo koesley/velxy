@@ -795,7 +795,7 @@ def ledger_panel_html(user, csrf):
   '<p class="v8-demo-note">A ledger report counts as one of your free reports, the same as uploading a CSV.</p></section>')
 
 
-def report_view_html(row,monthly_rows,product_rows,stats,rejected_rows=None,cleaned_rows=None):
+def report_view_html(row,monthly_rows,product_rows,stats,rejected_rows=None,cleaned_rows=None,upgrade_html=''):
  """A saved report, viewed on screen: the same monthly + product summaries
  the demo shows, read back from the stored ZIP so the numbers always match
  the download. row is (id, filename, created, status, accepted, rejected)."""
@@ -804,7 +804,8 @@ def report_view_html(row,monthly_rows,product_rows,stats,rejected_rows=None,clea
  return ('<section class="panel"><h2>Report: '+escape(filename)+'</h2><p>Processed '+escape(when)+' · Status '+escape(status)+' · Accepted '+str(accepted)+' rows · flagged '+str(rejected)+' rows</p>'
   +report_summaries_html(monthly_rows,product_rows,stats)
   +report_diagnosis_html(rejected_rows or [],cleaned_rows or [],rejected,accepted)
-  +'<p><a href="/download?id='+escape(ident)+'">Download ZIP</a> · <a href="/">Back to dashboard</a></p></section>')
+  +'<p><a href="/download?id='+escape(ident)+'">Download ZIP</a> · <a href="/">Back to dashboard</a></p></section>'
+  +upgrade_html)
 
 def read_report_summaries(zip_bytes):
  """Parse the monthly + product summary tables, headline stats, and the
@@ -3235,7 +3236,20 @@ class Handler(BaseHTTPRequestHandler):
     return self.fail(503,'Report integrity verification failed. Please contact support.',user,csrf)
    try:monthly_rows,product_rows,stats,rejected_rows,cleaned_rows=read_report_summaries(report_bytes)
    except ValueError:return self.fail(503,'Report file temporarily unavailable.',user,csrf)
-   return self.respond(200,shell('Report',report_view_html(row[:6],monthly_rows,product_rows,stats,rejected_rows,cleaned_rows),user,csrf),headers=[('Cache-Control','no-store')])
+   # PRO at the moment of value: a user viewing a fresh report is at peak
+   # intent, but this page never offered PRO before — only the dashboard
+   # did. Free users get the real BTCPay checkout (or the pending panel);
+   # PRO users get nothing.
+   upgrade_html=''
+   with db() as c:
+    ent,count,remaining=subscriptions.usage(c,user['id'])
+    pending_mainnet=btcpay_mainnet.pending_order(c,user['id'])
+   if ent['plan']!='pro':
+    if pending_mainnet:
+     upgrade_html=pro_upgrade_html(user,csrf,pending_mainnet)
+    else:
+     upgrade_html=('<section class="panel"><h2>Free report %d of 3 used</h2><p>You have %d free report%s left. PRO gives you 50 reports per billing cycle for $49, paid with Bitcoin — and it activates the moment the payment settles.</p></section>'%(count,remaining,'' if remaining==1 else 's'))+pro_upgrade_html(user,csrf)
+   return self.respond(200,shell('Report',report_view_html(row[:6],monthly_rows,product_rows,stats,rejected_rows,cleaned_rows,upgrade_html=upgrade_html),user,csrf),headers=[('Cache-Control','no-store')])
   if p=='/download':
    ident=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('id',[''])[0]
    with db() as c:row=c.execute("SELECT id,digest FROM reports WHERE id=? AND user_id=? AND status='ready'",(ident,user['id'])).fetchone()
