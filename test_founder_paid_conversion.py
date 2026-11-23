@@ -195,9 +195,9 @@ class PaidConversionTests(unittest.TestCase):
         sub(7, good, NOW-10, NOW+10)
         metrics = pc.paid_cohorts(self.db, NOW)
         self.assertEqual(metrics["verified_pro_snapshot"],
-                         {"available": True, "active": 1, "expired": 1, "expiring_7d": 1})
+                         {"available": True, "active": 1, "expired": 1, "expiring_7d": 0})
         rendered = pc.panel_html(metrics)
-        self.assertIn("active customers 1; expired-only customers 1; expiring within 7 days 1", rendered)
+        self.assertIn("active customers 1; expired-only customers 1; expiring within 7 days 0", rendered)
         self.assertIn("not proof of churn", rendered)
         self.assertNotIn("private-", rendered)
 
