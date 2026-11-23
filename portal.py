@@ -1426,7 +1426,7 @@ class Handler(BaseHTTPRequestHandler):
   if p=='/command-palette.js':
    return self.respond(200,(ROOT/'command-palette.js').read_bytes(),'application/javascript; charset=utf-8',headers=[('Cache-Control','public, max-age=300, must-revalidate'),('X-Content-Type-Options','nosniff')])
   if p=='/checkout-feedback.js':
-   js="""document.addEventListener('submit',function(e){var f=e.target;if(!f || !f.action || !f.action.includes('/btcpay/mainnet/checkout'))return;var b=f.querySelector('button[type="submit"],button:not([type])');if(!b)return;if(b.disabled){e.preventDefault();return;}b.disabled=true;b.textContent='Preparing secure Bitcoin checkout…';b.setAttribute('aria-busy','true');var note=document.createElement('span');note.setAttribute('role','status');note.textContent=' Creating your invoice; please wait.';f.appendChild(note);});"""
+   js="""document.addEventListener('submit',function(e){var f=e.target;if(!f || !f.action || !f.action.includes('/btcpay/mainnet/checkout'))return;var b=f.querySelector('button[type="submit"],button:not([type])');if(!b)return;if(b.disabled){e.preventDefault();return;}b.disabled=true;b.textContent='Preparing secure Bitcoin checkout…';b.setAttribute('aria-busy','true');var note=document.createElement('span');note.setAttribute('role','status');note.textContent=' Creating your invoice; please wait.';f.appendChild(note);setTimeout(function(){note.textContent=' Still creating your invoice — this is taking longer than usual. Please keep waiting, or reload this page in a moment and look for the "Bitcoin payment pending" link to continue to checkout.';},20000);});"""
    return self.respond(200,js,'application/javascript',headers=[('Cache-Control','public, max-age=3600')])
   if p=='/style.css':return self.respond(200,(LANDING_CSS+WORKSPACE_CSS+V51_CSS+sovereign_v56.CSS+omega_intelligence_v55.CSS+aegis_v54.CSS+sentinel_v53.CSS+titan_intelligence_v52.CSS+ascendancy_v51.CSS+singularity_v6.CSS+omni_v7.CSS+sovereign_v8.CSS+constellation_v9.CSS+trinity_v10.CSS+omnipotence_v12.CSS+singularity_x_v13.CSS+prometheus_v14.CSS+omega_v15.CSS+evolution_v16.CSS+phoenix_v17.CSS+infinity_v18.CSS+ascension_v28.CSS+integration_v29.CSS+atlas_v38.CSS+nexus_reforged_v41.CSS).encode('utf-8')+b'\n'+(ROOT/'site-studio.css').read_bytes()+b'\n'+(ROOT/'style.css').read_bytes(),'text/css; charset=utf-8',headers=[('Cache-Control','public, max-age=3600, must-revalidate')])
   if p in ('/site-studio.css','/site-preview.css') and os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE:
@@ -3441,9 +3441,14 @@ class Handler(BaseHTTPRequestHandler):
       pass
    except (sqlite3.IntegrityError, persistent_integrity_error()):return self.fail(409,'Account already exists.')
    nxt=safe_next(fields.get('next',''))
-   dest='/login?registered=1'
-   if nxt!='/':dest+='&next='+urllib.parse.quote(nxt,safe='')
-   return self.redirect(dest)
+   # Sign the new account in immediately, like /demo/signup does: the
+   # old flow sent the user to /login?registered=1 and made them sign
+   # in a second time, an extra step right at the moment they decided
+   # to join. The dashboard is the destination for a signed-in user.
+   token=secrets.token_urlsafe(32);csrf=secrets.token_hex(16)
+   with db() as c:c.execute('INSERT INTO sessions VALUES (?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),uid,now()+86400,csrf))
+   secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
+   return self.redirect(nxt,[('Set-Cookie','velxtria_session='+token+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400'+secure)])
   if p=='/login':
    email=fields.get('email','').strip().lower();password=fields.get('password','')
    with db() as c:row=c.execute('SELECT id,salt,pw_hash FROM users WHERE email=?',(email,)).fetchone()

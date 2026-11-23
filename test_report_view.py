@@ -126,12 +126,17 @@ class ReportViewTests(unittest.TestCase):
         with self.portal.db() as c:
             return c.execute('SELECT id FROM users WHERE email=?', (email,)).fetchone()[0]
 
-    def csrf_for(self, email):
+    def csrf_for(self, token):
+        # The CSRF token bound to this exact session, matched by the
+        # token hash. Register now signs the user in too, so a user can
+        # hold two sessions (one from /register, one from /login) with
+        # the same expiry; looking the CSRF up by email alone could
+        # return the other session's token and the upload would 403.
+        import hashlib
         with self.portal.db() as c:
             row = c.execute(
-                'SELECT s.csrf FROM sessions s JOIN users u ON u.id=s.user_id '
-                'WHERE u.email=? ORDER BY s.expires DESC LIMIT 1',
-                (email,)).fetchone()
+                'SELECT csrf FROM sessions WHERE token_hash=?',
+                (hashlib.sha256(token.encode()).hexdigest(),)).fetchone()
             return row[0]
 
     def sign_in(self, email):
@@ -167,7 +172,7 @@ class ReportViewTests(unittest.TestCase):
         _USER_N[0] += 1
         email = 'rv%d@example.test' % _USER_N[0]
         cookie = self.sign_in(email)
-        csrf = self.csrf_for(email)
+        csrf = self.csrf_for(cookie)
         status, headers, _ = self.upload(cookie, csrf)
         self.assertEqual(status, 303)
         location = headers.get('Location', '')
@@ -254,6 +259,31 @@ class ReportViewTests(unittest.TestCase):
         self.assertEqual(status, 200)
         names = zipfile.ZipFile(io.BytesIO(data)).namelist()
         self.assertEqual(names, self.portal.REPORT_FILES)
+
+    def test_checkout_feedback_names_recovery_after_slow_invoice(self):
+        # The checkout button used to hang with no feedback when the
+        # BTCPay server was slow: it showed "Preparing secure Bitcoin
+        # checkout…" and stayed stuck for 50+ seconds, no redirect, no
+        # error, even though the invoice was created server-side. A real
+        # user would assume it was broken and leave (or retry and make a
+        # duplicate invoice). After 20s the note must now say the invoice
+        # is still being created and point at the recovery path: reload
+        # the page and use the "Bitcoin payment pending" link.
+        conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=30)
+        try:
+            conn.request('GET', '/checkout-feedback.js')
+            resp = conn.getresponse()
+            js = resp.read().decode('utf-8')
+        finally:
+            conn.close()
+        self.assertEqual(resp.status, 200)
+        self.assertIn('setTimeout', js)
+        self.assertIn('20000', js)
+        self.assertIn('Bitcoin payment pending', js)
+        self.assertIn('reload this page', js)
+        # The button still disables itself so a double-click cannot
+        # create a duplicate invoice.
+        self.assertIn('b.disabled=true', js)
 
     def test_static_assets_cacheable_html_not(self):
         def cache_headers(resp):
