@@ -108,7 +108,7 @@ def verified_mainnet_pro_snapshot(conn, as_of):
     """
     try:
         rows = conn.execute(
-            "SELECT s.status,s.period_start,s.period_end,s.verified_at,"
+            "SELECT s.user_id,s.status,s.period_start,s.period_end,s.verified_at,"
             "s.verification_source,s.product_key,s.pricing_plan "
             "FROM subscriptions s JOIN users u ON u.id=s.user_id "
             "WHERE u.role='customer' AND u.created>=0 AND u.created<=?",
@@ -120,8 +120,11 @@ def verified_mainnet_pro_snapshot(conn, as_of):
             return {"available": False}
         raise
     import subscriptions
-    active = expired = 0
-    for status, start, end, verified, source, product, plan in rows:
+    # A customer may have multiple historical periods. Count people, not rows;
+    # an active verified period takes precedence over any expired period.
+    active_users = set()
+    expired_users = set()
+    for user_id, status, start, end, verified, source, product, plan in rows:
         try:
             start, end, verified = int(start), int(end), int(verified)
         except (TypeError, ValueError, OverflowError):
@@ -133,10 +136,11 @@ def verified_mainnet_pro_snapshot(conn, as_of):
                 start > as_of or verified > as_of):
             continue
         if status in ('active', 'cancel_at_period_end') and as_of < end:
-            active += 1
+            active_users.add(user_id)
         elif end <= as_of and status in ('active', 'cancel_at_period_end'):
-            expired += 1
-    return {"available": True, "active": active, "expired": expired}
+            expired_users.add(user_id)
+    return {"available": True, "active": len(active_users),
+            "expired": len(expired_users - active_users)}
 
 
 def panel_html(metrics):
@@ -159,9 +163,9 @@ def panel_html(metrics):
              "</tbody></table>")
     pro = metrics.get("verified_pro_snapshot", {"available": False})
     pro_note = ("<p>Current verified BTCPay mainnet PRO entitlement snapshot: "
-                + ("active " + str(pro["active"]) + "; expired " + str(pro["expired"])
+                + ("active customers " + str(pro["active"]) + "; expired-only customers " + str(pro["expired"])
                    if pro["available"] else "unavailable (subscription records not initialized)")
-                + ". Only eligible customer subscription periods with matching product, plan, "
+                + ". Counts are distinct customers, with active access taking precedence over older expired periods. Only eligible subscription periods with matching product, plan, "
                 "verification source and dates count. Expired periods are not proof of churn; "
                 "referrals and manually verified Stripe access are excluded. This is not "
                 "refund-adjusted revenue, recurring revenue, or a retention rate.</p>")
