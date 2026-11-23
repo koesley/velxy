@@ -728,6 +728,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
  offers the cleaned file right after it, and the summaries — still free
  and complete — come after."""
  nxt=urllib.parse.quote('/account#billing',safe='')
+ upgrade_href='/account#billing' if user else '/register?next='+nxt
  share=''
  if share_token:
   link=btcpay_mainnet.site_url()+'/demo/'+share_token
@@ -766,7 +767,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
    +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>')
   +share
   +email_form
-  +'<div class="v8-demo-upgrade"><h3>Keep checking your business data</h3><p>Use VELXTRIA to spot inconsistent dates, duplicate order IDs, and mismatched quantities in future uploads. Results depend on your file; sample findings are not guaranteed savings.</p><p><strong>PRO: $49 for 30 days · 50 reports · Bitcoin only.</strong> Payment is optional. Access activates only after verified settlement.</p><p><a class="v8-primary" href="/login?next='+nxt+'">See PRO checkout — $49 in Bitcoin</a></p></div></section></div>')
+  +'<div class="v8-demo-upgrade"><h3>Keep checking your business data</h3><p>Use VELXTRIA to spot inconsistent dates, duplicate order IDs, and mismatched quantities in future uploads. Results depend on your file; sample findings are not guaranteed savings.</p><p><strong>PRO: $49 for 30 days · 50 reports · Bitcoin only.</strong> Payment is optional. Access activates only after verified settlement.</p><p><a class="v8-primary" href="'+escape(upgrade_href)+'">See PRO checkout — $49 in Bitcoin</a></p></div></section></div>')
 
 def ledger_panel_html(user, csrf):
  """The Sales Ledger panel on the dashboard: log one sale at a time and
