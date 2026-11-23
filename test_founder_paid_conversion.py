@@ -173,5 +173,56 @@ class PaidConversionTests(unittest.TestCase):
         self.assertIn("Not available",pc.panel_html(m))
 
 
+    def test_verified_mainnet_pro_snapshot_active_expired_and_untrusted(self):
+        import subscriptions
+        subscriptions.setup(self.db)
+        for uid in range(1, 8):
+            self.user(uid, 40, "admin" if uid == 7 else "customer")
+        def sub(uid, source, start, end, status="active", verified=1, product=None):
+            self.db.execute(
+                "INSERT INTO subscriptions(user_id,product_key,pricing_plan,status,"
+                "period_start,period_end,verified_at,verification_source,updated_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (uid, subscriptions.PRODUCT_KEY if product is None else product,
+                 subscriptions.PRICING_PLAN, status, start, end, verified, source, NOW))
+        good = "btcpay_mainnet_verified"
+        sub(1, good, NOW-10, NOW+10)
+        sub(2, good, NOW-40, NOW-1, "cancel_at_period_end")
+        sub(3, "btcpay_testnet_verified", NOW-10, NOW+10)
+        sub(4, "referral", NOW-10, NOW+10)
+        sub(5, good, NOW-10, NOW+10, verified=0)
+        sub(6, good, NOW-10, NOW+10, product="other")
+        sub(7, good, NOW-10, NOW+10)
+        metrics = pc.paid_cohorts(self.db, NOW)
+        self.assertEqual(metrics["verified_pro_snapshot"],
+                         {"available": True, "active": 1, "expired": 1})
+        rendered = pc.panel_html(metrics)
+        self.assertIn("active 1; expired 1", rendered)
+        self.assertIn("not proof of churn", rendered)
+        self.assertNotIn("private-", rendered)
+
+    def test_missing_subscription_schema_is_not_zero_active(self):
+        self.user(1, 40)
+        metrics = pc.paid_cohorts(self.db, NOW)
+        self.assertEqual(metrics["verified_pro_snapshot"], {"available": False})
+        self.assertIn("unavailable (subscription records not initialized)",
+                      pc.panel_html(metrics))
+
+    def test_verified_pro_snapshot_is_read_only_and_respects_period_boundary(self):
+        import subscriptions
+        subscriptions.setup(self.db)
+        self.user(1, 40)
+        self.db.execute(
+            "INSERT INTO subscriptions(user_id,product_key,pricing_plan,status,"
+            "period_start,period_end,verified_at,verification_source,updated_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?)",
+            (1, subscriptions.PRODUCT_KEY, subscriptions.PRICING_PLAN,
+             "active", NOW-10, NOW, NOW-9, "btcpay_mainnet_verified", NOW))
+        self.db.execute("PRAGMA query_only=ON")
+        metrics = pc.paid_cohorts(self.db, NOW)
+        self.assertEqual(metrics["verified_pro_snapshot"]["active"], 0)
+        self.assertEqual(metrics["verified_pro_snapshot"]["expired"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
