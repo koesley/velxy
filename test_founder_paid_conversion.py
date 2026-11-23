@@ -265,6 +265,37 @@ class PaidConversionTests(unittest.TestCase):
                          {"available": True, "active": 2,
                           "expired": 0, "expiring_7d": 1})
 
+    def test_verified_card_and_bitcoin_access_share_distinct_customer_snapshot(self):
+        import subscriptions
+        subscriptions.setup(self.db)
+        for uid in range(1, 8):
+            self.user(uid, 40, "admin" if uid == 7 else "customer")
+        records = (
+            (1, "stripe_verified", "active", NOW+DAY, NOW-1),
+            (2, "btcpay_mainnet_verified", "active", NOW+8*DAY, NOW-1),
+            (3, "stripe_verified", "cancel_at_period_end", NOW-DAY, NOW-20),
+            (4, "stripe_test_verified", "active", NOW+DAY, NOW-1),
+            (5, "manual_stripe_dashboard", "active", NOW+DAY, NOW-1),
+            (6, "stripe_verified", "pending_review", NOW+DAY, NOW-1),
+            (7, "stripe_verified", "active", NOW+DAY, NOW-1),
+        )
+        for uid, source, status, end, verified in records:
+            self.db.execute(
+                "INSERT INTO subscriptions(user_id,product_key,pricing_plan,status,"
+                "period_start,period_end,verified_at,verification_source,updated_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (uid, subscriptions.PRODUCT_KEY, subscriptions.PRICING_PLAN,
+                 status, NOW-10*DAY, end, verified, source, NOW))
+        self.db.execute("PRAGMA query_only=ON")
+        metrics = pc.paid_cohorts(self.db, NOW)
+        self.assertEqual(metrics["verified_pro_snapshot"],
+                         {"available": True, "active": 2, "expired": 1, "expiring_7d": 1})
+        self.assertEqual(metrics["settled_within_30d"], 0)
+        panel = pc.panel_html(metrics)
+        self.assertIn("verified Bitcoin/card PRO entitlement", panel)
+        self.assertIn("historical conversion cohorts above remain Bitcoin-only", panel)
+        self.assertNotIn("private-", panel)
+
     def test_missing_subscription_schema_is_not_zero_active(self):
         self.user(1, 40)
         metrics = pc.paid_cohorts(self.db, NOW)
