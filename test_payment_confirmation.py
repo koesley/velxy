@@ -145,7 +145,7 @@ class PaymentConfirmationTests(unittest.TestCase):
                 'period_start,period_end,verified_at,verification_source,updated_at)'
                 ' VALUES (?,?,?,?,?,?,?,?,?,?)',
                 (uid, subscriptions.PRODUCT_KEY, subscriptions.PRICING_PLAN,
-                 'active', 'inv1', now - 100, now + 30 * 86400, now, 'test', now))
+                 'active', 'inv1', now - 100, now + 30 * 86400, now, 'btcpay_mainnet_verified', now))
 
     def test_paid_settled_shows_pro_confirmation(self):
         email, cookie = self.new_user()

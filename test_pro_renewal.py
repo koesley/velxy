@@ -156,8 +156,41 @@ class ProRenewalTests(unittest.TestCase):
                 ' VALUES (?,?,?,?,?,?,?,?,?,?)',
                 (uid, subscriptions.PRODUCT_KEY, subscriptions.PRICING_PLAN,
                  'active', 'inv1', now - 100, now + days_left * 86400,
-                 now, 'test', now))
+                 now, 'btcpay_mainnet_verified', now))
         return uid
+
+    def test_testnet_verification_source_never_grants_pro(self):
+        # A settled testnet invoice writes
+        # verification_source='btcpay_testnet_verified' (worthless testnet
+        # BTC). The entitlement check — not the deployment configuration —
+        # must be the guard that refuses it, so a testnet row can never
+        # grant real PRO even if the testnet credentials were ever set on
+        # the production service. The allowlisted sources still grant it.
+        import subscriptions
+        email, _ = self.new_user()
+        uid = self.user_id(email)
+        now = int(time.time())
+        for source, grants in (
+                ('btcpay_testnet_verified', False),
+                ('btcpay_mainnet_verified', True),
+                ('referral', True),
+                ('manual_stripe_dashboard', True),
+                ('test', False),
+                ('', False)):
+            with self.portal.db() as c:
+                c.execute(
+                    'INSERT INTO subscriptions'
+                    '(user_id,product_key,pricing_plan,status,source_reference,'
+                    'period_start,period_end,verified_at,verification_source,updated_at)'
+                    ' VALUES (?,?,?,?,?,?,?,?,?,?)'
+                    ' ON CONFLICT(user_id) DO UPDATE SET verification_source=excluded.verification_source',
+                    (uid, subscriptions.PRODUCT_KEY, subscriptions.PRICING_PLAN,
+                     'active', 'inv1', now - 100, now + 30 * 86400,
+                     now, source, now))
+            with self.portal.db() as c:
+                ent = subscriptions.entitlement(c, uid)
+            self.assertEqual(ent['plan'], 'pro' if grants else 'demo',
+                             'source %r should %s PRO' % (source, 'grant' if grants else 'not grant'))
 
     def test_dashboard_shows_renewal_inside_window(self):
         email, cookie = self.new_user()

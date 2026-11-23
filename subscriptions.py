@@ -7,6 +7,17 @@ PRICING_PLAN = 'MrW6D9VRBN'
 PRO_LIMIT = 50
 DEMO_LIMIT = 3
 
+# Only these verification sources can grant PRO. A settled testnet
+# invoice writes verification_source='btcpay_testnet_verified' (worthless
+# testnet BTC); the entitlement check — not the deployment configuration
+# — must be the guard that refuses it. If a new legitimate source is
+# ever added, it belongs in this list first.
+VERIFICATION_SOURCES = frozenset((
+    'btcpay_mainnet_verified',
+    'referral',
+    'manual_stripe_dashboard',
+))
+
 def setup(conn):
     conn.execute('''CREATE TABLE IF NOT EXISTS subscriptions (
       user_id INTEGER PRIMARY KEY,
@@ -48,7 +59,7 @@ def entitlement(conn, user_id, current=None):
     current=int(time.time()) if current is None else current
     row=conn.execute('''SELECT status,period_start,period_end,verified_at,verification_source,
       product_key,pricing_plan FROM subscriptions WHERE user_id=?''',(user_id,)).fetchone()
-    if row and row[0] in ('active','cancel_at_period_end') and row[1]<=current<row[2] and row[3]>0 and row[4] and row[5]==PRODUCT_KEY and row[6]==PRICING_PLAN:
+    if row and row[0] in ('active','cancel_at_period_end') and row[1]<=current<row[2] and row[3]>0 and row[4] in VERIFICATION_SOURCES and row[5]==PRODUCT_KEY and row[6]==PRICING_PLAN:
         return {'plan':'pro','start':row[1],'end':row[2],'status':row[0]}
     d=datetime.fromtimestamp(current,timezone.utc)
     start=int(datetime(d.year,d.month,1,tzinfo=timezone.utc).timestamp())
