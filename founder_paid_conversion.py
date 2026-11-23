@@ -34,6 +34,9 @@ def paid_cohorts(conn, as_of=None):
         raise
     mature = activated = paid = activated_paid = 0
     weekly = {}
+    activation_delays = []
+    settlement_delays = []
+    first_day_activated = first_week_settled = 0
     for _, created, first_ready, first_paid in rows:
         try:
             created = int(created)
@@ -46,6 +49,14 @@ def paid_cohorts(conn, as_of=None):
         mature += 1
         has_first_value = first_ready is not None and created <= first_ready < created + 7 * DAY
         has_payment = first_paid is not None and created <= first_paid < created + 30 * DAY
+        if has_first_value:
+            delay = first_ready - created
+            activation_delays.append(delay)
+            first_day_activated += int(delay < DAY)
+        if has_payment:
+            delay = first_paid - created
+            settlement_delays.append(delay)
+            first_week_settled += int(delay < 7 * DAY)
         activated += int(has_first_value)
         paid += int(has_payment)
         activated_paid += int(has_first_value and has_payment)
@@ -55,9 +66,24 @@ def paid_cohorts(conn, as_of=None):
         counts[1] += int(has_first_value)
         counts[2] += int(has_payment)
         counts[3] += int(has_first_value and has_payment)
+    def median_days(delays):
+        if not delays:
+            return None
+        ordered = sorted(delays)
+        n = len(ordered)
+        if n % 2:
+            seconds = ordered[n // 2]
+        else:
+            seconds = (ordered[n // 2 - 1] + ordered[n // 2]) / 2
+        return round(seconds / DAY, 2)
+
     nonactivated = mature - activated
     nonactivated_paid = paid - activated_paid
     return {
+        "first_day_activated": first_day_activated,
+        "first_week_settled": first_week_settled,
+        "median_days_to_first_value": median_days(activation_delays),
+        "median_days_to_settlement": median_days(settlement_delays),
         "nonactivated_signups": nonactivated,
         "nonactivated_settled": nonactivated_paid,
         "nonactivated_paid_conversion_pct": (
@@ -92,6 +118,10 @@ def panel_html(metrics):
     fields = (
         ("Signups with 30 full days observed", metrics["mature_30d_signups"]),
         ("Saved a ready report within seven days", metrics["first_week_activated"]),
+        ("Saved a ready report within 24 hours", metrics["first_day_activated"]),
+        ("Median days to first ready report (first-week activators)", metrics["median_days_to_first_value"]),
+        ("Settled mainnet invoice within seven days", metrics["first_week_settled"]),
+        ("Median days to settlement (30-day converters)", metrics["median_days_to_settlement"]),
         ("Recorded settled mainnet invoice within 30 days", metrics["settled_within_30d"]),
         ("Both first-week saved report and 30-day settlement", metrics["activated_and_settled"]),
         ("30-day observed settled conversion", metrics["paid_conversion_pct"]),
@@ -110,5 +140,7 @@ def panel_html(metrics):
             "starts, pending invoices, hypothetical scenarios, or proof of net revenue. "
             "Refunds and chargebacks are not deducted; these are historical recorded "
             "settlements, not active paid retention or recurring revenue. "
+            "Time-to-value and time-to-settlement medians use only observed qualifying events; "
+            "missing events do not become zero-day conversions. "
             "No individual customer identifiers are displayed.</p>"
             "<table><tbody>" + rows + "</tbody></table>" + trend + "</section>")

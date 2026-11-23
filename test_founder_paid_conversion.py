@@ -133,6 +133,39 @@ class PaidConversionTests(unittest.TestCase):
         self.assertNotIn("private-report", panel)
         self.assertIn("<td>1</td><td>1</td><td>1</td><td>1</td>", panel)
 
+    def test_time_to_value_and_settlement_medians_and_boundaries(self):
+        for uid in range(1, 5):
+            self.user(uid, 50)
+        self.report(1, 50)  # first report at signup, zero days
+        self.report(2, 49)  # exactly one day, not first-day
+        self.report(3, 44)  # six days, within first week
+        self.report(4, 43)  # exactly seven days, not activated
+        self.order(1, 50)
+        self.order(2, 43)  # exactly seven days, not first-week settlement
+        self.order(3, 21)  # 29 days
+        m = pc.paid_cohorts(self.db, NOW)
+        self.assertEqual(m["first_day_activated"], 1)
+        self.assertEqual(m["first_week_activated"], 3)
+        self.assertEqual(m["median_days_to_first_value"], 1.0)
+        self.assertEqual(m["first_week_settled"], 1)
+        self.assertEqual(m["median_days_to_settlement"], 7.0)
+        panel = pc.panel_html(m)
+        self.assertIn("Median days to first ready report", panel)
+        self.assertIn("Median days to settlement", panel)
+
+    def test_latency_metrics_exclude_unqualified_and_missing_events(self):
+        self.user(1, 40)
+        self.user(2, 40)
+        self.report(1, 39, "failed")
+        self.order(1, 39, "pending")
+        self.order(2, 39, "settled", "testnet")
+        m = pc.paid_cohorts(self.db, NOW)
+        self.assertEqual(m["first_day_activated"], 0)
+        self.assertEqual(m["first_week_settled"], 0)
+        self.assertIsNone(m["median_days_to_first_value"])
+        self.assertIsNone(m["median_days_to_settlement"])
+        self.assertIn("Not available", pc.panel_html(m))
+
     def test_empty_cohort_has_no_fabricated_rate(self):
         self.user(1,1)
         m=pc.paid_cohorts(self.db,NOW)
