@@ -73,10 +73,13 @@ def paid_cohorts(conn, as_of=None):
 
 def panel_html(metrics):
     if not metrics["available"]:
-        trend_rows = "".join(
+        return ("<section class='panel'><h2>V60/V61 — Observed paid conversion</h2>"
+                "<p>Unavailable: mainnet order records have not been initialized. "
+                "No paid-conversion rate is inferred.</p></section>")
+    trend_rows = "".join(
         "<tr><td>" + html.escape(time.strftime("%Y-%m-%d", time.gmtime(week))) +
         "</td>" + "".join("<td>" + str(count) + "</td>" for count in counts) + "</tr>"
-        for week, *counts in metrics["weekly"])
+        for week, *counts in metrics.get("weekly", ()))
     trend = ("<h3>Recent mature signup weeks</h3>"
              "<p>Each row is a signup week with a fully observed 30-day window; "
              "the most recent eight eligible weeks are shown. Counts are customers, "
@@ -86,9 +89,6 @@ def panel_html(metrics):
              "<th>Activated</th><th>Settled</th><th>Both</th></tr></thead><tbody>" +
              (trend_rows or "<tr><td colspan='5'>No mature signup weeks</td></tr>") +
              "</tbody></table>")
-    return ("<section class='panel'><h2>V60/V61 — Observed paid conversion</h2>"
-                "<p>Unavailable: mainnet order records have not been initialized. "
-                "No paid-conversion rate is inferred.</p></section>")
     fields = (
         ("Signups with 30 full days observed", metrics["mature_30d_signups"]),
         ("Saved a ready report within seven days", metrics["first_week_activated"]),
