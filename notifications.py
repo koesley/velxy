@@ -29,7 +29,15 @@ import urllib.error
 import urllib.request
 from email.message import EmailMessage
 
+import email_unsubscribe
+
 RENEWAL_REMINDER_DAYS = 3
+
+# Marketing mail — the Automatic Revenue Engine's sequences. These are
+# the only kinds an unsubscribe stops: every other kind is
+# transactional (a password reset, a PRO confirmation, a renewal
+# reminder, a demo report the runner asked for) and always sends.
+MARKETING_KINDS = frozenset({'welcome', 'demo_followup', 'pro_upsell'})
 
 
 def setup(conn):
@@ -188,8 +196,12 @@ def queue(conn, recipient, subject, body, kind, dedupe_key=None, user_id=None,
     is a no-op. Returns True when a row was queued. send_at is a Unix
     timestamp for a scheduled send; the delivery worker only picks a row
     up once its next_attempt has arrived, so a future send_at makes this
-    a scheduled follow-up instead of an immediate send."""
+    a scheduled follow-up instead of an immediate send. A marketing
+    email to an address that has unsubscribed is never queued."""
     setup(conn)
+    if kind in MARKETING_KINDS and email_unsubscribe.is_unsubscribed(
+            conn, recipient):
+        return False
     due = int(time.time()) if send_at is None else int(send_at)
     cur = conn.execute(
         'INSERT INTO email_outbox'
@@ -203,15 +215,27 @@ def queue(conn, recipient, subject, body, kind, dedupe_key=None, user_id=None,
 
 
 def process_one(conn):
-    """Send one queued notification, if any. Returns True when one was sent."""
+    """Send one queued notification, if any. Returns True when one was sent.
+    A queued marketing row whose recipient unsubscribed after queueing
+    is marked 'suppressed' and never sent or retried."""
     setup(conn)
     row = conn.execute(
-        "SELECT id,recipient,subject,body,attempts FROM email_outbox"
+        "SELECT id,recipient,subject,body,kind,attempts FROM email_outbox"
         " WHERE status IN ('queued','retry') AND next_attempt<=? AND attempts<3"
         " ORDER BY next_attempt LIMIT 1", (int(time.time()),)).fetchone()
     if not row:
         return False
-    ident, recipient, subject, body, attempts = row
+    ident, recipient, subject, body, kind, attempts = row
+    if kind in MARKETING_KINDS and email_unsubscribe.is_unsubscribed(
+            conn, recipient):
+        conn.execute(
+            "UPDATE email_outbox SET status='suppressed',"
+            "last_error='unsubscribed' WHERE id=?", (ident,))
+        # Commit before returning, like the failure path: the delivery
+        # worker calls process_one inside a transaction, and a later
+        # error in the same transaction must not resurrect this row.
+        conn.commit()
+        return False
     conn.execute("UPDATE email_outbox SET status='sending', attempts=attempts+1"
                  " WHERE id=?", (ident,))
     try:

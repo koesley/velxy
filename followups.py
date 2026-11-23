@@ -110,11 +110,14 @@ def queue_demo_sequence(conn, email, share_token, share_link, site_url,
     """Queue the demo-lead follow-up sequence for one demo. Returns how
     many steps were newly queued (0 when this demo already has them)."""
     import notifications
+    import email_unsubscribe
     import site_stats
     now = int(time.time()) if now is None else now
     queued = 0
     for days, subject, template in DEMO_STEPS:
         body = template.format(share_link=share_link, site_url=site_url)
+        token = email_unsubscribe.get_or_create_token(conn, email)
+        body = email_unsubscribe.append_footer(body, email, site_url, token)
         if notifications.queue(
                 conn, email, subject, body, 'demo_followup',
                 dedupe_key='demo-followup:%d:%s:%s' % (days, email, share_token),
@@ -131,6 +134,7 @@ def queue_pro_upsell(conn, user_id, email, site_url, now=None):
     Returns how many steps were newly queued (0 when already queued, or
     when the user is already PRO)."""
     import notifications
+    import email_unsubscribe
     import site_stats
     import subscriptions
     ent, _count, _remaining = subscriptions.usage(conn, user_id)
@@ -140,6 +144,8 @@ def queue_pro_upsell(conn, user_id, email, site_url, now=None):
     queued = 0
     for days, subject, template in PRO_STEPS:
         body = template.format(site_url=site_url)
+        token = email_unsubscribe.get_or_create_token(conn, email)
+        body = email_unsubscribe.append_footer(body, email, site_url, token)
         if notifications.queue(
                 conn, email, subject, body, 'pro_upsell',
                 dedupe_key='pro-upsell:%d:%d' % (days, user_id),
@@ -157,6 +163,7 @@ def queue_welcome(conn, user_id, email, site_url, seeded=False, now=None):
     at PRO. Returns how many steps were newly queued (0 when already
     queued for this user)."""
     import notifications
+    import email_unsubscribe
     import site_stats
     now = int(time.time()) if now is None else now
     steps = [WELCOME_SEEDED_DAY0 if seeded else WELCOME_PLAIN_DAY0]
@@ -164,6 +171,8 @@ def queue_welcome(conn, user_id, email, site_url, seeded=False, now=None):
     queued = 0
     for days, subject, template in steps:
         body = template.format(site_url=site_url)
+        token = email_unsubscribe.get_or_create_token(conn, email)
+        body = email_unsubscribe.append_footer(body, email, site_url, token)
         if notifications.queue(
                 conn, email, subject, body, 'welcome',
                 dedupe_key='welcome:%d:%d:%s' % (days, user_id, email),

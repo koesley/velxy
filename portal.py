@@ -26,6 +26,7 @@ import ledger
 import charts
 import trust_pages
 import notifications
+import email_unsubscribe
 import password_reset
 import sales_pipeline
 import sovereign_ascension
@@ -226,6 +227,7 @@ def _initialize_schema(c):
  demo_leads.setup(c)
  ledger.setup(c)
  notifications.setup(c)
+ email_unsubscribe.setup(c)
  password_reset.setup(c)
  business_v3.setup(c)
  business_v4.setup(c)
@@ -797,7 +799,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
    +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>')
   +share
   +email_form
-  +'<div class="v8-demo-upgrade"><h3>Keep checking your business data</h3><p>Use VELXTRIA to spot inconsistent dates, duplicate order IDs, and mismatched quantities in future uploads. Results depend on your file; sample findings are not guaranteed savings.</p><p><strong>PRO: $49 for 30 days · 50 reports · Bitcoin only.</strong> Payment is optional. Access activates only after verified settlement.</p><p><a class="v8-primary" href="'+escape(upgrade_href)+'">See PRO checkout — $49 in Bitcoin</a></p></div></section></div>')
+  +'<div class="v8-demo-upgrade"><h3>Keep checking your business data</h3><p>Use VELXTRIA to spot inconsistent dates, duplicate order IDs, and mismatched quantities in future uploads. Results depend on your file; sample findings are not guaranteed savings.</p><p><strong>PRO: $49 for 30 days · 50 reports · Bitcoin or card.</strong> Payment is optional. Access activates only after verified settlement.</p><p><a class="v8-primary" href="'+escape(upgrade_href)+'">See PRO checkout — $49</a></p></div></section></div>')
 
 def ledger_panel_html(user, csrf):
  """The Sales Ledger panel on the dashboard: log one sale at a time and
@@ -1358,6 +1360,22 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,shell('Privacy Policy',trust_pages.PRIVACY_HTML))
   if p=='/contact':
    return self.respond(200,shell('Contact',trust_pages.CONTACT_HTML))
+  if p=='/unsubscribe':
+   # One-click opt-out for marketing mail. The token is checked in
+   # constant time against the stored one; an unknown email or a wrong
+   # token gets the same 404, so the link never reveals whether an
+   # address is on file.
+   try:
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True,max_num_fields=12)
+   except ValueError:
+    return self.fail(404,'Not found.')
+   email=(q.get('email',[''])[0] or '')[:255]
+   token=(q.get('token',[''])[0] or '')[:200]
+   with db() as c:
+    ok=email_unsubscribe.record_unsubscribe(c,email,token)
+   if not ok:
+    return self.fail(404,'Not found.')
+   return self.respond(200,shell('Unsubscribed','<section class="panel"><h2>You are unsubscribed</h2><p>VELXTRIA will stop sending you marketing emails — welcome messages, demo reminders, and PRO offers.</p><p>Transactional emails still arrive: password resets and payment confirmations are not affected.</p><p><a href="/">Return to VELXTRIA</a></p></section>'))
   if p in ('/favicon.svg','/favicon.ico'):
    return self.respond(200,trust_pages.FAVICON_SVG,'image/svg+xml',headers=[('Cache-Control','public, max-age=86400')])
   if p=='/founder-economics':
