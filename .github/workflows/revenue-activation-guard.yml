@@ -22,6 +22,8 @@ on:
       - 'test_demo_workspace.py'
       - 'test_welcome_sequence.py'
       - 'test_btcpay_mainnet.py'
+      - 'test_report_pro_offer.py'
+      - 'test_paywall_analytics.py'
       - 'btcpay_mainnet.py'
       - 'subscriptions.py'
       - 'test_site_stats.py'
@@ -50,6 +52,8 @@ on:
       - 'test_demo_workspace.py'
       - 'test_welcome_sequence.py'
       - 'test_btcpay_mainnet.py'
+      - 'test_report_pro_offer.py'
+      - 'test_paywall_analytics.py'
       - 'btcpay_mainnet.py'
       - 'subscriptions.py'
       - 'test_site_stats.py'
@@ -96,4 +100,5 @@ jobs:
             test_revenue_dominion_v60 test_first_value_v61 test_founder_economics test_founder_activation \
             test_site_stats test_signup_path test_instant_demo \
             test_demo_claim test_demo_workspace test_welcome_sequence \
-            test_ledger test_revenue_engine test_btcpay_mainnet test_revenue_activation_guard
+            test_ledger test_revenue_engine test_btcpay_mainnet \
+            test_report_pro_offer test_paywall_analytics test_revenue_activation_guard
