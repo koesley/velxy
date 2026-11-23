@@ -4,7 +4,7 @@ import unittest
 import founder_paid_conversion as pc
 
 DAY = 86400
-NOW = 100 * DAY
+NOW = 200 * DAY
 
 
 class PaidConversionTests(unittest.TestCase):
@@ -90,6 +90,12 @@ class PaidConversionTests(unittest.TestCase):
         self.assertEqual(m["mature_30d_signups"],13)
         self.assertEqual(len(m["weekly"]),8)
         self.assertIsNone(m["activated_paid_conversion_pct"])
+
+    def test_negative_signup_timestamp_is_excluded(self):
+        self.db.execute("INSERT INTO users VALUES(?,?,?)", (91, -DAY, "customer"))
+        self.user(1, 40)
+        m = pc.paid_cohorts(self.db, NOW)
+        self.assertEqual(m["mature_30d_signups"], 1)
 
     def test_empty_cohort_has_no_fabricated_rate(self):
         self.user(1,1)
