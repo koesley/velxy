@@ -197,9 +197,29 @@ class PaidConversionTests(unittest.TestCase):
         self.assertEqual(metrics["verified_pro_snapshot"],
                          {"available": True, "active": 1, "expired": 1})
         rendered = pc.panel_html(metrics)
-        self.assertIn("active 1; expired 1", rendered)
+        self.assertIn("active customers 1; expired-only customers 1", rendered)
         self.assertIn("not proof of churn", rendered)
         self.assertNotIn("private-", rendered)
+
+    def test_verified_pro_snapshot_deduplicates_periods_and_active_precedes_expired(self):
+        import subscriptions
+        subscriptions.setup(self.db)
+        self.user(1, 40)
+        self.user(2, 40)
+        good = "btcpay_mainnet_verified"
+        for uid, start, end in [(1, NOW-90, NOW-60), (1, NOW-50, NOW-30),
+                                (1, NOW-10, NOW+10), (2, NOW-50, NOW-30)]:
+            self.db.execute(
+                "INSERT INTO subscriptions(user_id,product_key,pricing_plan,status,"
+                "period_start,period_end,verified_at,verification_source,updated_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (uid, subscriptions.PRODUCT_KEY, subscriptions.PRICING_PLAN,
+                 "active", start, end, start, good, NOW))
+        snapshot = pc.verified_mainnet_pro_snapshot(self.db, NOW)
+        self.assertEqual(snapshot, {"available": True, "active": 1, "expired": 1})
+        panel = pc.panel_html(pc.paid_cohorts(self.db, NOW))
+        self.assertIn("active customers 1; expired-only customers 1", panel)
+        self.assertNotIn("private-", panel)
 
     def test_missing_subscription_schema_is_not_zero_active(self):
         self.user(1, 40)
