@@ -55,7 +55,13 @@ def paid_cohorts(conn, as_of=None):
         counts[1] += int(has_first_value)
         counts[2] += int(has_payment)
         counts[3] += int(has_first_value and has_payment)
+    nonactivated = mature - activated
+    nonactivated_paid = paid - activated_paid
     return {
+        "nonactivated_signups": nonactivated,
+        "nonactivated_settled": nonactivated_paid,
+        "nonactivated_paid_conversion_pct": (
+            round(100 * nonactivated_paid / nonactivated, 2) if nonactivated else None),
         "available": True, "mature_30d_signups": mature,
         "first_week_activated": activated, "settled_within_30d": paid,
         "activated_and_settled": activated_paid,
@@ -67,7 +73,20 @@ def paid_cohorts(conn, as_of=None):
 
 def panel_html(metrics):
     if not metrics["available"]:
-        return ("<section class='panel'><h2>V60/V61 — Observed paid conversion</h2>"
+        trend_rows = "".join(
+        "<tr><td>" + html.escape(time.strftime("%Y-%m-%d", time.gmtime(week))) +
+        "</td>" + "".join("<td>" + str(count) + "</td>" for count in counts) + "</tr>"
+        for week, *counts in metrics["weekly"])
+    trend = ("<h3>Recent mature signup weeks</h3>"
+             "<p>Each row is a signup week with a fully observed 30-day window; "
+             "the most recent eight eligible weeks are shown. Counts are customers, "
+             "not invoices or revenue. Activation and settlement may occur in either order; "
+             "this comparison does not establish causation.</p>"
+             "<table><thead><tr><th>Signup week (UTC)</th><th>Signups</th>"
+             "<th>Activated</th><th>Settled</th><th>Both</th></tr></thead><tbody>" +
+             (trend_rows or "<tr><td colspan='5'>No mature signup weeks</td></tr>") +
+             "</tbody></table>")
+    return ("<section class='panel'><h2>V60/V61 — Observed paid conversion</h2>"
                 "<p>Unavailable: mainnet order records have not been initialized. "
                 "No paid-conversion rate is inferred.</p></section>")
     fields = (
@@ -77,6 +96,9 @@ def panel_html(metrics):
         ("Both first-week saved report and 30-day settlement", metrics["activated_and_settled"]),
         ("30-day observed settled conversion", metrics["paid_conversion_pct"]),
         ("30-day settled conversion among first-week activated", metrics["activated_paid_conversion_pct"]),
+        ("Signups without first-week ready report", metrics["nonactivated_signups"]),
+        ("Settled without first-week ready report", metrics["nonactivated_settled"]),
+        ("30-day settled conversion without first-week activation", metrics["nonactivated_paid_conversion_pct"]),
     )
     rows = "".join("<tr><th scope='row'>" + html.escape(label) + "</th><td>" +
                    ("Not available" if value is None else html.escape(str(value)) +
@@ -89,4 +111,4 @@ def panel_html(metrics):
             "Refunds and chargebacks are not deducted; these are historical recorded "
             "settlements, not active paid retention or recurring revenue. "
             "No individual customer identifiers are displayed.</p>"
-            "<table><tbody>" + rows + "</tbody></table></section>")
+            "<table><tbody>" + rows + "</tbody></table>" + trend + "</section>")
