@@ -377,10 +377,7 @@ def handle_webhook(conn, raw_body, signature_header):
         # Do not record the fingerprint: a later redelivery must retry.
         log_event('webhook_reconcile_unavailable', order_id=order_id, session_id=session_id)
         return 503, 'Stripe verification unavailable; retry later'
-    try:
-        conn.execute('INSERT INTO stripe_webhook_events(fingerprint,session_id,event_type,received_at) VALUES (?,?,?,?)',
-                     (fingerprint, session_id, event_type, int(time.time())))
-    except Exception:
-        pass  # Concurrent duplicate delivery; reconciliation already ran.
+    conn.execute('INSERT INTO stripe_webhook_events(fingerprint,session_id,event_type,received_at) VALUES (?,?,?,?) ON CONFLICT(fingerprint) DO NOTHING',
+                 (fingerprint, session_id, event_type, int(time.time())))
     log_event('webhook_processed', session_id=session_id, event_type=event_type, order_id=order_id)
     return 200, 'Webhook processed'
