@@ -60,6 +60,13 @@ def render(c, uid, workspace_id, csrf=''):
            'No contact information is shown. Values and confidence are heuristic, not verified revenue or '
            'conversion probabilities. No messages are sent and no actions are performed.</p>',
            '<p><a href="/revenue-priority">Manual comparison workbench</a></p></section>']
+    if results:
+        # Count displayed candidates only; never imply full pipeline coverage.
+        out.append('<section class="panel"><h2>Opportunity overview</h2><p>' +
+                   esc(len(results)) + ' ranked opportunities displayed. '
+                   'Start with the highest priority and verify the underlying value before acting.</p>' +
+                   '<p>Lead values are estimates, not collected revenue. '
+                   'Review drafts require approval before any outreach.</p></section>')
     if not results:
         out.append('<section class="panel"><p>No eligible positive-value leads in the evaluated batch.</p></section>')
     for item in results:
