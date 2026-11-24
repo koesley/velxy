@@ -48,7 +48,11 @@ def propose_followup(c, uid, wid, lid):
         raise ValueError("Lead is not eligible")
     if c.execute("SELECT 1 FROM bos59_actions WHERE workspace_id=? AND lead_id=? AND decision='pending' LIMIT 1",(wid,lid)).fetchone():
         raise ValueError("Pending review already exists")
-    message="Internal draft: review this "+row[0]+" lead, verify consent, and prepare a personalized follow-up for approval. Do not send automatically."
+    if row[0] == "new":
+        guidance = "Confirm the lead's stated need and contact permission; prepare a short discovery question and a relevant next step."
+    else:
+        guidance = "Review prior contact and any reply; identify unresolved questions, confirm contact permission, and propose a useful next step without repeating outreach."
+    message = "Internal draft: " + guidance + " Submit for approval. Do not send automatically."
     return business_os_v59.propose(c,uid,wid,lid,message)
 
 
