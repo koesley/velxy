@@ -61,39 +61,12 @@ def render(c, uid, workspace_id, csrf=''):
            'conversion probabilities. No messages are sent and no actions are performed.</p>',
            '<p><a href="/revenue-priority">Manual comparison workbench</a></p></section>']
     if results:
-        # Sum only displayed estimates. Bound formatting and arithmetic for extreme inputs.
-        amounts = [Decimal(item["estimated_value"]) for item in results]
-        if all(a.is_finite() and 0 <= a <= Decimal("1000000000000") for a in amounts):
+        amounts = [Decimal(item['estimated_value']) for item in results]
+        if all(a.is_finite() and 0 <= a <= Decimal('1000000000000') for a in amounts):
             with localcontext() as ctx:
                 ctx.prec = 40
-                total = sum(amounts, Decimal(0))
-                display_total = format(total, ",.2f")
-            out.append('<section class="panel"><h2>Displayed estimated pipeline value</h2><p>' +
-                       chr(36) + esc(display_total) + ' (unweighted estimates; not collected revenue)</p></section>')
-        else:
-            out.append('<section class="panel"><p>Estimated total unavailable: a displayed value exceeds the supported range.</p></section>')
-        out.append('<section class="panel"><h2>Opportunity overview</h2><p>' +
-                   esc(len(results)) + ' ranked opportunities displayed. '
-                   'Start with the highest priority and verify the underlying value before acting.</p>' +
-                   '<p>Lead values are estimates, not collected revenue. '
-                   'Review drafts require approval before any outreach.</p></section>')
-    if not results:
-        out.append('<section class="panel"><p>No eligible positive-value leads in the evaluated batch.</p></section>')
-    for item in results:
-        out.append('<section class="panel"><h2>' + esc(item["title"]) +
-                   ' · Priority ' + esc(item["priority_score"]) + '</h2><p>Potential value: $' +
-                   esc(item["estimated_value"]) + ' · Heuristic confidence: ' +
-                   esc(item["confidence"]) + ' · Estimated effort: ' +
-                   esc(item["effort_hours"]) + ' hours</p><p>' +
-                   esc(item["evidence"]) + '</p><p>' + esc(item["explanation"]) + '</p>' +
-                   '<form method="post" action="/revenue-priority/live">' +
-                   '<input type="hidden" name="csrf" value="' + esc(csrf) + '">' +
-                   '<input type="hidden" name="workspace" value="' + esc(workspace_id) + '">' +
-                   '<input type="hidden" name="lead" value="' + esc(item["identifier"]) + '">' +
-                   '<button>Create review draft</button></form></section>')
-    return ''.join(out)
- +
-                       esc(display_total) + ' (unweighted estimates; not collected revenue)</p></section>')
+                total = format(sum(amounts, Decimal(0)), ',.2f')
+            out.append('<section class="panel"><h2>Displayed estimated pipeline value</h2><p>' + chr(36) + esc(total) + ' (unweighted estimates; not collected revenue)</p></section>')
         else:
             out.append('<section class="panel"><p>Estimated total unavailable: a displayed value exceeds the supported range.</p></section>')
         # Count displayed candidates only; never imply full pipeline coverage.
