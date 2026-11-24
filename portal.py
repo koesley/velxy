@@ -20,6 +20,7 @@ import btcpay_mainnet
 import stripe_checkout
 import referrals
 import demo_shares
+import scoreboard
 import demo_leads
 import followups
 import ledger
@@ -964,7 +965,24 @@ def landing_hero_stage_html():
  out+='</div>'
  return out
 
-def landing_page(user=None,csrf=''):
+def landing_scoreboard_html(stats):
+ """Compact live-usage scoreboard for the landing page: real numbers
+ from the site's own event log, via scoreboard.scoreboard_items.
+ Returns '' when there is nothing truthful to show — no stats (the
+ database read failed) or every metric is 0. Zero metrics are never
+ displayed; the section never invents a number."""
+ if not stats:
+  return ''
+ items = scoreboard.scoreboard_items(stats)
+ if not items:
+  return ''
+ cells = ''.join(
+  '<div class="v8-scoreboard-stat"><strong>' + value + '</strong><span>' + label + '</span></div>'
+  for value, label in items)
+ return ('<section class="v8-scoreboard"><div class="v8-sectiontop"><span>LIVE FROM VELXTRIA</span><span>REAL USE, REAL NUMBERS.</span></div><h2>ALREADY PUTTING IN<br><em>THE WORK.</em></h2><div class="v8-scoreboard-stats">' + cells + '</div><p class="v8-scoreboard-note">Live counts from VELXTRIA\u2019s own database — no estimates, updated every few minutes.</p></section>')
+
+
+def landing_page(user=None,csrf='',stats=None):
  return """<div class="v8">
  <div class="v8-orbit v8-orbit-a"></div><div class="v8-orbit v8-orbit-b"></div>
  <section class="v8-hero">
@@ -983,7 +1001,7 @@ def landing_page(user=None,csrf=''):
   <article><div class="v8-stephead"><span>02</span><span>↗</span></div><div class="v8-stepicon">⌁</div><h3>REFINE</h3><p>Separate accepted records from flagged rows and create structured summaries.</p><small>VALIDATE / ORGANIZE</small></article>
   <article><div class="v8-stephead"><span>03</span><span>↗</span></div><div class="v8-stepicon">⇩</div><h3>DEPLOY</h3><p>Download cleaned sales data, rejected rows, and summaries in one ZIP.</p><small>REPORT PACKAGE / ZIP</small></article>
  </div></section>
- """+landing_demo_html()+landing_pricing_html(user,csrf)+landing_sample_html()+"""<section class="v8-bottom"><div><span>04 / YOUR NEXT MOVE</span><h2>LESS MESS.<br><em>MORE MOMENTUM.</em></h2><p>Try the private reporting demo with sample or non-sensitive data. No purchase required.</p></div><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a></section>
+ """+landing_scoreboard_html(stats)+landing_demo_html()+landing_pricing_html(user,csrf)+landing_sample_html()+"""<section class="v8-bottom"><div><span>04 / YOUR NEXT MOVE</span><h2>LESS MESS.<br><em>MORE MOMENTUM.</em></h2><p>Try the private reporting demo with sample or non-sensitive data. No purchase required.</p></div><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a></section>
  <div class="v8-footnote">✦ VELXTRIA <span>BUILT FOR CLEARER WORKFLOWS · PREVIEW EDITION</span> · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/contact">Contact</a></div>
  </div>"""
 
@@ -1006,7 +1024,7 @@ body:has(.v8) header{position:relative;z-index:10;background:#0a0a15;border-bott
 .v8-live{height:7px;width:7px;border-radius:50%;background:#c2a4ff;box-shadow:0 0 14px #c2a4ff}
 .v8 h1{font-size:clamp(3.7rem,6.7vw,7.8rem);line-height:.99;letter-spacing:-.075em;font-weight:900;margin:2.2rem 0;white-space:nowrap}
 .v8 h1 span{color:#aaa1c2}
-.v8 h1 i,.v8-process h2 em,.v8-bottom h2 em,.v8-pricing h2 em,.v8-sample h2 em{font-style:normal;background:linear-gradient(110deg,#a888ff,#d0a7ff 45%,#ffb7f1);color:transparent;background-clip:text;-webkit-background-clip:text}
+.v8 h1 i,.v8-process h2 em,.v8-bottom h2 em,.v8-pricing h2 em,.v8-sample h2 em,.v8-scoreboard h2 em{font-style:normal;background:linear-gradient(110deg,#a888ff,#d0a7ff 45%,#ffb7f1);color:transparent;background-clip:text;-webkit-background-clip:text}
 .v8-copy>p{max-width:560px;color:#bbb6cd;line-height:1.8;font-size:1.05rem}
 .v8-actions{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:2.3rem}
 .v8-primary{display:inline-flex;align-items:center;justify-content:space-between;gap:2rem;padding:1.2rem 1.5rem;background:#c5a7ff;color:#110c1c!important;font-size:.75rem;letter-spacing:.1em;font-weight:900;border:1px solid #d9c5ff;clip-path:polygon(0 0,calc(100% - 15px) 0,100% 15px,100% 100%,0 100%);transition:transform .25s,background .25s}
@@ -1049,7 +1067,7 @@ body:has(.v8) header{position:relative;z-index:10;background:#0a0a15;border-bott
 .v8-ticker span{color:#9c70e5;padding:0 2.5rem}
 .v8-process{max-width:1500px;margin:auto;padding:7rem clamp(1.5rem,5vw,6rem)}
 .v8-sectiontop{display:flex;justify-content:space-between;gap:1rem;border-top:1px solid #443755;padding-top:1rem;font-size:.65rem;letter-spacing:.16em;color:#a991d6;font-weight:800}
-.v8-process h2,.v8-bottom h2,.v8-pricing h2,.v8-sample h2{font-size:clamp(2.5rem,5vw,5.7rem);line-height:1.06;letter-spacing:-.065em;margin:2.4rem 0 3.5rem;font-weight:900}
+.v8-process h2,.v8-bottom h2,.v8-pricing h2,.v8-sample h2,.v8-scoreboard h2{font-size:clamp(2.5rem,5vw,5.7rem);line-height:1.06;letter-spacing:-.065em;margin:2.4rem 0 3.5rem;font-weight:900}
 .v8-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
 .v8-steps article{position:relative;min-height:340px;padding:2rem;background:linear-gradient(145deg,#201b32,#10121d);border:1px solid #423553;transition:transform .3s,border-color .3s,box-shadow .3s}
 .v8-steps article:hover{transform:translateY(-9px);border-color:#ac80ff;box-shadow:0 20px 50px #0007}
@@ -1087,6 +1105,13 @@ body:has(.v8) header{position:relative;z-index:10;background:#0a0a15;border-bott
 .v8-plan .v8-primary{margin-top:1.5rem}
 .v8-buy-note{color:#b1acc3;line-height:1.7;margin-top:1rem;font-size:.9rem}
 .v8-pricing-note{color:#806eaa;font-size:.7rem;letter-spacing:.1em;margin-top:2rem}
+/* Live scoreboard: real usage counts from the site's own event log. */
+.v8-scoreboard{max-width:1500px;margin:auto;padding:7rem clamp(1.5rem,5vw,6rem)}
+.v8-scoreboard-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem}
+.v8-scoreboard-stat{border:1px solid #423553;background:#141226;border-radius:8px;padding:1.5rem 1.2rem}
+.v8-scoreboard-stat strong{display:block;font-size:2.2rem;color:#f5f1ff;letter-spacing:-.03em}
+.v8-scoreboard-stat span{display:block;margin-top:.4rem;color:#b1acc3;font-size:.8rem;letter-spacing:.08em}
+.v8-scoreboard-note{color:#806eaa;font-size:.7rem;letter-spacing:.1em;margin-top:2rem}
 .v8-sample{max-width:1500px;margin:auto;padding:7rem clamp(1.5rem,5vw,6rem)}
 .v8-sample>p{color:#b1acc3;line-height:1.7;max-width:720px}
 .v8-sample-tables{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:2rem}
@@ -1584,10 +1609,12 @@ class Handler(BaseHTTPRequestHandler):
     +'<p class="v8-demo-note">VELXTRIA turns messy sales CSVs into clean monthly and product reports. Free demo, no signup. PRO $49/30 days, Bitcoin or card.</p></section></div>')
    return self.respond(200,shell('Shared demo report',body))
   if p=='/' and not user:
-   with db() as c:site_stats.record(c,'landing_view')
+   with db() as c:
+    site_stats.record(c,'landing_view')
+    stats=scoreboard.get_stats(c)
    ref=referral_code_from_request(self)
    headers=[referral_cookie_header(ref)] if ref else ()
-   return self.respond(200,shell('Sales reporting made simple',landing_page(user,csrf)),headers=headers)
+   return self.respond(200,shell('Sales reporting made simple',landing_page(user,csrf,stats)),headers=headers)
   if not user:return self.redirect('/login')
   if p=='/sales-execution':
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
@@ -3592,7 +3619,7 @@ class Handler(BaseHTTPRequestHandler):
     report=run_report_engine(data)
    except ValueError as exc:return self.demo_fail(str(exc))
    except Exception as exc:return self.demo_fail('Could not process this file: '+str(exc)[:240])
-   return self._demo_response(report,filename,'own=1 accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
+   return self._demo_response(report,filename,'own=1 accepted=%d rejected=%d paid=%d'%(report['accepted'],report['rejected'],scoreboard.paid_cents_from_stats(report['stats'])))
   if p=='/try-sample':
    # One-click sample demo: run the real engine on the built-in sample
    # data — no download, no upload, no account, no file to find. The
@@ -3603,7 +3630,7 @@ class Handler(BaseHTTPRequestHandler):
    try:
     report=run_report_engine(SAMPLE_SALES_CSV.encode('utf-8'))
    except Exception as exc:return self.demo_fail('Could not run the sample demo: '+str(exc)[:240])
-   return self._demo_response(report,'VELXTRIA_Sample_Sales.csv','sample=1 accepted=%d rejected=%d'%(report['accepted'],report['rejected']),is_sample=True)
+   return self._demo_response(report,'VELXTRIA_Sample_Sales.csv','sample=1 accepted=%d rejected=%d paid=%d'%(report['accepted'],report['rejected'],scoreboard.paid_cents_from_stats(report['stats'])),is_sample=True)
   if p=='/demo/email':
    # Anonymous demo lead capture: email the demo report to the runner.
    # No account, no session, no CSRF token — like /try, the request
@@ -4230,7 +4257,7 @@ class Handler(BaseHTTPRequestHandler):
     store_verified_report(user['id'],ident,report['zip_bytes'])
     with db() as c:
      c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],'ledger-'+datetime.now(timezone.utc).strftime('%Y-%m-%d')+'.csv',now(),'ready',report['accepted'],report['rejected'],digest))
-     site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
+     site_stats.record(c,'report_generated','accepted=%d rejected=%d paid=%d'%(report['accepted'],report['rejected'],scoreboard.paid_cents_from_stats(report['stats'])))
      complete_report_write(c,ident,user['id'])
    except ValueError as e:
     abandon_report_write(user['id'],ident)
@@ -4264,7 +4291,7 @@ class Handler(BaseHTTPRequestHandler):
     store_verified_report(user['id'],ident,report['zip_bytes'])
     with db() as c:
      c.execute('INSERT INTO reports(id,user_id,filename,created,status,accepted,rejected,digest) VALUES (?,?,?,?,?,?,?,?)',(ident,user['id'],Path(filename).name[:120],now(),'ready',report['accepted'],report['rejected'],digest))
-     site_stats.record(c,'report_generated','accepted=%d rejected=%d'%(report['accepted'],report['rejected']))
+     site_stats.record(c,'report_generated','accepted=%d rejected=%d paid=%d'%(report['accepted'],report['rejected'],scoreboard.paid_cents_from_stats(report['stats'])))
      complete_report_write(c,ident,user['id'])
      if fields.get('email_report')=='yes':
       c.execute('INSERT INTO deliveries(report_id,user_id,recipient,status,next_attempt) VALUES (?,?,?,?,?)',(ident,user['id'],user['email'],'queued' if DELIVERY_ENABLED else 'not_configured',now()))
