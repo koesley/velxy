@@ -117,6 +117,19 @@ def stats_html(totals, daily, recent):
                         '</td><td>' + conv + '</td></tr>')
         prev = count
     recent_counts = {event: sum(counts.get(event, 0) for _, counts in daily) for event in FUNNEL}
+    # Compare meaningful commercial milestones, without treating optional email as mandatory.
+    milestones = (
+        ('landing_view', 'demo_run', 'Demo runs / landing views'),
+        ('demo_run', 'signup', 'Signups / demo runs'),
+        ('signup', 'checkout_started', 'Checkout starts / signups'),
+        ('checkout_started', 'pro_activated', 'PRO activations / checkout starts'),
+    )
+    ratio_rows = ''
+    for source, target, label in milestones:
+        denominator = recent_counts[source]
+        numerator = recent_counts[target]
+        ratio = '%.1f%%' % (100.0 * numerator / denominator) if denominator else 'Unavailable'
+        ratio_rows += '<tr><td>' + label + '</td><td>' + str(numerator) + ' / ' + str(denominator) + '</td><td>' + ratio + '</td></tr>'
     recent_summary = ''.join('<li>' + LABELS[event] + ': ' + str(recent_counts[event]) + '</li>' for event in FUNNEL)
     counts = {event: sum(row.get(event, 0) for _, row in daily) for event in FUNNEL}
     if not counts['landing_view']:
@@ -160,6 +173,8 @@ def stats_html(totals, daily, recent):
             '<th>Step</th><th>Count</th><th>Event count ratio</th></tr></thead><tbody>' +
             funnel_rows + '</tbody></table></section>'
             '<section class="panel"><h2>Recent commercial activity</h2><p>Counts in the displayed recent window; not distinct customers or verified revenue.</p><ul>' + recent_summary + '</ul></section>'
+            '<section class="panel"><h2>Recent commercial milestone ratios</h2><p>Aggregate activity ratios, not customer conversion rates. Repeat activity can exceed 100%; zero denominators are unavailable. Email delivery is optional.</p><table><thead><tr><th>Milestone</th><th>Event counts</th><th>Ratio</th></tr></thead><tbody>' +
+            ratio_rows + '</tbody></table></section>'
             '<section class="panel"><h2>Commercial diagnostic</h2><p>' + guidance +
             '</p><p>Based on recent aggregate events, not linked customer journeys. Missing telemetry may explain zero counts.</p></section>'
             '<section class="panel"><h2>Commercial verification checklist</h2><p>Suggested checks for stages with no recorded recent activity; not confirmed failures.</p><ul>' +
