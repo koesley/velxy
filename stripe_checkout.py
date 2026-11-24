@@ -194,7 +194,7 @@ def verify_session(session, order_id, session_id=None):
     """
     if not isinstance(session, dict):
         return False, 'session payload is not an object'
-    if session.get('id') is None:
+    if not isinstance(session.get('id'), str) or not session['id'].strip():
         return False, 'session has no id'
     if session_id is not None and session.get('id') != session_id:
         return False, 'session id does not match'
@@ -205,12 +205,14 @@ def verify_session(session, order_id, session_id=None):
         return False, 'session order does not match'
     if session.get('payment_status') != 'paid':
         return False, 'session not paid'
-    if session.get('amount_total') != PRICE_CENTS:
+    if type(session.get('amount_total')) is not int or session['amount_total'] != PRICE_CENTS:
         return False, 'session amount does not match'
     if session.get('currency') != 'usd':
         return False, 'session currency is not usd'
     # A test-mode session must never grant PRO in production; only an
     # explicit opt-in (tests) allows it.
+    if type(session.get('livemode')) is not bool:
+        return False, 'session livemode is missing or invalid'
     if session.get('livemode') is False and os.getenv('VELXTRIA_STRIPE_ALLOW_TEST_ACTIVATION', '0') != '1':
         return False, 'test mode session cannot activate PRO'
     return True, ''
@@ -299,8 +301,8 @@ def verify_webhook_signature(raw_body, signature_header):
     `Stripe-Signature: t=<unix timestamp>,v1=<hex>`.
 
     Fails closed: no secret configured, no header, a missing or
-    non-integer timestamp, a missing v1, a mismatch, or a timestamp older
-    than 300 seconds (replay window) all return False. The secret itself
+    non-integer timestamp, a missing v1, a mismatch, or a timestamp more than
+    300 seconds from the current time (replay window) all return False. The secret itself
     is never logged.
     """
     secret = _env('VELXTRIA_STRIPE_WEBHOOK_SECRET')
@@ -320,11 +322,11 @@ def verify_webhook_signature(raw_body, signature_header):
         timestamp = int(timestamps[0])
     except (TypeError, ValueError):
         return False
-    if int(time.time()) - timestamp > 300:
+    if abs(int(time.time()) - timestamp) > 300:
         return False
     signed_payload = ('%d.' % timestamp).encode('utf-8') + raw_body
     expected = hmac.new(secret.encode('utf-8'), signed_payload, hashlib.sha256).hexdigest()
-    return any(hmac.compare_digest(expected, sig) for sig in signatures)
+    return any(len(sig) == 64 and sig.isascii() and hmac.compare_digest(expected, sig) for sig in signatures)
 
 
 def handle_webhook(conn, raw_body, signature_header):
