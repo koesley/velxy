@@ -265,7 +265,7 @@ def _claim_and_activate(conn, user_id, order_id, session_id):
     return True
 
 
-def reconcile(conn, user_id, req=None):
+def reconcile(conn, user_id, req=None, *, retry_unavailable=False):
     """Re-verify every pending Stripe order for a user against Stripe.
 
     Only the authenticated order owner can cause a verified payment to
@@ -279,6 +279,8 @@ def reconcile(conn, user_id, req=None):
             session = fetch('GET', '/checkout/sessions/' + urllib.parse.quote(session_id, safe=''))
         except (RuntimeError, OSError):
             log_event('reconcile_unavailable', order_id=order_id, session_id=session_id, user_id=user_id)
+            if retry_unavailable:
+                raise RuntimeError('Stripe verification unavailable')
             continue
         ok, reason = verify_session(session, order_id, session_id)
         status = session.get('status') if isinstance(session, dict) else None
@@ -370,7 +372,7 @@ def handle_webhook(conn, raw_body, signature_header):
         return 200, 'Ignored: event type'
     order_id, user_id = row
     try:
-        reconcile(conn, user_id)
+        reconcile(conn, user_id, retry_unavailable=True)
     except (RuntimeError, OSError):
         # Do not record the fingerprint: a later redelivery must retry.
         log_event('webhook_reconcile_unavailable', order_id=order_id, session_id=session_id)
