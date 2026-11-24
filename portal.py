@@ -24,6 +24,7 @@ import scoreboard
 import demo_leads
 import followups
 import ledger
+import money_report
 import charts
 import trust_pages
 import notifications
@@ -876,6 +877,45 @@ def ledger_panel_html(user, csrf):
   '<button>Generate a report from my ledger</button></form> '
   '<a href="/ledger.csv">Download my sales as CSV</a></p>'
   '<p class="v8-demo-note">A ledger report counts as your free report, the same as uploading a CSV.</p></section>')
+
+
+def money_report_html(report):
+ """The weekly money report panel on the dashboard: what the business
+ made this week, what to push, who went quiet — all from their own
+ ledger and reports, via money_report.weekly_report. With no data it
+ says so plainly instead of showing zeros."""
+ if not report['has_data']:
+  return ('<section class="panel"><h2>Your money report</h2><p>'
+   + escape(report['top_move']) + '</p></section>')
+ body = ('<section class="panel"><h2>Your money report — '
+  + escape(report['week_label']) + '</h2><p><strong>'
+  + escape(report['top_move']) + '</strong></p><div class="stats">'
+  '<div><b>' + money_report.fmt_money(report['revenue_this_week'])
+  + '</b><small>Paid revenue this week</small></div><div><b>'
+  + str(report['orders_this_week'])
+  + '</b><small>Paid orders this week</small></div><div><b>'
+  + money_report.fmt_money(report['revenue_last_week'])
+  + '</b><small>Paid revenue last week</small></div></div>')
+ if report['top_products']:
+  items = ''.join(
+   '<li>' + escape(p) + ': ' + money_report.fmt_money(r)
+   + ' (' + str(o) + ' orders)</li>'
+   for p, o, r in report['top_products'])
+  body += '<h3>Top products this week</h3><ul>' + items + '</ul>'
+ if report['quiet_customers']:
+  items = ''.join(
+   '<li>' + escape(n) + ': last order ' + escape(last)
+   + ' (' + str(d) + ' days ago), worth '
+   + money_report.fmt_money(v) + ' all time</li>'
+   for n, d, v, last in report['quiet_customers'])
+  body += '<h3>Customers gone quiet (90+ days)</h3><ul>' + items + '</ul>'
+ if report['latest_report']:
+  accepted, rejected = report['latest_report']
+  body += ('<p>Latest report: ' + str(accepted) + ' accepted, '
+   + str(rejected) + ' flagged.</p>')
+ body += ('<p class="v8-demo-note">From your own sales ledger and '
+  'reports — a weekly copy also lands in your inbox.</p></section>')
+ return body
 
 
 def report_view_html(row,monthly_rows,product_rows,stats,rejected_rows=None,cleaned_rows=None,upgrade_html=''):
@@ -1929,13 +1969,18 @@ class Handler(BaseHTTPRequestHandler):
     pending_stripe=stripe_checkout.pending_order(c,user['id'])
     ref_code=referrals.code_for(c,user['id'])
     ref_stats=referrals.stats(c,user['id'])
+    money=money_report.weekly_report(c,user['id'])
    rows=''.join('<tr><td>'+escape(r[1])+'</td><td>'+escape(datetime.fromtimestamp(r[2],timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))+'</td><td>'+escape(r[3])+'</td><td>'+str(r[4])+' / '+str(r[5])+'</td><td><a href="/report?id='+escape(r[0])+'">View</a> · <a href="/download?id='+escape(r[0])+'">Download ZIP</a></td><td>'+escape(r[6])+'</td></tr>' for r in reports)
    access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 1 free report · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
    limit_label='50 reports per verified billing cycle' if ent['plan']=='pro' else '1 free report'
    upgrade_html=pro_upgrade_html(user,csrf,pending_mainnet,pending_stripe) if ent['plan']!='pro' else ''
    ledger_html=ledger_panel_html(user,csrf)
-   body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section>{ledger_html}<section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
+   money_html=money_report_html(money)
+   try:
+    with db() as c:followups.queue_weekly_money_report(c,user['id'],user['email'],btcpay_mainnet.site_url())
+   except Exception:pass
+   body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section>{ledger_html}{money_html}<section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
    if os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE: body+='<section class="panel"><h2>Site Studio</h2><a href="/site-studio">Create a company website draft</a></section>'
    body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
    body+=upgrade_html

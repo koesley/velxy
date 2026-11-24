@@ -37,7 +37,8 @@ RENEWAL_REMINDER_DAYS = 3
 # the only kinds an unsubscribe stops: every other kind is
 # transactional (a password reset, a PRO confirmation, a renewal
 # reminder, a demo report the runner asked for) and always sends.
-MARKETING_KINDS = frozenset({'welcome', 'demo_followup', 'pro_upsell'})
+MARKETING_KINDS = frozenset({'welcome', 'demo_followup', 'pro_upsell',
+                               'money_report'})
 
 
 def setup(conn):

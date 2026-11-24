@@ -29,6 +29,11 @@ Sequences:
   leaves behind sat unused and the free report never got touched.
   Day 0 welcomes them (naming the seeded ledger when the signup came
   from an own-CSV demo), day 1 nudges the ledger, day 3 points at PRO.
+- Weekly money report (per user, once per week): the proof piece for
+  the growth agent — what the business made this week, what to push,
+  who went quiet. Computed from their own ledger and reports only;
+  never queued when there is no data to report, and never claims
+  agent activity, because the agent does not exist yet.
 
 All three sequences record a 'followup_queued' site event so the funnel on
 /founder-stats shows the engine working.
@@ -154,6 +159,38 @@ def queue_pro_upsell(conn, user_id, email, site_url, now=None):
     if queued:
         site_stats.record(conn, 'followup_queued', 'pro:%d' % user_id)
     return queued
+
+
+def queue_weekly_money_report(conn, user_id, email, site_url, now=None):
+    """Queue this week's money report for one user, once per week.
+
+    Returns 1 when newly queued, 0 when already queued this week or
+    when the user has no ledger entries and no reports — an empty
+    report is not emailed; the dashboard shows the empty state
+    instead. The body is computed from the user's own ledger and
+    reports at queue time, so the numbers are a snapshot of this week.
+    """
+    import money_report
+    import notifications
+    import email_unsubscribe
+    import site_stats
+    now = int(time.time()) if now is None else now
+    report = money_report.weekly_report(conn, user_id, now=now)
+    if not report['has_data']:
+        return 0
+    body = money_report.report_email_body(report, site_url)
+    token = email_unsubscribe.get_or_create_token(conn, email)
+    body = email_unsubscribe.append_footer(body, email, site_url, token)
+    if notifications.queue(
+            conn, email, money_report.report_email_subject(report), body,
+            'money_report',
+            dedupe_key='money-report:%s:%d'
+            % (report['week_start'], user_id),
+            send_at=now):
+        site_stats.record(conn, 'followup_queued',
+                          'money-report:%d' % user_id)
+        return 1
+    return 0
 
 
 def queue_welcome(conn, user_id, email, site_url, seeded=False, now=None):
