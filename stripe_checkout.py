@@ -357,8 +357,10 @@ def handle_webhook(conn, raw_body, signature_header):
     if not isinstance(session, dict):
         session = {}
     session_id = session.get('id')
-    if not session_id:
+    if not isinstance(session_id, str) or not session_id.strip():
         return 200, 'Ignored: no session'
+    if not isinstance(event_type, str) or event_type not in WEBHOOK_EVENTS:
+        return 200, 'Ignored: event type'
     fingerprint = hashlib.sha256(raw_body).hexdigest()
     seen = conn.execute('SELECT fingerprint FROM stripe_webhook_events WHERE fingerprint=?', (fingerprint,)).fetchone()
     if seen:
@@ -368,8 +370,6 @@ def handle_webhook(conn, raw_body, signature_header):
     if not row:
         log_event('webhook_unknown_session', session_id=session_id, event_type=event_type)
         return 200, 'Ignored: unknown session'
-    if event_type not in WEBHOOK_EVENTS:
-        return 200, 'Ignored: event type'
     order_id, user_id = row
     try:
         reconcile(conn, user_id, retry_unavailable=True)
