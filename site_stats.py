@@ -131,6 +131,16 @@ def stats_html(totals, daily, recent):
         guidance = 'Inspect payment verification and activation; no PRO activations were recorded.'
     else:
         guidance = 'Review verified payments and customer feedback before changing the offer.'
+    actions = (
+        ('landing_view', 'Verify public accessibility and test a targeted acquisition channel.'),
+        ('demo_run', 'Test the demo from a new browser session.'),
+        ('signup', 'Test registration and inspect the demo signup invitation.'),
+        ('report_generated', 'Test first-report onboarding with an authorized test account.'),
+        ('checkout_started', 'Verify the paid offer and available checkout methods.'),
+        ('pro_activated', 'Reconcile verified settlements against granted access.'),
+    )
+    missing = [(event, action) for event, action in actions if not counts.get(event, 0)]
+    action_rows = ''.join('<li>' + action + '</li>' for _, action in missing)
     totals_rows = ''.join(
         '<tr><td>' + LABELS[e] + '</td><td>' + str(totals.get(e, 0)) + '</td></tr>'
         for e in EVENTS)
@@ -152,6 +162,8 @@ def stats_html(totals, daily, recent):
             '<section class="panel"><h2>Recent commercial activity</h2><p>Counts in the displayed recent window; not distinct customers or verified revenue.</p><ul>' + recent_summary + '</ul></section>'
             '<section class="panel"><h2>Commercial diagnostic</h2><p>' + guidance +
             '</p><p>Based on recent aggregate events, not linked customer journeys. Missing telemetry may explain zero counts.</p></section>'
+            '<section class="panel"><h2>Commercial verification checklist</h2><p>Suggested checks for stages with no recorded recent activity; not confirmed failures.</p><ul>' +
+            (action_rows or '<li>Review verified revenue and customer feedback.</li>') + '</ul></section>'
             '<section class="panel"><h2>Totals</h2><table><thead><tr>'
             '<th>Event</th><th>All time</th></tr></thead><tbody>' +
             totals_rows + '</tbody></table></section>'
