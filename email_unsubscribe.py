@@ -96,7 +96,7 @@ def record_unsubscribe(conn, email, token):
     stored token is never logged or returned."""
     setup(conn)
     email = _norm(email)
-    if not email or not token:
+    if not email or not isinstance(token, str) or not token or not token.isascii():
         return False
     row = conn.execute(
         'SELECT token FROM email_unsubscribes WHERE email=?',
