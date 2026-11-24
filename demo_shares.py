@@ -63,6 +63,7 @@ def scorecard(report):
             paid = line.split(':', 1)[-1].strip()
             break
     return {'clean_pct': round(100 * accepted / source) if source else 0,
+            'has_data': source > 0,
             'problems': rejected,
             'top_issues': [[issue, n] for issue, n in top],
             'paid': paid}
@@ -85,6 +86,7 @@ def _scorecard_from_stored(accepted, rejected, top_issues_json, stats):
             break
     source = accepted + rejected
     return {'clean_pct': round(100 * accepted / source) if source else 0,
+            'has_data': source > 0,
             'problems': rejected,
             'top_issues': top,
             'paid': paid}
