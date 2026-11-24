@@ -299,8 +299,8 @@ def verify_webhook_signature(raw_body, signature_header):
     `Stripe-Signature: t=<unix timestamp>,v1=<hex>`.
 
     Fails closed: no secret configured, no header, a missing or
-    non-integer timestamp, a missing v1, a mismatch, or a timestamp older
-    than 300 seconds (replay window) all return False. The secret itself
+    non-integer timestamp, a missing v1, a mismatch, or a timestamp more than
+    300 seconds from the current time (replay window) all return False. The secret itself
     is never logged.
     """
     secret = _env('VELXTRIA_STRIPE_WEBHOOK_SECRET')
@@ -320,11 +320,12 @@ def verify_webhook_signature(raw_body, signature_header):
         timestamp = int(timestamps[0])
     except (TypeError, ValueError):
         return False
-    if int(time.time()) - timestamp > 300:
+    if abs(int(time.time()) - timestamp) > 300:
         return False
     signed_payload = ('%d.' % timestamp).encode('utf-8') + raw_body
     expected = hmac.new(secret.encode('utf-8'), signed_payload, hashlib.sha256).hexdigest()
-    return any(hmac.compare_digest(expected, sig) for sig in signatures)
+    return any(len(sig) == 64 and sig.isascii()
+               and hmac.compare_digest(expected, sig) for sig in signatures)
 
 
 def handle_webhook(conn, raw_body, signature_header):
