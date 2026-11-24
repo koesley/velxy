@@ -180,8 +180,10 @@ def queue_weekly_money_report(conn, user_id, email, site_url, now=None):
     if not report['has_data']:
         return 0
     draft_list = winback.drafts(conn, user_id, now=now)
+    stats = winback.recovery(conn, user_id, now=now)
     body = money_report.report_email_body(
-        report, site_url, winback_draft=draft_list[0] if draft_list else None)
+        report, site_url, winback_draft=draft_list[0] if draft_list else None,
+        winback_stats=stats)
     token = email_unsubscribe.get_or_create_token(conn, email)
     body = email_unsubscribe.append_footer(body, email, site_url, token)
     if notifications.queue(

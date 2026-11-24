@@ -176,11 +176,14 @@ def report_email_subject(report):
     return 'Your VELXTRIA money report'
 
 
-def report_email_body(report, site_url, winback_draft=None):
+def report_email_body(report, site_url, winback_draft=None,
+                      winback_stats=None):
     """Plain-text body. Every line is a number from the report dict.
     winback_draft, when given, is one draft dict from winback.drafts
     — the top one — included so the owner can act on the report
-    straight from their inbox."""
+    straight from their inbox. winback_stats, when given, is
+    winback.recovery's (sent, recovered, revenue) tuple, shown only
+    once a win-back has actually been sent."""
     lines = ['Your money report — %s' % report['week_label'], '',
              'TOP MOVE', report['top_move'], '',
              'THIS WEEK',
@@ -210,6 +213,11 @@ def report_email_body(report, site_url, winback_draft=None):
         lines += ['', 'WIN-BACK DRAFT — send this to %s:'
                   % winback_draft['customer'],
                   winback_draft['text']]
+    if winback_stats and winback_stats[0]:
+        sent, recovered, revenue = winback_stats
+        lines += ['', 'WIN-BACK RESULTS',
+                  'Sent: %d · Customers back: %d · Recovered: %s'
+                  % (sent, recovered, fmt_money(revenue))]
     lines += ['', 'See the full report on your dashboard: %s/'
               % site_url.rstrip('/'),
               '', '— VELXTRIA']
