@@ -85,6 +85,11 @@ def render(c, uid, workspace_id, csrf=''):
     if not results:
         out.append('<section class="panel"><p>No eligible positive-value leads in the evaluated batch.</p></section>')
     for item in results:
+        next_step = ("Review prior replies and resolve outstanding questions."
+                     if item["title"] == "Review contacted lead" else
+                     "Confirm the customer's need and permission before preparing outreach.")
+        out.append('<section class="panel"><p><strong>Suggested next step:</strong> ' +
+                   esc(next_step) + '</p></section>')
         out.append('<section class="panel"><h2>' + esc(item["title"]) +
                    ' · Priority ' + esc(item["priority_score"]) + '</h2><p>Potential value: $' +
                    esc(item["estimated_value"]) + ' · Heuristic confidence: ' +
