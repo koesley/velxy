@@ -3571,6 +3571,7 @@ class Handler(BaseHTTPRequestHandler):
    email=fields.get('email','').strip().lower();password=fields.get('password','')
    if not valid_email(email) or len(password)<12 or len(password)>256:return self.fail(400,'Use a valid email and password of 12–256 characters.')
    salt=secrets.token_hex(16)
+   token=secrets.token_urlsafe(32);csrf=secrets.token_hex(16)
    try:
     with db() as c:
      c.execute('INSERT INTO users(email,salt,pw_hash,role,access,created) VALUES (?,?,?,?,?,?)',(email,salt,pw_hash(password,salt),'customer','demo',now()))
@@ -3589,14 +3590,13 @@ class Handler(BaseHTTPRequestHandler):
       followups.queue_welcome(c, uid, email, btcpay_mainnet.site_url(), seeded=False)
      except Exception:
       pass
+     c.execute('INSERT INTO sessions VALUES (?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),uid,now()+86400,csrf))
    except (sqlite3.IntegrityError, persistent_integrity_error()):return self.fail(409,'Account already exists.')
    nxt=safe_next(fields.get('next',''))
    # Sign the new account in immediately, like /demo/signup does: the
    # old flow sent the user to /login?registered=1 and made them sign
    # in a second time, an extra step right at the moment they decided
    # to join. The dashboard is the destination for a signed-in user.
-   token=secrets.token_urlsafe(32);csrf=secrets.token_hex(16)
-   with db() as c:c.execute('INSERT INTO sessions VALUES (?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),uid,now()+86400,csrf))
    secure='; Secure' if os.getenv('VELXTRIA_DEPLOYMENT_MODE') == 'render-preview' else ''
    return self.redirect(nxt,[('Set-Cookie','velxtria_session='+token+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400'+secure)])
   if p=='/login':

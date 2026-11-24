@@ -56,8 +56,9 @@ def get_or_create_token(conn, email):
         return row[0]
     token = secrets.token_urlsafe(24)
     conn.execute(
-        'INSERT OR IGNORE INTO email_unsubscribes'
-        ' (email, token, unsubscribed, created) VALUES (?,?,0,?)',
+        'INSERT INTO email_unsubscribes'
+        ' (email, token, unsubscribed, created) VALUES (?,?,0,?)'
+        ' ON CONFLICT(email) DO NOTHING',
         (email, token, int(time.time())))
     row = conn.execute(
         'SELECT token FROM email_unsubscribes WHERE email=?',
