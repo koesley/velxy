@@ -920,9 +920,10 @@ def money_report_html(report, winback_stats=None):
    + str(rejected) + ' flagged.</p>')
  if winback_stats and winback_stats[0]:
   sent, recovered, revenue = winback_stats
-  body += ('<p>Win-backs sent: ' + str(sent) + ' · Customers back: '
+  body += ('<p>Customers marked contacted: ' + str(sent) + ' · Customers with later paid orders: '
    + str(recovered) + ' · ' + money_report.fmt_money(revenue)
-   + ' recovered.</p>')
+   + ' in subsequent paid orders. These purchases followed recorded outreach; '
+   + 'the ledger does not establish that outreach caused them.</p>')
  body += ('<p class="v8-demo-note">From your own sales ledger and '
   'reports — a weekly copy also lands in your inbox.</p></section>')
  return body
