@@ -51,9 +51,26 @@ def rank_opportunities(items: Iterable[RevenueOpportunity]) -> list[dict]:
             raise ValueError("confidence and urgency must be between 0 and 1")
         if item.effort_hours < 0:
             raise ValueError("effort_hours must be nonnegative")
-        weighted_value = value * Decimal(str(item.confidence))
-        # Diminishing returns prevent very large estimates from dominating.
-        value_signal = math.log1p(float(min(weighted_value, Decimal("1000000000"))))
+        # Bound the value signal before multiplication can overflow Decimal.
+        # Convert confidence only after validating its finite range above.
+        from decimal import localcontext
+        cap = Decimal("1000000000")
+        confidence = Decimal(str(item.confidence))
+        with localcontext() as ctx:
+            ctx.prec = 40
+            ctx.Emax = 999999
+            ctx.Emin = -999999
+            if confidence == 0 or value == 0:
+                weighted_value = Decimal(0)
+            elif value.adjusted() > 350:
+                # A positive finite float confidence is at least ~5e-324.
+                # Values above this exponent therefore saturate the cap.
+                weighted_value = cap
+            elif value.adjusted() < -350:
+                weighted_value = Decimal(0)
+            else:
+                weighted_value = min(value * confidence, cap)
+        value_signal = math.log1p(float(weighted_value))
         score = round((value_signal * (0.5 + item.urgency)) / (1 + math.sqrt(item.effort_hours)), 4)
         ranked.append({
             "identifier": item.identifier,
