@@ -50,6 +50,46 @@ def _week_label(monday):
         sunday.strftime('%b'), sunday.day, monday.year)
 
 
+def quiet_customers(conn, user_id, now=None):
+    """Customers with no paid order in QUIET_DAYS, richest first.
+
+    Returns dicts with customer, days_quiet, lifetime (Decimal),
+    last_date (ISO) and last_product (the product of their most recent
+    paid order). The win-back drafts and the money report both read
+    from here, so the quiet rule lives in exactly one place.
+    """
+    _monday, _last_monday, today = week_bounds(now)
+    quiet_before = (today - timedelta(days=QUIET_DAYS)).isoformat()
+    rows = conn.execute(
+        'SELECT order_date,customer,product,quantity,unit_price'
+        ' FROM ledger_entries WHERE user_id=? AND status=?'
+        ' ORDER BY order_date ASC',
+        (user_id, 'Paid')).fetchall()
+    by_customer = {}
+    for order_date, customer, product, quantity, unit_price in rows:
+        day = str(order_date)[:10]
+        amount = Decimal(str(quantity)) * Decimal(str(unit_price))
+        cust = by_customer.setdefault(
+            customer, {'lifetime': Decimal('0'), 'last': '',
+                       'last_product': ''})
+        cust['lifetime'] += amount
+        if day >= cust['last']:
+            cust['last'] = day
+            cust['last_product'] = product
+    found = []
+    for customer, v in by_customer.items():
+        if v['last'] and v['last'] < quiet_before:
+            found.append({
+                'customer': customer,
+                'days_quiet': (today - datetime.strptime(
+                    v['last'], '%Y-%m-%d').date()).days,
+                'lifetime': v['lifetime'],
+                'last_date': v['last'],
+                'last_product': v['last_product']})
+    found.sort(key=lambda item: (-item['lifetime'], item['customer']))
+    return found[:TOP_QUIET]
+
+
 def weekly_report(conn, user_id, now=None):
     """The business's money report for the current week.
 
@@ -64,7 +104,6 @@ def weekly_report(conn, user_id, now=None):
     monday, last_monday, today = week_bounds(now)
     monday_s = monday.isoformat()
     last_monday_s = last_monday.isoformat()
-    quiet_before = (today - timedelta(days=QUIET_DAYS)).isoformat()
     rows = conn.execute(
         'SELECT order_date,customer,product,quantity,unit_price'
         ' FROM ledger_entries WHERE user_id=? AND status=?',
@@ -80,15 +119,9 @@ def weekly_report(conn, user_id, now=None):
     revenue_last = Decimal('0')
     orders_last = 0
     by_product = {}
-    by_customer = {}
     for order_date, customer, product, quantity, unit_price in rows:
         day = str(order_date)[:10]
         amount = Decimal(str(quantity)) * Decimal(str(unit_price))
-        cust = by_customer.setdefault(
-            customer, {'lifetime': Decimal('0'), 'last': ''})
-        cust['lifetime'] += amount
-        if day > cust['last']:
-            cust['last'] = day
         if day >= monday_s:
             revenue_this += amount
             orders_this += 1
@@ -102,11 +135,8 @@ def weekly_report(conn, user_id, now=None):
     top_products = sorted(
         ((p, v['orders'], v['revenue']) for p, v in by_product.items()),
         key=lambda item: (-item[2], item[0]))[:TOP_PRODUCTS]
-    quiet = sorted(
-        ((c, (today - datetime.strptime(v['last'], '%Y-%m-%d').date()).days,
-          v['lifetime'], v['last'])
-         for c, v in by_customer.items() if v['last'] < quiet_before),
-        key=lambda item: (-item[2], item[0]))[:TOP_QUIET]
+    quiet = [(q['customer'], q['days_quiet'], q['lifetime'], q['last_date'])
+             for q in quiet_customers(conn, user_id, now=now)]
     if quiet and quiet[0][2] >= WINBACK_MIN:
         name, days, lifetime, _last = quiet[0]
         top_move = ('Win back %s — no order in %d days, worth %s all time.'
@@ -146,8 +176,11 @@ def report_email_subject(report):
     return 'Your VELXTRIA money report'
 
 
-def report_email_body(report, site_url):
-    """Plain-text body. Every line is a number from the report dict."""
+def report_email_body(report, site_url, winback_draft=None):
+    """Plain-text body. Every line is a number from the report dict.
+    winback_draft, when given, is one draft dict from winback.drafts
+    — the top one — included so the owner can act on the report
+    straight from their inbox."""
     lines = ['Your money report — %s' % report['week_label'], '',
              'TOP MOVE', report['top_move'], '',
              'THIS WEEK',
@@ -160,8 +193,9 @@ def report_email_body(report, site_url):
     if report['top_products']:
         lines += ['', 'TOP PRODUCTS THIS WEEK']
         for product, orders, revenue in report['top_products']:
-            lines.append('- %s: %s (%d orders)'
-                         % (product, fmt_money(revenue), orders))
+            lines.append('- %s: %s (%d order%s)'
+                         % (product, fmt_money(revenue), orders,
+                            's' if orders != 1 else ''))
     if report['quiet_customers']:
         lines += ['', 'CUSTOMERS GONE QUIET (90+ days)']
         for name, days, lifetime, last in report['quiet_customers']:
@@ -172,6 +206,10 @@ def report_email_body(report, site_url):
         lines += ['', 'YOUR DATA',
                   'Latest report: %d accepted, %d flagged.'
                   % (accepted, rejected)]
+    if winback_draft:
+        lines += ['', 'WIN-BACK DRAFT — send this to %s:'
+                  % winback_draft['customer'],
+                  winback_draft['text']]
     lines += ['', 'See the full report on your dashboard: %s/'
               % site_url.rstrip('/'),
               '', '— VELXTRIA']

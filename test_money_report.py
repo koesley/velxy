@@ -246,7 +246,7 @@ class MoneyReportTests(unittest.TestCase):
             report, 'https://example.test')
         self.assertIn('$480.00', body)
         self.assertIn('$180.00', body)
-        self.assertIn('Deep Cleaning: $360.00', body)
+        self.assertIn('Deep Cleaning: $360.00 (1 order)', body)
         self.assertIn('Mrs. Johnson', body)
         self.assertIn('https://example.test/', body)
         # The agent does not exist yet: the report never claims it sent
