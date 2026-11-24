@@ -17,7 +17,7 @@ EVENTS = ('landing_view', 'about_view', 'demo_run', 'demo_email_sent',
           'pro_activated')
 
 # The funnel, in order: each step's conversion is measured against the
-# one before it on the stats page.
+# one before it on the stats page (event ratios, not cohort conversion).
 FUNNEL = ('landing_view', 'demo_run', 'demo_email_sent', 'signup',
           'report_generated', 'checkout_started', 'pro_activated')
 
@@ -131,8 +131,8 @@ def stats_html(totals, daily, recent):
         '</td><td>' + html.escape(str(r[2] or ''), quote=True) + '</td></tr>'
         for r in recent)
     return ('<section class="panel"><h2>Funnel</h2><p>All-time counts; '
-            'conversion is against the previous step.</p><table><thead><tr>'
-            '<th>Step</th><th>Count</th><th>Conversion</th></tr></thead><tbody>' +
+            'ratios compare event counts with the previous step, not unique customer conversions. Repeat activity and independent journeys can produce ratios above 100%.</p><table><thead><tr>'
+            '<th>Step</th><th>Count</th><th>Event count ratio</th></tr></thead><tbody>' +
             funnel_rows + '</tbody></table></section>'
             '<section class="panel"><h2>Totals</h2><table><thead><tr>'
             '<th>Event</th><th>All time</th></tr></thead><tbody>' +
