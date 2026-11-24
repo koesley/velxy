@@ -807,17 +807,17 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
   email_form=''
  else:
   if is_sample:
-   keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Get the cleaned file — create your free account<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Get my cleaned file</button></form>'
+   keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Get the cleaned file — create your free account<input name="email" type="email" autocomplete="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" autocomplete="new-password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Get my cleaned file</button></form>'
          '<p class="v8-demo-note">One step: creates your free account and unlocks the full list of what\'s wrong, your cleaned CSV, and the ZIP. No card, no purchase. This preview is temporary — a free account keeps the full report.</p>')
   else:
-   keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Get YOUR cleaned file — create your free account<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Get my cleaned file</button></form>'
+   keep=('<form method="post" action="/demo/signup"><input type="hidden" name="token" value="'+escape(token)+'"><label>Get YOUR cleaned file — create your free account<input name="email" type="email" autocomplete="email" required placeholder="you@yourbusiness.com"></label><label>Choose a password<input name="password" type="password" autocomplete="new-password" required minlength="12" placeholder="12+ characters"></label><button class="v8-primary" type="submit">Get my cleaned file</button></form>'
          '<p class="v8-demo-note">One step: creates your free account and unlocks the full list of what\'s wrong with YOUR data, your cleaned CSV, and the ZIP. Your sales land in your Sales Ledger too, so your dashboard opens on your real numbers. No card, no purchase. This preview is temporary — a free account keeps the full report.</p>')
   email_form=''
   if share_token:
    # Anonymous runners vanish after the demo — this is the only chance
    # to reach them again. Email the report (summaries + share link) and
    # record the lead; no account needed.
-   email_form=('<form method="post" action="/demo/email"><input type="hidden" name="share_token" value="'+escape(share_token)+'"><label>Email me this report<input name="email" type="email" required placeholder="you@yourbusiness.com"></label><button class="v8-primary" type="submit">Email me this report</button></form>'
+   email_form=('<form method="post" action="/demo/email"><input type="hidden" name="share_token" value="'+escape(share_token)+'"><label>Email me this report<input name="email" type="email" autocomplete="email" required placeholder="you@yourbusiness.com"></label><button class="v8-primary" type="submit">Email me this report</button></form>'
                '<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>')
  card_html=scorecard_html(demo_shares.scorecard(result),link or None)
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
