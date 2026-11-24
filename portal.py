@@ -25,6 +25,7 @@ import demo_leads
 import followups
 import ledger
 import money_report
+import winback
 import charts
 import trust_pages
 import notifications
@@ -899,7 +900,7 @@ def money_report_html(report):
  if report['top_products']:
   items = ''.join(
    '<li>' + escape(p) + ': ' + money_report.fmt_money(r)
-   + ' (' + str(o) + ' orders)</li>'
+   + ' (' + str(o) + ' order' + ('s' if o != 1 else '') + ')</li>'
    for p, o, r in report['top_products'])
   body += '<h3>Top products this week</h3><ul>' + items + '</ul>'
  if report['quiet_customers']:
@@ -916,6 +917,27 @@ def money_report_html(report):
  body += ('<p class="v8-demo-note">From your own sales ledger and '
   'reports — a weekly copy also lands in your inbox.</p></section>')
  return body
+
+
+def winback_html(draft_list):
+ """Win-back drafts panel: one ready-to-send message per quiet
+ customer, richest first. Only rendered when the business has ledger
+ entries; with no quiet customers it says so instead of showing an
+ empty list."""
+ if not draft_list:
+  return ('<section class="panel"><h2>Win-back drafts</h2><p>No one has '
+   'gone quiet — every customer ordered in the last 90 days.'
+   '</p></section>')
+ items = ''.join(
+  '<li><strong>' + escape(d['customer']) + '</strong> — last order '
+  + escape(d['last_date']) + ' (' + str(d['days_quiet'])
+  + ' days ago), worth ' + money_report.fmt_money(d['lifetime'])
+  + ' all time.<blockquote>' + escape(d['text'])
+  + '</blockquote></li>'
+  for d in draft_list)
+ return ('<section class="panel"><h2>Win-back drafts</h2><p>Customers who '
+  'went quiet, with the exact message to send them. Copy a draft, add '
+  'your name, and send it yourself.</p><ul>' + items + '</ul></section>')
 
 
 def report_view_html(row,monthly_rows,product_rows,stats,rejected_rows=None,cleaned_rows=None,upgrade_html=''):
@@ -1970,6 +1992,7 @@ class Handler(BaseHTTPRequestHandler):
     ref_code=referrals.code_for(c,user['id'])
     ref_stats=referrals.stats(c,user['id'])
     money=money_report.weekly_report(c,user['id'])
+    winbacks=winback.drafts(c,user['id']) if money['has_data'] else []
    rows=''.join('<tr><td>'+escape(r[1])+'</td><td>'+escape(datetime.fromtimestamp(r[2],timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))+'</td><td>'+escape(r[3])+'</td><td>'+str(r[4])+' / '+str(r[5])+'</td><td><a href="/report?id='+escape(r[0])+'">View</a> · <a href="/download?id='+escape(r[0])+'">Download ZIP</a></td><td>'+escape(r[6])+'</td></tr>' for r in reports)
    access='Verified PRO · 50 reports/billing cycle' if ent['plan']=='pro' else 'Free demo · 1 free report · subscription '+('expired' if ent['status']=='active' else ent['status'].replace('_',' '))
    report_label='Reports this billing cycle' if ent['plan']=='pro' else 'Free reports used (lifetime)'
@@ -1977,10 +2000,11 @@ class Handler(BaseHTTPRequestHandler):
    upgrade_html=pro_upgrade_html(user,csrf,pending_mainnet,pending_stripe) if ent['plan']!='pro' else ''
    ledger_html=ledger_panel_html(user,csrf)
    money_html=money_report_html(money)
+   winback_html_text=winback_html(winbacks)
    try:
     with db() as c:followups.queue_weekly_money_report(c,user['id'],user['email'],btcpay_mainnet.site_url())
    except Exception:pass
-   body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section>{ledger_html}{money_html}<section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
+   body=f"""<section class="hero"><p class="eyebrow">CUSTOMER PORTAL</p><h1>Your reports, handled.</h1><p>Upload a supported sales CSV. VELXTRIA cleans records, flags errors, and creates downloadable reports automatically.</p></section><div class="stats"><div><b>{count}</b><small>{escape(report_label)}</small></div><div><b>{remaining}</b><small>Remaining {escape(ent['plan'].upper())} allowance</small></div><div><b>{escape(access)}</b><small>Access status</small></div></div><section class="panel"><h2>Process a CSV</h2><p>5 MB maximum · {escape(limit_label)} · Supported sales-export schema only</p><form method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{escape(csrf)}"><label>Choose CSV<input type="file" name="file" accept=".csv,text/csv" required></label><label><input type="checkbox" name="email_report" value="yes"> Email the completed report to my account address (requires configured SMTP)</label><button>Generate report</button></form><details><summary>Required column headers</summary><code>{escape(', '.join(REQUIRED))}</code></details></section>{ledger_html}{money_html}{winback_html_text}<section class="panel"><h2>Your reports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Processed</th><th>Status</th><th>Accepted / flagged</th><th>Result</th><th>Email</th></tr></thead><tbody>{rows or '<tr><td colspan="6">No reports yet.</td></tr>'}</tbody></table></div></section>"""
    if os.getenv('VELXTRIA_LOCAL_STUDIO','0')=='1' and not persistent.REMOTE: body+='<section class="panel"><h2>Site Studio</h2><a href="/site-studio">Create a company website draft</a></section>'
    body+='<section class="panel"><h2>Business Workspace</h2><p>Manage contacts, track income and expenses, review insights, and organize follow-up tasks in one place.</p><a href="/workspace">Open Business Workspace</a></section>'
    body+=upgrade_html

@@ -171,6 +171,7 @@ def queue_weekly_money_report(conn, user_id, email, site_url, now=None):
     reports at queue time, so the numbers are a snapshot of this week.
     """
     import money_report
+    import winback
     import notifications
     import email_unsubscribe
     import site_stats
@@ -178,7 +179,9 @@ def queue_weekly_money_report(conn, user_id, email, site_url, now=None):
     report = money_report.weekly_report(conn, user_id, now=now)
     if not report['has_data']:
         return 0
-    body = money_report.report_email_body(report, site_url)
+    draft_list = winback.drafts(conn, user_id, now=now)
+    body = money_report.report_email_body(
+        report, site_url, winback_draft=draft_list[0] if draft_list else None)
     token = email_unsubscribe.get_or_create_token(conn, email)
     body = email_unsubscribe.append_footer(body, email, site_url, token)
     if notifications.queue(
