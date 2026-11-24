@@ -820,8 +820,16 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
    email_form=('<form method="post" action="/demo/email"><input type="hidden" name="share_token" value="'+escape(share_token)+'"><label>Email me this report<input name="email" type="email" autocomplete="email" required placeholder="you@yourbusiness.com"></label><button class="v8-primary" type="submit">Email me this report</button></form>'
                '<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>')
  card_html=scorecard_html(demo_shares.scorecard(result),link or None)
+ if result['rejected']:
+  next_step='Review flagged rows before relying on the sales totals. Correct the source records and rerun the report.'
+ elif result['accepted']:
+  next_step='Compare monthly and product summaries to identify changes worth investigating. Accepted rows passed validation; this does not verify every sale.'
+ else:
+  next_step='Upload a CSV containing sales records before drawing business conclusions.'
+ action_plan='<section class="v8-demo-note"><h3>Recommended next step</h3><p>'+escape(next_step)+'</p></section>'
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_diagnosis_html(result.get('rejected_rows') or [],result.get('cleaned_rows') or [],result['rejected'],result['accepted'],preview=user is None)
+  +action_plan
   +keep
   +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
   +('<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows.</p>'
