@@ -2,7 +2,7 @@
 import html
 import math
 import time
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import business_os_v59
 from revenue_priority import RevenueOpportunity, rank_opportunities
 
@@ -34,7 +34,7 @@ def live_rankings(c, uid, workspace_id, limit=20):
                 urgency=urgency, effort_hours=effort,
                 evidence=f"Business OS lead marked {status}; last updated {days} days ago. "
                          "Value is manually entered, not verified revenue."))
-        except (ValueError, TypeError, OverflowError):
+        except (InvalidOperation, ValueError, TypeError, OverflowError):
             continue
     return rank_opportunities(candidates)[:max(1, min(int(limit), 50))]
 
