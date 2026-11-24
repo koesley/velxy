@@ -775,7 +775,8 @@ def scorecard_html(card, share_link=None, show_issues=True):
   share = ('<p class="v8-demo-note">Share your scorecard — copy this link: '
            '<input readonly value="' + escape(share_link) + '"></p>')
  return ('<div class="v8-scorecard"><h3>Your data scorecard</h3>'
-         '<p class="v8-score">Your data is <strong>' + str(card['clean_pct']) + '% clean</strong></p>'
+         + ('<p class="v8-score">Your data is <strong>' + str(card['clean_pct']) + '% clean</strong></p>'
+            if card.get('has_data', True) else '<p class="v8-score">Insufficient data to calculate quality.</p>') +
          '<p>' + str(card['problems']) + ' problem' + ('s' if card['problems'] != 1 else '') + ' found</p>'
          + top + paid + share + '</div>')
 
