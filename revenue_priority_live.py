@@ -68,7 +68,10 @@ def render(c, uid, workspace_id, csrf=''):
                 ctx.prec = 40
                 total = sum(amounts, Decimal(0))
                 display_total = format(total, ",.2f")
-            out.append('<section class="panel"><h2>Displayed estimated pipeline value</h2><p>
+            out.append('<section class="panel"><h2>Displayed estimated pipeline value</h2><p>' +
+                       chr(36) + esc(display_total) + ' (unweighted estimates; not collected revenue)</p></section>')
+        else:
+            out.append('<section class="panel"><p>Estimated total unavailable: a displayed value exceeds the supported range.</p></section>')
         out.append('<section class="panel"><h2>Opportunity overview</h2><p>' +
                    esc(len(results)) + ' ranked opportunities displayed. '
                    'Start with the highest priority and verify the underlying value before acting.</p>' +
