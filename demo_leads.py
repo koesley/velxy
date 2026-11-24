@@ -55,12 +55,8 @@ def format_email_body(shared, share_link, site_url):
                  shared['accepted'], shared['rejected']),
              '']
     lines.append('Recommended next step:')
-    if shared['rejected']:
-        lines.append('Review flagged records before relying on sales totals. Correct the source records and rerun the report.')
-    elif shared['accepted']:
-        lines.append('Compare monthly and product summaries for changes worth investigating. Validation does not verify every sale.')
-    else:
-        lines.append('Upload sales records before drawing business conclusions.')
+    from demo_guidance import recommend
+    lines.append(recommend(shared['accepted'], shared['rejected'], channel='email'))
     lines.append('')
     if shared['stats']:
         lines.append('Headline:')
