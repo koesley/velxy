@@ -3,7 +3,7 @@
 For every customer who went quiet (no paid order in 90 days, see
 money_report.quiet_customers), the agent writes the exact message the
 owner can send them — personalised with their name, their last
-service, when it was, and what they are worth. The owner copies a
+service and when it was. Lifetime spending stays internal. The owner copies a
 draft, adds their name, and sends it themselves: VELXTRIA holds no
 customer email addresses, so nothing here sends anything to a
 customer, and no draft ever promises a discount or invents urgency.
@@ -132,12 +132,9 @@ def drafts(conn, user_id, now=None):
     for q in money_report.quiet_customers(conn, user_id, now=now):
         text = (
             "Hi %s — it's been a while since your last %s on %s. "
-            "You've trusted us with %s so far, and I'd love to get you "
-            "back on the schedule. Want me to book your next %s this "
-            "week?" % (q['customer'], q['last_product'],
-                       _short_date(q['last_date']),
-                       money_report.fmt_money(q['lifetime']),
-                       q['last_product']))
+            "We'd love to welcome you back. Would you be interested in "
+            "another visit?" % (q['customer'], q['last_product'],
+                       _short_date(q['last_date'])))
         out.append({**q, 'text': text,
                     'sent_at': sent_for_spell(
                         conn, user_id, q['customer'], q['last_date'])})
