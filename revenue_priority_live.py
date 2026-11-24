@@ -56,12 +56,12 @@ def render(c, uid, workspace_id, csrf=''):
     results = live_rankings(c, uid, workspace_id)
     esc = lambda value: html.escape(str(value), quote=True)
     out = ['<section class="panel"><h1>Live Pipeline Priorities</h1>',
-           '<p>Read-only ranking of up to 300 recent open leads from your authorized Business OS workspace. '
+           '<p>Read-only ranking of up to 300 oldest-updated open leads from your authorized Business OS workspace. Only the top 20 eligible results are displayed; newer leads may not have been evaluated. '
            'No contact information is shown. Values and confidence are heuristic, not verified revenue or '
            'conversion probabilities. No messages are sent and no actions are performed.</p>',
            '<p><a href="/revenue-priority">Manual comparison workbench</a></p></section>']
     if not results:
-        out.append('<section class="panel"><p>No eligible open leads with positive values yet.</p></section>')
+        out.append('<section class="panel"><p>No eligible positive-value leads in the evaluated batch.</p></section>')
     for item in results:
         out.append('<section class="panel"><h2>' + esc(item["title"]) +
                    ' · Priority ' + esc(item["priority_score"]) + '</h2><p>Potential value: $' +
