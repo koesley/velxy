@@ -2,6 +2,8 @@
 
 def recommend(accepted, rejected, *, channel='web'):
     """Choose the next action from report counts, retaining channel copy."""
+    if any(type(count) is not int or count < 0 for count in (accepted, rejected)):
+        return 'Report counts are invalid. Regenerate the report before drawing business conclusions.'
     if rejected:
         guidance = ('Review flagged records before relying on sales totals. Correct the source records and rerun the report.'
                 if channel == 'email' else
