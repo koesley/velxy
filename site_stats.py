@@ -118,6 +118,19 @@ def stats_html(totals, daily, recent):
         prev = count
     recent_counts = {event: sum(counts.get(event, 0) for _, counts in daily) for event in FUNNEL}
     recent_summary = ''.join('<li>' + LABELS[event] + ': ' + str(recent_counts[event]) + '</li>' for event in FUNNEL)
+    counts = {event: sum(row.get(event, 0) for _, row in daily) for event in FUNNEL}
+    if not counts['landing_view']:
+        guidance = 'Check public access and acquisition channels; no landing views were recorded.'
+    elif not counts['demo_run']:
+        guidance = 'Inspect the landing-to-demo experience; no demo runs were recorded.'
+    elif not counts['signup']:
+        guidance = 'Inspect registration and the demo call to action; no signups were recorded.'
+    elif not counts['checkout_started']:
+        guidance = 'Inspect the paid offer and checkout availability; no checkout starts were recorded.'
+    elif not counts['pro_activated']:
+        guidance = 'Inspect payment verification and activation; no PRO activations were recorded.'
+    else:
+        guidance = 'Review verified payments and customer feedback before changing the offer.'
     totals_rows = ''.join(
         '<tr><td>' + LABELS[e] + '</td><td>' + str(totals.get(e, 0)) + '</td></tr>'
         for e in EVENTS)
@@ -137,6 +150,8 @@ def stats_html(totals, daily, recent):
             '<th>Step</th><th>Count</th><th>Event count ratio</th></tr></thead><tbody>' +
             funnel_rows + '</tbody></table></section>'
             '<section class="panel"><h2>Recent commercial activity</h2><p>Counts in the displayed recent window; not distinct customers or verified revenue.</p><ul>' + recent_summary + '</ul></section>'
+            '<section class="panel"><h2>Commercial diagnostic</h2><p>' + guidance +
+            '</p><p>Based on recent aggregate events, not linked customer journeys. Missing telemetry may explain zero counts.</p></section>'
             '<section class="panel"><h2>Totals</h2><table><thead><tr>'
             '<th>Event</th><th>All time</th></tr></thead><tbody>' +
             totals_rows + '</tbody></table></section>'
