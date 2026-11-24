@@ -23,7 +23,10 @@ def live_rankings(c, uid, workspace_id, limit=20):
             amount = Decimal(str(value))
             if not amount.is_finite() or amount <= 0:
                 continue
-            days = max(0, (current - int(updated)) // 86400)
+            timestamp = int(updated)
+            if timestamp > current or timestamp < 0:
+                continue
+            days = (current - timestamp) // 86400
             # Explicit heuristics, not learned conversion probabilities.
             confidence = 0.35 if status == "new" else 0.5
             urgency = min(1.0, 0.25 + days / 30)
