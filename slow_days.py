@@ -11,7 +11,7 @@ there is no pattern to call, so no filler is shown at all. The owner
 copies a draft and sends it themselves — VELXTRIA holds no customer
 email addresses.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from collections import Counter
 import time
 
@@ -50,8 +50,16 @@ def filler(conn, user_id, now=None):
         timezone.utc).date()
     window_start = (today - timedelta(days=WINDOW_DAYS)).isoformat()
     rows = _paid_rows(conn, user_id)
-    recent = [(str(r[0])[:10], r[1], r[2])
-              for r in rows if str(r[0])[:10] >= window_start]
+    history = []
+    for row in rows:
+        try:
+            day = date.fromisoformat(str(row[0])[:10])
+        except (ValueError, TypeError):
+            continue
+        if day <= today:
+            history.append((day.isoformat(), row[1], row[2]))
+    # Four complete weeks, excluding the potentially incomplete current day.
+    recent = [r for r in history if window_start <= r[0] < today.isoformat()]
     if len(recent) < MIN_ORDERS:
         return None
     counts = Counter(
@@ -63,10 +71,10 @@ def filler(conn, user_id, now=None):
                   else _short_date(next_day.isoformat()))
     # Recent customers to nudge: last order 7–30 days ago, most recent
     # first. Win-back owns the quiet ones; this owns the recent ones.
-    # Any last order in the band is inside the window, so `recent`
-    # (window rows only) is enough here.
+    # The nudge band extends beyond the analysis window. Include today's
+    # orders too, so customers who already returned are not nudged.
     last_order = {}
-    for day, customer, product in recent:
+    for day, customer, product in history:
         entry = last_order.setdefault(
             customer, {'last': '', 'product': ''})
         if day >= entry['last']:
@@ -85,7 +93,7 @@ def filler(conn, user_id, now=None):
     out = []
     for customer, last_date, product in candidates:
         text = (
-            "Hi %s — we have an open slot %s. Your last %s was %s — "
+            "Hi %s — would %s work for another visit? Your last %s was %s — "
             "want me to book you in again?" % (
                 customer, next_label, product, _short_date(last_date)))
         out.append({'customer': customer, 'last_date': last_date,
