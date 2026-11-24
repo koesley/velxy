@@ -8,17 +8,17 @@ draft, adds their name, and sends it themselves: VELXTRIA holds no
 customer email addresses, so nothing here sends anything to a
 customer, and no draft ever promises a discount or invents urgency.
 
-Sending is tracked, so the money report can prove the work paid:
+Sending is tracked, so the money report can show subsequent purchases:
 mark_sent records that the owner sent a draft, and recovery counts
 the customers who ordered again afterwards and the revenue that came
 back. A send counts for the quiet spell it was sent in — if the
 customer orders again and later goes quiet a second time, the old
 send does not count as sent for the new spell.
 """
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import secrets
 import time
-from decimal import Decimal
+from decimal import Decimal, DecimalException
 
 
 def setup(conn):
@@ -83,18 +83,21 @@ def recovery(conn, user_id, now=None):
     sent is the number of customers the owner has sent a win-back to;
     recovered is how many of them placed a paid order dated after the
     send; recovered_revenue is the paid revenue from those later
-    orders. Only real ledger rows count — nothing is estimated.
+    orders through the observation date. This is temporal association,
+    not proof that outreach caused a purchase.
     """
     setup(conn)
+    observed_at = int(time.time()) if now is None else int(now)
     sends = conn.execute(
         'SELECT customer,MAX(sent_at) FROM winback_sends'
-        ' WHERE user_id=? GROUP BY customer', (user_id,)).fetchall()
+        ' WHERE user_id=? AND sent_at<=? GROUP BY customer', (user_id, observed_at)).fetchall()
     if not sends:
         return (0, 0, Decimal('0'))
+    today = datetime.fromtimestamp(observed_at, timezone.utc).date().isoformat()
     sent_day = {
         customer: datetime.fromtimestamp(
             sent_at, timezone.utc).date().isoformat()
-        for customer, sent_at in sends}
+        for customer, sent_at in sends if sent_at <= observed_at}
     rows = conn.execute(
         'SELECT order_date,customer,quantity,unit_price'
         ' FROM ledger_entries WHERE user_id=? AND status=?',
@@ -102,10 +105,17 @@ def recovery(conn, user_id, now=None):
     back = {}
     for order_date, customer, quantity, unit_price in rows:
         day = str(order_date)[:10]
-        if customer in sent_day and day > sent_day[customer]:
+        try:
+            day = date.fromisoformat(day).isoformat()
+            if customer not in sent_day or not sent_day[customer] < day <= today:
+                continue
             amount = Decimal(str(quantity)) * Decimal(str(unit_price))
+            if not amount.is_finite() or amount <= 0:
+                continue
             back[customer] = back.get(customer, Decimal('0')) + amount
-    return (len(sends), len(back),
+        except (ValueError, TypeError, DecimalException):
+            continue
+    return (len(sent_day), len(back),
             sum(back.values(), Decimal('0')))
 
 
