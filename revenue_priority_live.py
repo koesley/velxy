@@ -2,7 +2,7 @@
 import html
 import math
 import time
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 import business_os_v59
 from revenue_priority import RevenueOpportunity, rank_opportunities
 
@@ -61,6 +61,14 @@ def render(c, uid, workspace_id, csrf=''):
            'conversion probabilities. No messages are sent and no actions are performed.</p>',
            '<p><a href="/revenue-priority">Manual comparison workbench</a></p></section>']
     if results:
+        amounts = [Decimal(item['estimated_value']) for item in results]
+        if all(a.is_finite() and 0 <= a <= Decimal('1000000000000') for a in amounts):
+            with localcontext() as ctx:
+                ctx.prec = 40
+                total = format(sum(amounts, Decimal(0)), ',.2f')
+            out.append('<section class="panel"><h2>Displayed estimated pipeline value</h2><p>' + chr(36) + esc(total) + ' (unweighted estimates; not collected revenue)</p></section>')
+        else:
+            out.append('<section class="panel"><p>Estimated total unavailable: a displayed value exceeds the supported range.</p></section>')
         # Count displayed candidates only; never imply full pipeline coverage.
         out.append('<section class="panel"><h2>Opportunity overview</h2><p>' +
                    esc(len(results)) + ' ranked opportunities displayed. '
