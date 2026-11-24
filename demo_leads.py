@@ -72,9 +72,13 @@ def format_email_body(shared, share_link, site_url):
     lines.append('The link shows only these summaries — never your file or '
                  'a raw row — and works for 30 days.')
     lines.append('')
-    lines.append('Keep your reports: create a free account (1 free report) '
-                 'at ' + site_url.rstrip('/') + '/register — then claim this '
-                 'demo from your dashboard.')
+    lines.append('Turn this demo into a report you can revisit:')
+    lines.append('1. Create a free account (1 free report) at ' +
+                 site_url.rstrip('/') + '/register')
+    lines.append('2. Claim this demo from your dashboard.')
+    lines.append('3. Revisit your sales summaries and use them to review '
+                 'monthly performance and product results.')
+    lines.append('Your demo link remains available without registering.')
     lines.append('')
     lines.append('— VELXTRIA')
     return '\n'.join(lines)
