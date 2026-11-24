@@ -127,7 +127,7 @@ def get(conn, token):
     conn.execute('DELETE FROM demo_shares WHERE expires<=?', (now,))
     row = conn.execute(
         'SELECT monthly_csv,product_csv,stats,accepted,rejected,top_issues'
-        ' FROM demo_shares WHERE token=?', (token,)).fetchone()
+        ' FROM demo_shares WHERE token=? AND expires>?', (token, now)).fetchone()
     if not row:
         return None
     stats = [line for line in row[2].splitlines() if line]
