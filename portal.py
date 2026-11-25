@@ -531,7 +531,10 @@ def run_report_engine(data):
   archive=io.BytesIO()
   with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as z:
    for f in REPORT_FILES:z.write(out/f,arcname=f)
-  return {'zip_bytes':archive.getvalue(),'accepted':accepted,'rejected':rejected,'stats':stats,'monthly_rows':_read_csv_rows(out/'monthly_summary.csv'),'product_rows':_read_csv_rows(out/'product_summary.csv'),'summary':summary,'rejected_rows':_read_csv_rows_capped(out/'rejected_rows.csv',DIAGNOSIS_FLAGGED_ENGINE_CAP),'cleaned_rows':_read_csv_rows_capped(out/'cleaned_sales.csv',DIAGNOSIS_CLEANED_SHOW)}
+  from revenue_recovery import summarize_pending
+  with (out/'cleaned_sales.csv').open(encoding='utf-8-sig',newline='') as f:
+   recovery=summarize_pending(csv.DictReader(f))
+  return {'recovery':recovery,'zip_bytes':archive.getvalue(),'accepted':accepted,'rejected':rejected,'stats':stats,'monthly_rows':_read_csv_rows(out/'monthly_summary.csv'),'product_rows':_read_csv_rows(out/'product_summary.csv'),'summary':summary,'rejected_rows':_read_csv_rows_capped(out/'rejected_rows.csv',DIAGNOSIS_FLAGGED_ENGINE_CAP),'cleaned_rows':_read_csv_rows_capped(out/'cleaned_sales.csv',DIAGNOSIS_CLEANED_SHOW)}
 
 # Anonymous demo downloads: ZIP bytes held in memory only, keyed by a random
 # token, expiring after 10 minutes. Nothing is written to disk or the
@@ -781,6 +784,13 @@ def scorecard_html(card, share_link=None, show_issues=True):
          + top + paid + share + '</div>')
 
 
+def revenue_recovery_html(recovery):
+ if not recovery or not recovery['count']:return ''
+ return ('<section class="v8-demo-note"><h3>Pending sales follow-up</h3><p><strong>'
+  +str(recovery['count'])+' pending records · $'+escape(recovery['value'])
+  +' listed order value</strong></p><p>Reconcile these records against actual payments before contacting customers. '
+  'Calculated across accepted rows, assuming USD. Not verified debt or guaranteed recovery.</p></section>')
+
 def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=False):
  """The instant demo result: the problems first, then the fix offer, then
  the summaries — and a ZIP download for signed-in runners. The old order
@@ -826,6 +836,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_diagnosis_html(result.get('rejected_rows') or [],result.get('cleaned_rows') or [],result['rejected'],result['accepted'],preview=user is None)
   +action_plan
+  +revenue_recovery_html(result.get('recovery'))
   +keep
   +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
   +('<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows.</p>'
