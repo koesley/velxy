@@ -1676,7 +1676,19 @@ class Handler(BaseHTTPRequestHandler):
       var action=form.getAttribute('action');
       if(action!=='/try' && action!=='/try-sample') return;
       if(location.pathname!=='/' || location.search || location.hash) return;
-      gtag('event','demo_start',{demo_type:action==='/try-sample'?'sample':'upload',page_location:location.origin+'/',page_referrer:'',page_title:'VELXTRIA',transport_type:'beacon'});
+      if(e.defaultPrevented || form.dataset.vxAnalyticsPending) return;
+      e.preventDefault();
+      form.dataset.vxAnalyticsPending='1';
+      var resumed=false;
+      function resume(){
+       if(resumed) return;
+       resumed=true;
+       HTMLFormElement.prototype.submit.call(form);
+      }
+      window.setTimeout(resume,500);
+      try{
+       gtag('event','demo_start',{demo_type:action==='/try-sample'?'sample':'upload',page_location:location.origin+'/',page_referrer:'',page_title:'VELXTRIA',transport_type:'beacon',event_callback:resume,event_timeout:450});
+      }catch(err){resume();}
      });
     }
    });
