@@ -788,7 +788,7 @@ def revenue_recovery_html(recovery):
  if not recovery or not recovery['count']:return ''
  return ('<section class="v8-demo-note"><h3>Pending sales follow-up</h3><p><strong>'
   +str(recovery['count'])+' pending records · $'+escape(recovery['value'])
-  +' listed order value</strong></p><p>Reconcile these records against actual payments before contacting customers. '
+   +' listed order value</strong></p><p>Largest pending order: $'+escape(recovery.get('largest','0.00'))+'. Review higher-value orders first when payment status and customer context justify it.</p><p>Reconcile these records against actual payments before contacting customers. '
   'Calculated across accepted rows, assuming USD. Not verified debt or guaranteed recovery.</p></section>')
 
 def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=False):
