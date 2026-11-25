@@ -107,6 +107,32 @@ def _day_label(day_start):
     return datetime.fromtimestamp(day_start, timezone.utc).strftime('%Y-%m-%d')
 
 
+def checkout_health(daily):
+    """Aggregate recent checkout events, not individual customer journeys."""
+    keys = ('checkout_started', 'checkout_unavailable', 'checkout_failed', 'pro_activated')
+    counts = {key: sum(row.get(key, 0) for _, row in daily) for key in keys}
+    if counts['checkout_unavailable']:
+        action = 'Verify enabled payment providers and checkout configuration.'
+    elif counts['checkout_failed']:
+        action = 'Inspect checkout creation errors and provider connectivity.'
+    elif not counts['checkout_started']:
+        action = 'Test the paid offer and checkout entry points.'
+    elif not counts['pro_activated']:
+        action = 'Reconcile provider settlements and access activation.'
+    else:
+        action = 'Review verified settlements and customer feedback.'
+    return counts, action
+
+
+def checkout_health_html(daily):
+    counts, action = checkout_health(daily)
+    rows = ''.join('<li>' + LABELS[key] + ': ' + str(value) + '</li>'
+                   for key, value in counts.items())
+    return ('<section class="panel"><h2>Checkout health — last 14 days</h2><ul>'
+            + rows + '</ul><p><strong>Next action:</strong> ' + action
+            + '</p><p>Event counts are not unique buyers, abandonment rates or verified revenue.</p></section>')
+
+
 def stats_html(totals, daily, recent):
     """Founder stats page: funnel, per-day counts, recent events."""
     funnel_rows = ''
@@ -158,7 +184,7 @@ def stats_html(totals, daily, recent):
         '</td><td>' + html.escape(str(LABELS.get(r[1], r[1])), quote=True) +
         '</td><td>' + html.escape(str(r[2] or ''), quote=True) + '</td></tr>'
         for r in recent)
-    return ('<section class="panel"><h2>Funnel</h2><p>All-time counts; '
+    return (checkout_health_html(daily)+'<section class="panel"><h2>Funnel</h2><p>All-time counts; '
             'ratios compare event counts with the previous step, not unique customer conversions. Repeat activity and independent journeys can produce ratios above 100%.</p><table><thead><tr>'
             '<th>Step</th><th>Count</th><th>Event count ratio</th></tr></thead><tbody>' +
             funnel_rows + '</tbody></table></section>'
