@@ -28,3 +28,9 @@ class CommercialPriorityTests(unittest.TestCase):
         self.assertIn('2 UTC dates with recorded activity; 2 checkout starts; 1 PRO activation events', page)
     def test_no_telemetry_snapshot(self):
         self.assertIn('No recent telemetry available', commercial_priority_html([]))
+
+    def test_payment_error_dates(self):
+        page = commercial_priority_html([(86400, {'checkout_failed': 2}), (0, {'checkout_unavailable': 1}), (86400, {'checkout_failed': 1})])
+        self.assertIn('Payment errors recorded on 2 UTC dates; latest affected date: 1970-01-02', page)
+    def test_no_errors_does_not_confirm_uptime(self):
+        self.assertIn('availability is unverified', commercial_priority_html([]))
