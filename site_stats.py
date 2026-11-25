@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 EVENTS = ('landing_view', 'about_view', 'demo_run', 'demo_email_sent',
           'signup', 'report_generated', 'checkout_started', 'paywall_shown',
-          'pro_activated')
+          'pro_activated', 'checkout_unavailable', 'checkout_failed')
 
 # The funnel, in order: each step's conversion is measured against the
 # one before it on the stats page (event ratios, not cohort conversion).
@@ -28,7 +28,9 @@ LABELS = {
     'demo_email_sent': 'Demo reports emailed',
     'signup': 'Accounts created',
     'report_generated': 'Reports generated (signed in)',
-    'checkout_started': 'BTCPay checkouts started',
+    'checkout_started': 'Payment checkouts started',
+    'checkout_unavailable': 'Checkout unavailable',
+    'checkout_failed': 'Checkout creation failed',
     'paywall_shown': 'Free-limit paywall views',
     'pro_activated': 'PRO activations',
 }
