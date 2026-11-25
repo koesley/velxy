@@ -648,8 +648,11 @@ def landing_buy_html(user,csrf):
   if forms:
    return forms+'<p class="v8-buy-note">Secure checkout — card or Bitcoin — and PRO activates automatically once the payment settles. Nothing is charged until you pay.</p>'
   return '<button class="v8-primary" type="button" disabled>Get PRO — $49</button><p class="v8-buy-note">Checkout is coming soon. Create a demo account to try the free reports meanwhile.</p>'
+ if not (btcpay_mainnet.checkout_enabled() or stripe_checkout.checkout_enabled()):
+  return '<a class="v8-primary" href="/register">Start free</a><p class="v8-buy-note">Online checkout is currently unavailable. Try your free report without paying.</p>'
+ methods='card or Bitcoin' if stripe_checkout.checkout_enabled() and btcpay_mainnet.checkout_enabled() else ('card' if stripe_checkout.checkout_enabled() else 'Bitcoin')
  nxt=urllib.parse.quote('/account#billing',safe='')
- return '<a class="v8-primary" href="/login?next='+nxt+'">Get PRO — $49</a><p class="v8-buy-note">Sign in, then open your account billing section to start secure checkout — card or Bitcoin. New here? <a href="/register?next='+nxt+'">Create a free account</a> first. PRO activates only after verified payment.</p>'
+ return '<a class="v8-primary" href="/login?next='+nxt+'">Get PRO — $49</a><p class="v8-buy-note">Sign in, then open your account billing section to start secure checkout — '+methods+'. New here? <a href="/register?next='+nxt+'">Create a free account</a> first. PRO activates only after verified payment.</p>'
 
 def pro_upgrade_html(user,csrf,pending_mainnet=None,pending_stripe=None):
  """PRO upsell block, shared by the dashboard and the paywall page.
