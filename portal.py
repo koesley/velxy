@@ -1566,7 +1566,8 @@ class Handler(BaseHTTPRequestHandler):
     activation=founder_activation.report_activation(c)
     paid_conversion=founder_paid_conversion.paid_cohorts(c)
     payment_summary=founder_paid_conversion.payment_channels(c)
-   body=(founder_paid_conversion.payment_channels_html(payment_summary)+founder_paid_conversion.panel_html(paid_conversion)+founder_activation.panel_html(activation)+site_stats.stats_html(totals,daily,recent))
+    acquisition=site_stats.acquisition_html(c)
+   body=(founder_paid_conversion.payment_channels_html(payment_summary)+founder_paid_conversion.panel_html(paid_conversion)+founder_activation.panel_html(activation)+acquisition+site_stats.stats_html(totals,daily,recent))
    return self.respond(200,shell('Founder stats',body,user,csrf),headers=[('Cache-Control','no-store'),('Referrer-Policy','no-referrer')])
   if p=='/ascension-workflows':
    auth=self.require()
@@ -1767,7 +1768,7 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,shell('Shared demo report',body))
   if p=='/' and not user:
    with db() as c:
-    site_stats.record(c,'landing_view')
+    site_stats.record(c,'landing_view',site_stats.campaign_channel(self.path))
     stats=scoreboard.get_stats(c)
    ref=referral_code_from_request(self)
    headers=[referral_cookie_header(ref)] if ref else ()
