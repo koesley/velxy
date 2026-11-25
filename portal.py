@@ -1653,31 +1653,30 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,(ROOT/'command-palette.js').read_bytes(),'application/javascript; charset=utf-8',headers=[('Cache-Control','public, max-age=300, must-revalidate'),('X-Content-Type-Options','nosniff')])
   if p=='/analytics-opt-in.js':
    js="""(function(){
-   if(location.pathname!=='/' || location.search || location.hash) return;
+   if(location.pathname!=='/' || location.search || (location.hash && location.hash!=='#try')) return;
    var button=document.getElementById('vx-analytics-opt-in');
    if(!button) return;
    button.addEventListener('click',function(){
-    if(button.disabled) return;
+    if(button.disabled || location.pathname!=='/' || location.search || (location.hash && location.hash!=='#try')) return;
     button.disabled=true;
     window.dataLayer=window.dataLayer||[];
     function gtag(){window.dataLayer.push(arguments);}
     gtag('js',new Date());
-    gtag('config','G-Y4C3J1DCHS',{send_page_view:false,allow_google_signals:false,allow_ad_personalization_signals:false});
+    gtag('config','G-Y4C3J1DCHS',{send_page_view:false,page_location:location.origin+'/',page_referrer:'',page_title:'VELXTRIA',allow_google_signals:false,allow_ad_personalization_signals:false});
     gtag('event','page_view',{page_location:location.origin+'/',page_referrer:'',page_title:'VELXTRIA'});
     var s=document.createElement('script');
     s.async=true;s.src='https://www.googletagmanager.com/gtag/js?id=G-Y4C3J1DCHS';
     document.head.appendChild(s);
     button.textContent='Analytics enabled for this visit';
-    var demo=document.getElementById('try');
-    if(demo){
-     demo.addEventListener('submit',function(e){
+    document.addEventListener('submit',function(e){
       var form=e.target;
       if(!form || form.tagName!=='FORM') return;
       var action=form.getAttribute('action');
       if(action!=='/try' && action!=='/try-sample') return;
-      if(location.pathname!=='/' || location.search || location.hash) return;
-      if(e.defaultPrevented || form.dataset.vxAnalyticsPending) return;
+      if(location.pathname!=='/' || location.search || (location.hash && location.hash!=='#try')) return;
+      if(e.defaultPrevented) return;
       e.preventDefault();
+      if(form.dataset.vxAnalyticsPending) return;
       form.dataset.vxAnalyticsPending='1';
       var resumed=false;
       function resume(){
@@ -1690,7 +1689,6 @@ class Handler(BaseHTTPRequestHandler):
        gtag('event','demo_start',{demo_type:action==='/try-sample'?'sample':'upload',page_location:location.origin+'/',page_referrer:'',page_title:'VELXTRIA',transport_type:'beacon',event_callback:resume,event_timeout:450});
       }catch(err){resume();}
      });
-    }
    });
    })();"""
    return self.respond(200,js,'application/javascript; charset=utf-8')
