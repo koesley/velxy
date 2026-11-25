@@ -747,7 +747,7 @@ def paywall_html(user,csrf,used,pending_mainnet=None,pending_stripe=None):
   +'<p><a href="/">Back to dashboard</a></p>')
 
 def landing_pricing_html(user,csrf):
- return '''<section id="v8-pricing" class="v8-pricing"><div class="v8-sectiontop"><span>02 / PRICING</span><span>SIMPLE, NO SURPRISES.</span></div><h2>START FREE.<br><em>GO PRO WHEN IT PAYS.</em></h2><div class="v8-plans"><article class="v8-plan"><h3>FREE</h3><p class="v8-price">$0</p><ul><li>1 free report</li><li>Upload a sales CSV, get cleaned data and summaries</li><li>No card, no purchase required</li></ul><a class="v8-ghost" href="/register">Create demo account ↗</a></article><article class="v8-plan v8-plan-pro"><h3>PRO</h3><p class="v8-price">$49 <span>/ 30 days</span></p><ul><li>50 reports per billing cycle</li><li>Pay with Bitcoin or card — verified automatically</li><li>PRO activates once the payment settles</li></ul>'''+landing_buy_html(user,csrf)+'''</article></div><p class="v8-pricing-note">Prices in USD. Pay with Bitcoin or card.</p></section>'''
+ return '''<section id="v8-pricing" class="v8-pricing"><div class="v8-sectiontop"><span>02 / PRICING</span><span>SIMPLE, NO SURPRISES.</span></div><h2>START FREE.<br><em>GO PRO WHEN IT PAYS.</em></h2><div class="v8-plans"><article class="v8-plan"><h3>FREE</h3><p class="v8-price">$0</p><ul><li>1 free report</li><li>Upload a sales CSV, get cleaned data and summaries</li><li>No card, no purchase required</li></ul><a class="v8-ghost" href="/register">Create demo account ↗</a></article><article class="v8-plan v8-plan-pro"><h3>PRO</h3><p class="v8-price">$49 <span>/ 30 days</span></p><ul><li>50 reports per billing cycle</li><li>Repeat sales-data checks and export cleaned reports</li><li>Use your sales ledger to review revenue and identify quiet customers</li><li>Pay with Bitcoin or card — verified automatically</li><li>PRO activates once the payment settles</li></ul>'''+landing_buy_html(user,csrf)+'''</article></div><p class="v8-pricing-note">Prices in USD. Pay with Bitcoin or card.</p></section>'''
 
 def landing_demo_html():
  """No-signup instant demo: upload a CSV on the landing page and see the
@@ -836,7 +836,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
   +card_html
   +share
   +email_form
-  +'<div class="v8-demo-upgrade"><h3>Keep checking your business data</h3><p>Use VELXTRIA to spot inconsistent dates, duplicate order IDs, and mismatched quantities in future uploads. Results depend on your file; sample findings are not guaranteed savings.</p><p><strong>PRO: $49 for 30 days · 50 reports · Bitcoin or card.</strong> Payment is optional. Access activates only after verified settlement.</p><p><a class="v8-primary" href="'+escape(upgrade_href)+'">See PRO checkout — $49</a></p></div></section></div>')
+  +'<div class="v8-demo-upgrade"><h3>Turn this diagnosis into a repeatable business workflow</h3><p>Use VELXTRIA to spot inconsistent dates, duplicate order IDs, and mismatched quantities in future uploads. Review paid sales and product performance, then use your ledger to identify customers worth following up with. Results depend on your data; sample findings are not guaranteed savings.</p><p><strong>PRO: $49 for 30 days · 50 reports · Bitcoin or card.</strong> Payment is optional. Access activates only after verified settlement.</p><p><a class="v8-primary" href="'+escape(upgrade_href)+'">See PRO checkout — $49</a></p></div></section></div>')
 
 def ledger_panel_html(user, csrf):
  """The Sales Ledger panel on the dashboard: log one sale at a time and
@@ -1100,7 +1100,7 @@ def landing_page(user=None,csrf='',stats=None):
   <div class="v8-copy">
    <div class="v8-status"><span class="v8-live"></span> VELXTRIA / INTELLIGENT REPORTING <span class="v8-status-right">PRIVATE PREVIEW</span></div>
    <h1>RUN YOUR BUSINESS.<br><span>WITH MORE</span><br><i>CLARITY.</i></h1>
-   <p>VELXTRIA helps small businesses turn supported sales exports into organized reports, spot data problems, and explore the business tools already available in one workspace. Start with a demo using sample data.</p>
+   <p>Find sales records that need attention, see which products bring in revenue, and identify customers worth following up with. VELXTRIA turns supported sales CSVs into actionable reports and a private sales workspace. Try one report free; upgrade to PRO for $49 per 30 days when you need more.</p>
    <div class="v8-actions"><a class="v8-primary" href="#try">TRY IT NOW — NO ACCOUNT <span>↗</span></a><form class="v8-sample-run" method="post" action="/try-sample"><input type="hidden" name="sample" value="1"><button class="v8-primary" type="submit">RUN THE SAMPLE — ONE CLICK <span>↗</span></button></form><a class="v8-ghost" href="/register">CREATE FREE ACCOUNT <span>↗</span></a><a class="v8-ghost" href="/login">SIGN IN <span>↗</span></a><a class="v8-ghost" href="#v8-process">EXPLORE THE SYSTEM <span>↓</span></a></div>
    <div class="v8-disclaimer">PRIVATE PREVIEW <span>•</span> SAMPLE OR NON-SENSITIVE DATA ONLY <span>•</span> PAID ACCESS REQUIRES VERIFIED PAYMENT; DO NOT SEND FUNDS WITHOUT CONFIRMING THE CURRENT CHECKOUT PROCESS</div>
   </div>
