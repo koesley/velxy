@@ -20,3 +20,21 @@ def recommend(accepted, rejected, *, channel='web'):
     return ('Upload sales records before drawing business conclusions.'
             if channel == 'email' else
             'Upload a CSV containing sales records before drawing business conclusions.')
+
+
+def weekly_review(accepted, rejected):
+    """A repeatable, evidence-based workflow; no implied automatic monitoring."""
+    if any(type(n) is not int or n < 0 for n in (accepted, rejected)):
+        return ()
+    if not accepted and not rejected:
+        return ()
+    tasks = []
+    if rejected:
+        tasks.append(('Before relying on totals', 'Correct flagged source records and rerun validation.'))
+    if accepted:
+        tasks.extend((
+            ('This week', 'Reconcile recorded paid and pending orders against your payment records.'),
+            ('Next review', 'Upload a fresh export and compare matching date ranges and products.'),
+            ('Every week', 'Record completed follow-ups and verify actual payments before counting recovered revenue.'),
+        ))
+    return tuple(tasks)
