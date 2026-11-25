@@ -10,6 +10,7 @@ database, and a failed write never breaks the request it was logging.
 
 import time
 import html
+from urllib.parse import parse_qs, urlsplit
 from datetime import datetime, timezone
 
 EVENTS = ('landing_view', 'about_view', 'demo_run', 'demo_email_sent',
@@ -34,6 +35,38 @@ LABELS = {
     'paywall_shown': 'Free-limit paywall views',
     'pro_activated': 'PRO activations',
 }
+
+
+CAMPAIGN_SOURCES = frozenset(('email', 'linkedin', 'reddit', 'facebook', 'instagram', 'partner', 'referral', 'search', 'direct'))
+
+
+def campaign_source(path):
+    """Only fixed public channel labels; never retain arbitrary URL values."""
+    try:
+        values = parse_qs(urlsplit(path).query, max_num_fields=40).get('utm_source', [])
+    except ValueError:
+        return 'unclassified'
+    if not values:
+        return 'unclassified'
+    return values[0] if len(values) == 1 and values[0] in CAMPAIGN_SOURCES else 'unclassified'
+
+
+def campaign_panel(recent_counts):
+    rows = ''.join('<tr><td>' + html.escape(source) + '</td><td>' + str(count) + '</td></tr>'
+                   for source, count in sorted(recent_counts.items()))
+    return ('<section class="panel"><h2>Acquisition channels — landing views</h2>'
+            '<p>All-time tagged landing requests, including repeat visits and bots. '
+            'Not unique visitors, customer attribution or verified sales.</p>'
+            '<table><thead><tr><th>Channel</th><th>Views</th></tr></thead><tbody>' +
+            (rows or '<tr><td colspan="2">No tagged views recorded.</td></tr>') +
+            '</tbody></table><p>Example campaign link: /?utm_source=email</p></section>')
+
+
+def campaign_counts(conn):
+    ensure(conn)
+    return {source: int(count) for source, count in conn.execute(
+        "SELECT detail, COUNT(*) FROM site_events WHERE event='landing_view' GROUP BY detail")
+        if source in CAMPAIGN_SOURCES or source == 'unclassified'}
 
 
 def ensure(conn):
