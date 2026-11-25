@@ -1563,9 +1563,10 @@ class Handler(BaseHTTPRequestHandler):
    if user['role']!='admin':return self.fail(403,'Founder access required.',user,csrf)
    with db() as c:
     totals,daily,recent=site_stats.summary(c)
+    campaign_counts=site_stats.campaign_counts(c)
     activation=founder_activation.report_activation(c)
     paid_conversion=founder_paid_conversion.paid_cohorts(c)
-   body=(founder_paid_conversion.panel_html(paid_conversion)+founder_activation.panel_html(activation)+site_stats.stats_html(totals,daily,recent))
+   body=(founder_paid_conversion.panel_html(paid_conversion)+founder_activation.panel_html(activation)+site_stats.campaign_panel(campaign_counts)+site_stats.stats_html(totals,daily,recent))
    return self.respond(200,shell('Founder stats',body,user,csrf),headers=[('Cache-Control','no-store'),('Referrer-Policy','no-referrer')])
   if p=='/ascension-workflows':
    auth=self.require()
@@ -1766,7 +1767,7 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,shell('Shared demo report',body))
   if p=='/' and not user:
    with db() as c:
-    site_stats.record(c,'landing_view')
+    site_stats.record(c,'landing_view',site_stats.campaign_source(self.path))
     stats=scoreboard.get_stats(c)
    ref=referral_code_from_request(self)
    headers=[referral_cookie_header(ref)] if ref else ()
