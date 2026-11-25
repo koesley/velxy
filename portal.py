@@ -4317,6 +4317,7 @@ class Handler(BaseHTTPRequestHandler):
    return self.redirect('/report?id='+ident,[('Set-Cookie',DEMO_COOKIE+'=; Path=/; Max-Age=0; SameSite=Lax')])
   if p=='/btcpay/mainnet/checkout':
    if not btcpay_mainnet.checkout_enabled():
+    with db() as c:site_stats.record(c,'checkout_unavailable','bitcoin')
     return self.fail(503,'Bitcoin checkout is not available.',user,csrf)
    with db() as c:
     recent=btcpay_mainnet.pending_order(c,user['id'])
@@ -4326,10 +4327,11 @@ class Handler(BaseHTTPRequestHandler):
     invoice_id,checkout_url=btcpay_mainnet.issue_invoice(order_id)
    except RuntimeError:
     with db() as c:c.execute("UPDATE btcpay_orders SET status='failed' WHERE order_id=? AND network='mainnet'",(order_id,))
+    with db() as c:site_stats.record(c,'checkout_failed','bitcoin')
     return self.fail(503,'Unable to create Bitcoin invoice. Try again later.',user,csrf)
    with db() as c:
     c.execute("UPDATE btcpay_orders SET invoice_id=?,checkout_url=?,status='pending' WHERE order_id=? AND network='mainnet' AND status='creating'",(invoice_id,checkout_url,order_id))
-    site_stats.record(c,'checkout_started',order_id)
+    site_stats.record(c,'checkout_started','bitcoin')
    return self.redirect(checkout_url)
   if p=='/btcpay/mainnet/check-status':
    if not btcpay_mainnet.configured():
@@ -4341,6 +4343,7 @@ class Handler(BaseHTTPRequestHandler):
    return self.redirect('/account')
   if p=='/stripe/checkout':
    if not stripe_checkout.checkout_enabled():
+    with db() as c:site_stats.record(c,'checkout_unavailable','card')
     return self.fail(503,'Card checkout is not available.',user,csrf)
    with db() as c:
     recent=stripe_checkout.pending_order(c,user['id'])
@@ -4350,10 +4353,11 @@ class Handler(BaseHTTPRequestHandler):
     session_id,checkout_url=stripe_checkout.create_checkout_session(order_id)
    except RuntimeError:
     with db() as c:c.execute("UPDATE stripe_orders SET status='failed' WHERE order_id=?",(order_id,))
+    with db() as c:site_stats.record(c,'checkout_failed','card')
     return self.fail(503,'Unable to create card checkout. Try again later.',user,csrf)
    with db() as c:
     c.execute("UPDATE stripe_orders SET session_id=?,checkout_url=?,status='pending' WHERE order_id=? AND status='creating'",(session_id,checkout_url,order_id))
-    site_stats.record(c,'checkout_started',order_id)
+    site_stats.record(c,'checkout_started','card')
    return self.redirect(checkout_url)
   if p=='/stripe/check-status':
    if not stripe_checkout.configured():
