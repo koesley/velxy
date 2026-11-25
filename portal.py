@@ -820,7 +820,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
    email_form=('<form method="post" action="/demo/email"><input type="hidden" name="share_token" value="'+escape(share_token)+'"><label>Email me this report<input name="email" type="email" autocomplete="email" required placeholder="you@yourbusiness.com"></label><button class="v8-primary" type="submit">Email me this report</button></form>'
                '<p class="v8-demo-note">We send only this report, with a link to create your free account. No account needed to receive it.</p>')
  card_html=scorecard_html(demo_shares.scorecard(result),link or None)
- from demo_guidance import recommend
+ from demo_guidance import recommend, weekly_review
  next_step=recommend(result['accepted'], result['rejected'])
  action_plan='<section class="v8-demo-note"><h3>Recommended next step</h3><p>'+escape(next_step)+'</p></section>'
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
@@ -833,6 +833,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
    '<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows. The full package — cleaned data, flagged rows, and summaries — is in the ZIP.</p>'
    +'<a class="v8-primary" href="/try-download?token='+escape(token)+'">Download report ZIP</a>'
    +'<p class="v8-demo-note">Download link works for 10 minutes. Your file was processed once and never stored.</p>')
+  +('<section class="v8-demo-note"><h3>Your weekly revenue review</h3><ol>'+''.join('<li><strong>'+escape(label)+':</strong> '+escape(task)+'</li>' for label,task in weekly_review(result['accepted'],result['rejected']))+'</ol><p>Manual review checklist; no automatic monitoring or guaranteed recovery.</p></section>' if weekly_review(result['accepted'],result['rejected']) else '')
   +card_html
   +share
   +email_form
