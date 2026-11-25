@@ -10,6 +10,7 @@ database, and a failed write never breaks the request it was logging.
 
 import time
 import html
+import urllib.parse
 from datetime import datetime, timezone
 
 EVENTS = ('landing_view', 'about_view', 'demo_run', 'demo_email_sent',
@@ -181,3 +182,34 @@ def stats_html(totals, daily, recent):
             'addresses, no user agents, no emails.</p></section>'
             '<p><a href="/founder-economics">Revenue scenario console (V60)</a> · '
             '<a href="/">Back to dashboard</a></p>')
+
+
+CAMPAIGN_CHANNELS = ('email', 'social', 'partner', 'search', 'referral', 'other')
+
+def campaign_channel(path):
+    """Only fixed channel labels are retained; never store arbitrary query values."""
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query, keep_blank_values=True)
+    values = query.get('utm_medium', [])
+    if not values:
+        return 'untagged'
+    if len(values) != 1:
+        return 'other'
+    return values[0] if values[0] in CAMPAIGN_CHANNELS else 'other'
+
+
+def acquisition_html(conn):
+    since = int(time.time()) - 14 * 86400
+    counts = dict(conn.execute(
+        "SELECT detail, COUNT(*) FROM site_events WHERE event='landing_view' "
+        "AND created>=? GROUP BY detail", (since,)).fetchall())
+    rows = ''.join('<tr><th scope="row">' + channel + '</th><td>' +
+                   str(counts.get(channel, 0)) + '</td></tr>'
+                   for channel in CAMPAIGN_CHANNELS + ('untagged',))
+    return ('<section class="panel"><h2>Acquisition channels — last 14 days</h2>'
+            '<p>Tagged landing requests, not unique visitors or attributed sales. '
+            'Includes automated traffic. Older unclassified requests are excluded.</p>'
+            '<table><thead><tr><th>Channel</th><th>Landing requests</th></tr></thead><tbody>'
+            + rows + '</tbody></table><h3>Campaign links</h3><p>Append '
+            '<code>?utm_medium=email</code> to the public homepage for email campaigns. '
+            'Other supported values: social, partner, search, referral, other. '
+            'Never put customer identifiers in campaign URLs.</p></section>')
