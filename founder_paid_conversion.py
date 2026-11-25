@@ -194,3 +194,44 @@ def panel_html(metrics):
             "missing events do not become zero-day conversions. "
             "No individual customer identifiers are displayed.</p>"
             "<table><tbody>" + rows + "</tbody></table>" + pro_note + trend + "</section>")
+
+
+def payment_channels(conn, as_of=None):
+    """Recorded verified settlements by provider, excluding founder accounts."""
+    now = int(time.time()) if as_of is None else int(as_of)
+    results = {}
+    for label, table, condition in (
+        ("Bitcoin", "btcpay_orders", "o.network='mainnet' AND o.invoice_id IS NOT NULL AND o.invoice_id<>''"),
+        ("Card", "stripe_orders", "o.session_id IS NOT NULL AND o.session_id<>''"),
+    ):
+        conn.execute("SAVEPOINT vx_payment_channels")
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT o.user_id) FROM " + table +
+                " o JOIN users u ON u.id=o.user_id WHERE u.role='customer' "
+                "AND o.status='settled' AND o.settled_at>0 AND o.settled_at<=? AND " + condition,
+                (now,)).fetchone()
+            results[label] = (int(row[0]), int(row[1]))
+        except Exception as exc:
+            conn.execute("ROLLBACK TO SAVEPOINT vx_payment_channels")
+            msg = str(exc).lower()
+            if table not in msg or not ("no such table" in msg or "does not exist" in msg):
+                raise
+            results[label] = None
+        finally:
+            conn.execute("RELEASE SAVEPOINT vx_payment_channels")
+    return results
+
+
+def payment_channels_html(results):
+    rows = "".join(
+        "<tr><th scope='row'>" + html.escape(label) + "</th>" +
+        ("<td colspan='2'>Unavailable</td>" if counts is None else
+         "<td>" + str(counts[0]) + "</td><td>" + str(counts[1]) + "</td>") + "</tr>"
+        for label, counts in results.items())
+    return ("<section class='panel'><h2>Verified payment channels</h2>"
+            "<p>Historical recorded settlements by provider. Customers may appear in both channels. "
+            "Excludes pending orders and testnet Bitcoin. Not refund-adjusted revenue, profit, "
+            "or marketing campaign attribution.</p><table><thead><tr><th>Provider</th>"
+            "<th>Settled orders</th><th>Distinct customers</th></tr></thead><tbody>" +
+            rows + "</tbody></table></section>")
