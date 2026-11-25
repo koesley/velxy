@@ -1668,6 +1668,17 @@ class Handler(BaseHTTPRequestHandler):
     s.async=true;s.src='https://www.googletagmanager.com/gtag/js?id=G-Y4C3J1DCHS';
     document.head.appendChild(s);
     button.textContent='Analytics enabled for this visit';
+    var demo=document.getElementById('try');
+    if(demo){
+     demo.addEventListener('submit',function(e){
+      var form=e.target;
+      if(!form || form.tagName!=='FORM') return;
+      var action=form.getAttribute('action');
+      if(action!=='/try' && action!=='/try-sample') return;
+      if(location.pathname!=='/' || location.search || location.hash) return;
+      gtag('event','demo_start',{demo_type:action==='/try-sample'?'sample':'upload',page_location:location.origin+'/',page_referrer:'',page_title:'VELXTRIA',transport_type:'beacon'});
+     });
+    }
    });
    })();"""
    return self.respond(200,js,'application/javascript; charset=utf-8')
