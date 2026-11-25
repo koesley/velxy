@@ -781,6 +781,31 @@ def scorecard_html(card, share_link=None, show_issues=True):
          + top + paid + share + '</div>')
 
 
+def revenue_opportunity_preview(rows):
+ """Summarize accepted pending orders, never claim they are collectible cash."""
+ from decimal import Decimal, InvalidOperation
+ if not rows or tuple(rows[0]) != ('Order ID','Order Date','Customer','Product','Quantity','Unit Price','Status','Region','Revenue'):
+  return ''
+ pending=Decimal('0')
+ count=0
+ for row in rows[1:]:
+  if len(row)!=9 or str(row[6]).strip().lower()!='pending':
+   continue
+  try:
+   amount=Decimal(str(row[4]))*Decimal(str(row[5]))
+   if not amount.is_finite() or amount<0:continue
+  except (InvalidOperation, ValueError, OverflowError):
+   continue
+  pending+=amount
+  count+=1
+ if not count:return ''
+ return ('<section class="v8-demo-note"><h3>Revenue follow-up opportunity</h3><p><strong>'
+  +str(count)+' pending sales records</strong> with a combined listed order value of <strong>$'
+  +format(pending,',.2f')+'</strong>.</p><p>Check payment status and reconcile these orders before contacting customers. '
+  'This is listed order value, not verified unpaid debt, guaranteed recovery or additional revenue. '
+  'The calculation assumes the uploaded prices are USD.</p></section>')
+
+
 def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=False):
  """The instant demo result: the problems first, then the fix offer, then
  the summaries — and a ZIP download for signed-in runners. The old order
@@ -826,6 +851,7 @@ def demo_result_html(result,token,share_token=None,user=None,csrf='',is_sample=F
  return ('<div class="v8"><section class="v8-demo-result"><div class="v8-sectiontop"><span>YOUR DEMO REPORT</span><span>BUILT BY THE REAL ENGINE.</span></div><h2>THERE IT IS.<br><em>YOUR BUSINESS, CLEANED UP.</em></h2>'
   +report_diagnosis_html(result.get('rejected_rows') or [],result.get('cleaned_rows') or [],result['rejected'],result['accepted'],preview=user is None)
   +action_plan
+  +revenue_opportunity_preview(result.get('cleaned_rows') or [])
   +keep
   +report_summaries_html(result['monthly_rows'],result['product_rows'],result['stats'])
   +('<p>Accepted '+str(result['accepted'])+' rows · flagged '+str(result['rejected'])+' rows.</p>'
