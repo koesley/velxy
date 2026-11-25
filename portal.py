@@ -1385,7 +1385,7 @@ class Handler(BaseHTTPRequestHandler):
    return True
   return False
  def log_message(self,format,*args): pass
- def respond(self,status,body,content_type='text/html; charset=utf-8',headers=()):
+ def respond(self,status,body,content_type='text/html; charset=utf-8',headers=(),analytics=False):
   b=body.encode() if isinstance(body,str) else body
   self.send_response(status)
   self.send_header('Content-Type',content_type)
@@ -1398,7 +1398,11 @@ class Handler(BaseHTTPRequestHandler):
   # everything else defaults to no-store. The extra headers are sent
   # after this block, so a duplicate would go out if we sent both.
   if not any(k.lower()=='cache-control' for k,v in headers):self.send_header('Cache-Control','no-store')
-  self.send_header('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'")
+  policy="default-src 'self'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+  if analytics:
+   policy=policy.replace("script-src 'self'","script-src 'self' https://www.googletagmanager.com")
+   policy+="; connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com https://www.googletagmanager.com; img-src 'self' https://www.google-analytics.com https://region1.google-analytics.com"
+  self.send_header('Content-Security-Policy',policy)
   for k,v in headers:self.send_header(k,v)
   self.end_headers();self.wfile.write(b)
  def fail(self,status,message,user=None,csrf=''):
@@ -1647,6 +1651,26 @@ class Handler(BaseHTTPRequestHandler):
    return self.respond(200,shell('Meet VELXTRIA',landing_page(user,csrf)),headers=headers)
   if p=='/command-palette.js':
    return self.respond(200,(ROOT/'command-palette.js').read_bytes(),'application/javascript; charset=utf-8',headers=[('Cache-Control','public, max-age=300, must-revalidate'),('X-Content-Type-Options','nosniff')])
+  if p=='/analytics-opt-in.js':
+   js="""(function(){
+   if(location.pathname!=='/' || location.search || location.hash) return;
+   var button=document.getElementById('vx-analytics-opt-in');
+   if(!button) return;
+   button.addEventListener('click',function(){
+    if(button.disabled) return;
+    button.disabled=true;
+    window.dataLayer=window.dataLayer||[];
+    function gtag(){window.dataLayer.push(arguments);}
+    gtag('js',new Date());
+    gtag('config','G-Y4C3J1DCHS',{send_page_view:false,allow_google_signals:false,allow_ad_personalization_signals:false});
+    gtag('event','page_view',{page_location:location.origin+'/',page_referrer:'',page_title:'VELXTRIA'});
+    var s=document.createElement('script');
+    s.async=true;s.src='https://www.googletagmanager.com/gtag/js?id=G-Y4C3J1DCHS';
+    document.head.appendChild(s);
+    button.textContent='Analytics enabled for this visit';
+   });
+   })();"""
+   return self.respond(200,js,'application/javascript; charset=utf-8')
   if p=='/checkout-feedback.js':
    js="""document.addEventListener('submit',function(e){var f=e.target;if(!f || !f.action)return;var isBtc=f.action.includes('/btcpay/mainnet/checkout');var isCard=f.action.includes('/stripe/checkout');if(!isBtc && !isCard)return;var b=f.querySelector('button[type="submit"],button:not([type])');if(!b)return;if(b.disabled){e.preventDefault();return;}b.disabled=true;b.textContent=isCard?'Preparing secure card checkout…':'Preparing secure Bitcoin checkout…';b.setAttribute('aria-busy','true');var note=document.createElement('span');note.setAttribute('role','status');note.textContent=' Creating your checkout; please wait.';f.appendChild(note);setTimeout(function(){note.textContent=isCard?' Still creating your checkout — this is taking longer than usual. Please keep waiting, or reload this page in a moment and look for the "Card payment pending" link to continue to checkout.':' Still creating your invoice — this is taking longer than usual. Please keep waiting, or reload this page in a moment and look for the "Bitcoin payment pending" link to continue to checkout.';},20000);});"""
    return self.respond(200,js,'application/javascript',headers=[('Cache-Control','public, max-age=3600')])
@@ -1725,7 +1749,11 @@ class Handler(BaseHTTPRequestHandler):
     stats=scoreboard.get_stats(c)
    ref=referral_code_from_request(self)
    headers=[referral_cookie_header(ref)] if ref else ()
-   return self.respond(200,shell('Sales reporting made simple',landing_page(user,csrf,stats)),headers=headers)
+   analytics=not urllib.parse.urlsplit(self.path).query
+   body=landing_page(user,csrf,stats)
+   if analytics:
+    body+='<section class="panel"><p>Optional analytics: allow Google Analytics to measure this landing page visit. You can continue without accepting.</p><button type="button" id="vx-analytics-opt-in">Allow analytics for this visit</button><script defer src="/analytics-opt-in.js"></script></section>'
+   return self.respond(200,shell('Sales reporting made simple',body),headers=headers,analytics=analytics)
   if not user:return self.redirect('/login')
   if p=='/sales-execution':
    if os.getenv('VELXTRIA_ENABLE_BUSINESS_OS_V59','0')!='1':return self.fail(403,'Business OS is not enabled.',user,csrf)
