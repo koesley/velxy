@@ -19,3 +19,12 @@ class CommercialPriorityTests(unittest.TestCase):
     def test_limitations(self):
         self.assertIn('not unique buyers', commercial_priority_html([]))
         self.assertIn('No actions are executed automatically', commercial_priority_html([]))
+
+    def test_checkout_follow_through(self):
+        rows = commercial_priorities([(0, {'checkout_started': 3})])
+        self.assertEqual(rows[0][:3], ('Verification', 'Checkout follow-through', 3))
+    def test_coverage_snapshot(self):
+        page = commercial_priority_html(iter([(0, {'checkout_started': 2}), (86400, {'pro_activated': 1})]))
+        self.assertIn('2 UTC dates with recorded activity; 2 checkout starts; 1 PRO activation events', page)
+    def test_no_telemetry_snapshot(self):
+        self.assertIn('No recent telemetry available', commercial_priority_html([]))
