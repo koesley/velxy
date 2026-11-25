@@ -9,6 +9,7 @@ database, and a failed write never breaks the request it was logging.
 """
 
 import time
+from commercial_priorities import commercial_priority_html
 import html
 import urllib.parse
 from datetime import datetime, timezone
@@ -158,7 +159,7 @@ def stats_html(totals, daily, recent):
         '</td><td>' + html.escape(str(LABELS.get(r[1], r[1])), quote=True) +
         '</td><td>' + html.escape(str(r[2] or ''), quote=True) + '</td></tr>'
         for r in recent)
-    return ('<section class="panel"><h2>Funnel</h2><p>All-time counts; '
+    return (commercial_priority_html(daily) + '<section class="panel"><h2>Funnel</h2><p>All-time counts; '
             'ratios compare event counts with the previous step, not unique customer conversions. Repeat activity and independent journeys can produce ratios above 100%.</p><table><thead><tr>'
             '<th>Step</th><th>Count</th><th>Event count ratio</th></tr></thead><tbody>' +
             funnel_rows + '</tbody></table></section>'
