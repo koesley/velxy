@@ -1565,7 +1565,8 @@ class Handler(BaseHTTPRequestHandler):
     totals,daily,recent=site_stats.summary(c)
     activation=founder_activation.report_activation(c)
     paid_conversion=founder_paid_conversion.paid_cohorts(c)
-   body=(founder_paid_conversion.panel_html(paid_conversion)+founder_activation.panel_html(activation)+site_stats.stats_html(totals,daily,recent))
+    payment_summary=founder_paid_conversion.payment_channels(c)
+   body=(founder_paid_conversion.payment_channels_html(payment_summary)+founder_paid_conversion.panel_html(paid_conversion)+founder_activation.panel_html(activation)+site_stats.stats_html(totals,daily,recent))
    return self.respond(200,shell('Founder stats',body,user,csrf),headers=[('Cache-Control','no-store'),('Referrer-Policy','no-referrer')])
   if p=='/ascension-workflows':
    auth=self.require()
