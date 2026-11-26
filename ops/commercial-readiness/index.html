@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VELXTRIA | Commercial readiness</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101522;color:#eaf0fc;font:16px/1.52 system-ui,sans-serif}header,main{max-width:1320px;margin:auto;padding:24px 5%}header{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap}strong.brand{letter-spacing:.18em;color:#8cecd6}a{color:#9cd8ff}header a{margin-right:14px}main{padding-top:8px}.hero,.card,dialog{background:#192234;border:1px solid #34445d;border-radius:16px;padding:23px}.hero{background:linear-gradient(110deg,#193b42,#192234 76%);margin-bottom:18px}h1{font-size:clamp(2rem,5vw,3.5rem);margin:0;line-height:1.12}h2,h3,p{margin:0 0 10px}.hero p{margin-top:12px}nav,.actions,.grid{display:flex;gap:10px;flex-wrap:wrap}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));margin:16px 0}.metric{font-size:2rem;display:block}.muted,small{color:#bdcce0}.card{margin-bottom:12px;overflow-wrap:anywhere}.grid .card{margin:0}button,input,select,textarea{font:inherit}button,.button{border:1px solid #536680;color:inherit;background:#24344c;border-radius:8px;padding:8px 13px;cursor:pointer}button[aria-pressed=true],button.primary{background:#8cecd6;color:#102523;border-color:#8cecd6;font-weight:700}button:focus-visible,a:focus-visible{outline:3px solid #9cd8ff;outline-offset:3px}label{display:block;margin-bottom:10px}input,select,textarea{display:block;width:100%;border:1px solid #62738d;color:inherit;background:#101a2a;border-radius:7px;padding:8px}input[type=checkbox]{display:inline;width:auto}textarea{min-height:74px}dialog{color:inherit;width:min(720px,94vw);max-height:90vh}dialog::backdrop{background:#080d16cc}.pass{color:#8cecd6}.fail{color:#ff9b91}.unknown{color:#f3d18e}.tag{display:inline-block;font-weight:700;margin-right:10px}.row{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:start}.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,225px),1fr));gap:0 14px}.record p{white-space:pre-wrap}.toolbar{margin:18px 0}#message{min-height:1.5em;margin:9px 0}
+</style></head><body><header><strong class="brand">VELXTRIA</strong><div><a href="https://github.com/koesley/velxy" target="_blank" rel="noopener">GitHub</a><a href="https://dashboard.render.com/web/srv-dbk1fmu7bikc738rm770" target="_blank" rel="noopener">Render</a></div></header>
+<main><section class="hero"><h1>Commercial readiness</h1><p>Review evidence for the current deployment and outreach batch.</p><div class="actions"><button class="primary" id="checkpoint">New checkpoint</button><button id="export">Export records</button><button id="import">Import records</button><input type="file" id="file" accept=".json,application/json" hidden style="display:none"></div></section>
+<p class="muted">Records are saved in this browser. Export a backup or import one on another device.</p><p id="message" role="status"></p>
+<nav aria-label="Workspace views" id="nav"></nav><section id="view" class="toolbar"></section></main>
+<dialog id="editor"><form id="form"></form></dialog>
+<script>
+'use strict';
+const checks = [
+ ['tenant','Tenant isolation','Critical','pre-release','Tenant-scoped fixtures only appear in their assigned tenant across normal application views and exports.'],
+ ['auth','Authorization','Critical','pre-release','The documented role matrix matches allowed reads and writes for test accounts.'],
+ ['db','Database migrations','Critical','pre-release','A disposable copy upgrades from the prior schema, retaining fixture records. Re-running migrations leaves the same schema and data.'],
+ ['jobs','Background-job reliability','High','deploy','Test jobs complete or reach a visible terminal failure. Retries preserve one recorded outcome per job.'],
+ ['approvals','Approvals','High','pre-release','A sample action stays pending until an authorized reviewer approves it. Rejection leaves it unapplied.'],
+ ['audit','Audit trails','High','deploy','The sample workflow records actor, timestamp, action and outcome with a stable correlation reference.'],
+ ['recovery','Opportunity Recovery','High','deploy','A controlled opportunity progresses from discovery to proposed action, review and recorded outcome.'],
+ ['analytics','Analytics','Medium','deploy','An opted-in test event appears in the intended analytics property with the expected event name.'],
+ ['payments','Payments','Critical','deploy','An authorized payment test reconciles invoice, amount, currency and status without duplicate fulfillment. Record sandbox and live evidence independently.'],
+ ['email','Email outreach','High','outreach','An approved batch reconciles queued, sent, bounced and replied counts, with exclusions and suppression respected.'],
+ ['health','Deployment health','Critical','deploy','Render reports the intended GitHub commit live and /health/ready succeeds. Record the deployment and observed response.']
+];
+const byId = id => document.getElementById(id);
+const find = id => checks.find(check => check[0] === id);
+const key = 'velxtria.commercial-readiness.v1';
+const blank = () => ({version:1, checkpoints:[], runs:[]});
+let data = blank();
+let persistenceReady = true;
+try { const saved=localStorage.getItem(key); if(saved) data=JSON.parse(saved); } catch { persistenceReady=false; }
+const views = ['Overview','Checklists','Run history','Change timeline'];
+let tab = views[0], filter = 'All';
+const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const order = records => [...records].sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp) || Date.parse(b.created)-Date.parse(a.created));
+const date = value => new Date(value).toLocaleString('en-US',{timeZone:'America/Kentucky/Louisville',dateStyle:'medium',timeStyle:'short'});
+const latest = (kind,env) => order(data.checkpoints).find(p=>p.kind===kind && (!env || p.env===env));
+const isCurrent = run => {
+  const checkpoint=latest(run.check==='email'?'Outreach batch':'Deployment',run.env);
+  return checkpoint ? run.checkpoint===checkpoint.id && Date.parse(run.timestamp)>=Date.parse(checkpoint.timestamp) : !run.checkpoint;
+};
+function say(value){byId('message').textContent=value;}
+function commit(next,message){
+  if(!persistenceReady){say('Storage is unavailable. Import a valid backup to restore it.');return false;}
+  try {localStorage.setItem(key,JSON.stringify(next));} catch {say('Could not save. Check browser storage and try again.');return false;}
+  data=next; render(); say(message); return true;
+}
+function link(value){
+  try{const url=new URL(value); if(['https:','http:'].includes(url.protocol))return '<a target="_blank" rel="noopener" href="'+escape(url.href)+'">'+escape(value)+'</a>';}catch{}
+  return escape(value);
+}
+function card(title,content){return '<article class="card"><h3>'+escape(title)+'</h3>'+content+'</article>';}
+function badge(status){return '<span class="tag '+status.toLowerCase()+'">'+status+'</span>';}
+function runView(run){
+  const checkpoint=data.checkpoints.find(p=>p.id===run.checkpoint);
+  return card(find(run.check)[1],'<div class="record"><p>'+badge(run.status)+escape(run.env)+' · '+escape(date(run.timestamp))+' ET · '+escape(run.severity)+(run.blocker?' · Release blocker':'')+'</p><p><b>Expected</b> '+escape(run.expected)+'</p><p><b>Actual</b> '+escape(run.actual)+'</p><p><b>Evidence</b> '+link(run.evidence)+'</p><p><b>Owner</b> '+escape(run.owner)+' · <b>Checkpoint</b> '+escape(checkpoint?.ref || 'Unlinked')+'</p><p><b>Next action</b> '+escape(run.next)+'</p><button data-run="'+run.check+'" data-repeat="'+run.id+'">Run again</button></div>');
+}
+function render(){
+  byId('nav').innerHTML=views.map(name=>'<button data-tab="'+name+'" aria-pressed="'+(name===tab)+'">'+name+'</button>').join('');
+  const history=order(data.runs);
+  const current=history.filter((r,i)=>history.findIndex(a=>a.check===r.check && a.env===r.env)===i && isCurrent(r));
+  const verified=current.filter(r=>r.status==='Pass' && r.env==='Live' && r.checkpoint && !r.blocker);
+  const failed=current.filter(r=>r.status==='Fail');
+  const blockers=current.filter(r=>r.blocker);
+  const regressions=history.filter((r,i)=>r.status==='Fail' && history.slice(i+1).find(a=>a.check===r.check && a.env===r.env && a.status!=='Unknown')?.status==='Pass');
+  const scores={Critical:4,High:3,Medium:2,Low:1};
+  const next=[...new Set([...blockers,...failed])].sort((a,b)=>Number(b.blocker)-Number(a.blocker)||scores[b.severity]-scores[a.severity])[0];
+  let html='';
+  if(tab==='Overview'){
+    html='<div class="grid">'+[['Verified live',verified.length],['Release blockers',blockers.length],['Failed checks',failed.length],['Regressions recorded',regressions.length]].map(([name,n])=>card(name,'<strong class="metric">'+n+'</strong>')).join('')+'</div>';
+    html+=card('Highest-value next fix',next?'<p>'+escape(find(next.check)[1])+' · '+escape(next.env)+' · '+escape(next.owner)+'</p><p>'+escape(next.next)+'</p>':'<p>No current failed checks or flagged blockers. Verify deployment health first, then review the remaining critical checks.</p><button data-run="health">Record deployment health</button>');
+    html+='<div class="grid">'+card('Verified live capabilities',verified.length?verified.map(r=>'<p>'+escape(find(r.check)[1])+' · '+escape(date(r.timestamp))+' ET</p>').join(''):'<p>No live passes tied to current checkpoints.</p>')+card('Planned or unverified',checks.filter(([id])=>!verified.some(r=>r.check===id)).map(([id,name])=>'<p>'+badge(current.find(r=>r.check===id&&r.env==='Live')?.status==='Fail'?'Fail':'Unknown')+escape(name)+'</p>').join('')||'<p>All checklist areas have a current live pass.</p>')+card('Customer-facing claims',verified.length?'<p>Review this evidence before sharing a claim. Keep wording limited to what was observed and omit internal identifiers.</p>'+verified.map(r=>'<p><b>'+escape(find(r.check)[1])+'</b> · Observed '+escape(date(r.timestamp))+' ET</p><p>'+escape(r.actual)+'</p>').join(''):'<p>No capability claims are supported by recorded live evidence yet.</p>')+'</div>';
+    html+='<h2>Release blockers</h2>'+(blockers.map(runView).join('')||'<p>No current checkpoints have flagged blockers.</p>')+'<h2>Failed checks</h2>'+(failed.map(runView).join('')||'<p>No current failures recorded.</p>');
+  }
+  if(tab==='Checklists'){
+    html='<h2>Reusable verification checklists</h2><div class="grid">'+checks.map(([id,name,severity,cadence,expected])=>card(name,'<p class="muted">'+escape(severity)+' · '+({deploy:'After each deployment','pre-release':'Before release',outreach:'After each outreach batch'}[cadence])+'</p><p>'+escape(expected)+'</p><div class="actions"><button data-run="'+id+'">Record check</button><button data-copy="'+id+'">Copy Cursor prompt</button></div>')).join('')+'</div>';
+  }
+  if(tab==='Run history'){
+    html='<label>Status <select id="filter">'+['All','Pass','Fail','Unknown','Regressions'].map(v=>'<option'+(v===filter?' selected':'')+'>'+v+'</option>').join('')+'</select></label>';
+    html+=(filter==='Regressions'?regressions:history.filter(r=>filter==='All'||r.status===filter)).map(runView).join('')||'<p>No matching checks recorded.</p>';
+  }
+  if(tab==='Change timeline'){
+    html='<h2>Deployment and outreach checkpoints</h2>';
+    const events=order([...data.checkpoints,...data.runs]);
+    html+=events.map(e=>e.check?card(find(e.check)[1],'<p>'+badge(e.status)+escape(e.env)+' · '+escape(date(e.timestamp))+' ET</p>'):card(e.kind+' · '+e.ref,'<p>'+escape(e.env)+' · '+escape(date(e.timestamp))+' ET</p><p>'+link(e.evidence)+'</p><p>'+escape(e.note)+'</p><p>'+data.runs.filter(r=>r.checkpoint===e.id).length+' linked checks</p>')).join('')||'<p>Add a checkpoint after your next deployment or outreach batch.</p>';
+  }
+  byId('view').innerHTML=html;
+}
+const field=(name,label,value='',type='text',required=true)=>'<label>'+label+'<input name="'+name+'" type="'+type+'" value="'+escape(value)+'" '+(required?'required':'')+'></label>';
+const area=(name,label,value='',required=true)=>'<label>'+label+'<textarea name="'+name+'" '+(required?'required':'')+'>'+escape(value)+'</textarea></label>';
+const select=(name,label,values,selected)=>'<label>'+label+'<select name="'+name+'">'+values.map(([value,text])=>'<option value="'+escape(value)+'" '+(value===selected?'selected':'')+'>'+escape(text)+'</option>').join('')+'</select></label>';
+const options=(...values)=>values.map(v=>[v,v]);
+const envs=options('Live','Staging','Local','Sandbox');
+function nowForInput(){const now=new Date();return new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,16);}
+function edit(id,prior){
+  const check=find(id), previous=prior||{};
+  const form=byId('form');
+  form.dataset.check=id||'';
+  form.innerHTML='<div class="row"><h2>'+escape(check?'Record '+check[1]:'New checkpoint')+'</h2><button type="button" id="cancel">Cancel</button></div><div class="fields">'+
+    select('env','Environment',envs,previous.env||'Live')+field('timestamp','Timestamp (device time)',nowForInput(),'datetime-local')+
+    (check?select('status','Result',options('Unknown','Pass','Fail'),'Unknown')+select('severity','Severity',options('Critical','High','Medium','Low'),previous.severity||check[2])+field('owner','Owner',previous.owner)+ '<span id="checkpoint-select"></span>':
+    select('kind','Checkpoint type',options('Deployment','Outreach batch'),'Deployment')+field('ref','Commit SHA / deploy ID / batch ID'))+'</div>'+
+    (check?area('expected','Expected result',previous.expected||check[4])+area('actual','Actual result')+area('evidence','Evidence link or note')+area('next','Exact next action')+'<label><input type="checkbox" name="blocker" '+(previous.blocker?'checked':'')+'> Release blocker</label>':
+    field('evidence','Evidence link or note')+area('note','Change summary'))+
+    '<button class="primary" type="submit">Save '+(check?'check':'checkpoint')+'</button>';
+  function checkpoints(){
+    const env=form.elements.env.value, kind=id==='email'?'Outreach batch':'Deployment';
+    const choices=order(data.checkpoints).filter(p=>p.env===env&&p.kind===kind);
+    byId('checkpoint-select').innerHTML=select('checkpoint','Checkpoint',[['','Unlinked'],...choices.map(p=>[p.id,p.ref])],choices[0]?.id||'');
+  }
+  if(check){checkpoints();form.elements.env.onchange=checkpoints;}
+  byId('cancel').onclick=()=>byId('editor').close();
+  byId('editor').showModal();
+}
+byId('form').onsubmit=event=>{
+  event.preventDefault();
+  const form=event.currentTarget, row=Object.fromEntries(new FormData(form));
+  for(const name of Object.keys(row))row[name]=row[name].trim();
+  if([...form.elements].some(el=>el.required&&!row[el.name])){say('Fill in all required fields.');return;}
+  row.timestamp=new Date(row.timestamp).toISOString();row.created=new Date().toISOString();row.id=crypto.randomUUID();
+  const check=form.dataset.check;
+  if(check){row.check=check;row.blocker=row.blocker==='on';}
+  const collection=check?'runs':'checkpoints';
+  if(commit({...data,[collection]:[...data[collection],row]},check?'Check saved.':'Checkpoint saved.'))byId('editor').close();
+};
+document.addEventListener('click',async event=>{
+  const btn=event.target.closest('button');if(!btn)return;
+  if(btn.dataset.tab){tab=btn.dataset.tab;render();}
+  if(btn.dataset.run)edit(btn.dataset.run,data.runs.find(r=>r.id===btn.dataset.repeat));
+  if(btn.dataset.copy){
+    const [,name,,,expected]=find(btn.dataset.copy);
+    const prompt='In koesley/velxy, verify '+name+' against this expectation: '+expected+' Use existing tests and authorized fixtures. Inspect the GitHub commit and Render checkpoint as applicable. Keep production data and external side effects untouched. Return expected result, actual result, evidence link or redacted note, environment, timestamp, commit or batch ID, Pass/Fail/Unknown, severity, release blocker, owner and one exact next action. Use Unknown when evidence is missing and identify test or simulated evidence explicitly.';
+    try{await navigator.clipboard.writeText(prompt);say('Cursor prompt copied.');}catch{window.prompt('Copy Cursor prompt',prompt);}
+  }
+});
+byId('view').addEventListener('change',event=>{if(event.target.id==='filter'){filter=event.target.value;render();}});
+byId('checkpoint').onclick=()=>edit();
+byId('export').onclick=()=>{
+  const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+  const a=document.createElement('a');a.href=url;a.download='velxtria-readiness.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+byId('import').onclick=()=>byId('file').click();
+const strings=(record,keys)=>record && keys.every(name=>typeof record[name]==='string');
+function valid(snapshot){
+  const base=['id','env','timestamp','created','evidence'];
+  const validBase=r=>strings(r,base)&&r.id&&Number.isFinite(Date.parse(r.timestamp))&&Number.isFinite(Date.parse(r.created))&&envs.some(([v])=>v===r.env);
+  return snapshot?.version===1&&Array.isArray(snapshot.checkpoints)&&Array.isArray(snapshot.runs)&&
+    snapshot.checkpoints.every(r=>validBase(r)&&strings(r,['kind','ref','note'])&&['Deployment','Outreach batch'].includes(r.kind))&&
+    snapshot.runs.every(r=>validBase(r)&&strings(r,['check','expected','actual','status','severity','owner','next','checkpoint'])&&find(r.check)&&['Pass','Fail','Unknown'].includes(r.status)&&['Critical','High','Medium','Low'].includes(r.severity)&&typeof r.blocker==='boolean');
+}
+byId('file').onchange=async event=>{
+  const file=event.target.files[0];event.target.value='';if(!file)return;
+  try{
+    const snapshot=JSON.parse(await file.text());if(!valid(snapshot))throw Error();
+    const merge=(a,b)=>[...new Map([...b,...a].map(r=>[r.id,r])).values()];
+    persistenceReady=true;
+    commit({version:1,checkpoints:merge(data.checkpoints,snapshot.checkpoints),runs:merge(data.runs,snapshot.runs)},'Backup merged with existing records.');
+  }catch{say('This file is not a valid VELXTRIA readiness backup.');}
+};
+if(!valid(data)){data=blank();persistenceReady=false;}
+render();
+if(!persistenceReady)say('Existing records could not be loaded. Import a valid backup to restore them.');
+</script></body></html>
